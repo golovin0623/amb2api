@@ -5,7 +5,11 @@ Tests for streaming mode configuration
 import pytest
 import os
 from unittest.mock import patch, AsyncMock
-from config import get_enable_real_streaming
+from config import (
+    get_enable_real_streaming,
+    get_stream_keepalive_seconds,
+    get_stream_bootstrap_retries,
+)
 
 
 class TestStreamingConfig:
@@ -77,6 +81,38 @@ class TestStreamingConfig:
                 # 环境变量已设置，不应该调用 get_config_value
                 # 但由于实现中总是会调用，我们只验证结果正确
                 assert result is True
+
+    @pytest.mark.asyncio
+    async def test_stream_keepalive_default_zero(self):
+        """测试流式 keepalive 默认值为 0（禁用）"""
+        with patch.dict(os.environ, {}, clear=True):
+            with patch('config.get_config_value', new_callable=AsyncMock) as mock_config:
+                mock_config.return_value = 0
+                result = await get_stream_keepalive_seconds()
+                assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_stream_keepalive_from_env(self):
+        """测试流式 keepalive 从环境变量读取"""
+        with patch.dict(os.environ, {"STREAM_KEEPALIVE_SECONDS": "15"}):
+            result = await get_stream_keepalive_seconds()
+            assert result == 15
+
+    @pytest.mark.asyncio
+    async def test_stream_bootstrap_retries_default_one(self):
+        """测试 bootstrap 重试默认值为 1"""
+        with patch.dict(os.environ, {}, clear=True):
+            with patch('config.get_config_value', new_callable=AsyncMock) as mock_config:
+                mock_config.return_value = 1
+                result = await get_stream_bootstrap_retries()
+                assert result == 1
+
+    @pytest.mark.asyncio
+    async def test_stream_bootstrap_retries_from_env(self):
+        """测试 bootstrap 重试从环境变量读取"""
+        with patch.dict(os.environ, {"STREAM_BOOTSTRAP_RETRIES": "3"}):
+            result = await get_stream_bootstrap_retries()
+            assert result == 3
 
 
 if __name__ == "__main__":

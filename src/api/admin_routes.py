@@ -77,6 +77,9 @@ async def get_config(token: str = Depends(authenticate)):
         cfg["max_tokens_mode"] = await adapter.get_config("max_tokens_mode", "off")
         cfg["fake_stream_enabled"] = await adapter.get_config("fake_stream_enabled", False)
         cfg["fake_stream_speed"] = await adapter.get_config("fake_stream_speed", 100)
+        cfg["enable_real_streaming"] = await adapter.get_config("enable_real_streaming", False)
+        cfg["stream_keepalive_seconds"] = await adapter.get_config("stream_keepalive_seconds", 0)
+        cfg["stream_bootstrap_retries"] = await adapter.get_config("stream_bootstrap_retries", 1)
     except Exception:
         pass
     try:
@@ -89,7 +92,8 @@ async def get_config(token: str = Depends(authenticate)):
         cfg["override_env"] = False
     env_locked = [k for k in [
         "API_PASSWORD","PANEL_PASSWORD","PORT","HOST",
-        "CALLS_PER_ROTATION","RETRY_429_ENABLED","RETRY_429_MAX_RETRIES","RETRY_429_INTERVAL","AUTO_BAN","AUTO_BAN_ERROR_CODES"
+        "CALLS_PER_ROTATION","RETRY_429_ENABLED","RETRY_429_MAX_RETRIES","RETRY_429_INTERVAL","AUTO_BAN","AUTO_BAN_ERROR_CODES",
+        "ENABLE_REAL_STREAMING","STREAM_KEEPALIVE_SECONDS","STREAM_BOOTSTRAP_RETRIES"
     ] if os.getenv(k)]
     return JSONResponse(content={"config": cfg, "env_locked": env_locked})
 
@@ -193,6 +197,23 @@ async def save_config(payload: Dict[str, Any], token: str = Depends(authenticate
             speed = int(payload.get("fake_stream_speed"))
             if speed >= 10 and speed <= 2000:
                 updates["fake_stream_speed"] = speed
+        except (ValueError, TypeError):
+            pass
+    # 真实流式与 keepalive/bootstrap 配置
+    if payload.get("enable_real_streaming") is not None:
+        updates["enable_real_streaming"] = bool(payload.get("enable_real_streaming"))
+    if payload.get("stream_keepalive_seconds") is not None:
+        try:
+            keepalive = float(payload.get("stream_keepalive_seconds"))
+            if keepalive >= 0:
+                updates["stream_keepalive_seconds"] = keepalive
+        except (ValueError, TypeError):
+            pass
+    if payload.get("stream_bootstrap_retries") is not None:
+        try:
+            retries = int(payload.get("stream_bootstrap_retries"))
+            if retries >= 0 and retries <= 10:
+                updates["stream_bootstrap_retries"] = retries
         except (ValueError, TypeError):
             pass
     # 写入

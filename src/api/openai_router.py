@@ -214,10 +214,17 @@ async def chat_completions(
         
         if enable_real_streaming:
             log.info("使用真实流式模式（实验性）")
-            # 真实流式模式：直接发送流式请求到 AssemblyAI
-            # 注意：当前 AssemblyAI 的流式响应可能存在解析问题
-            response = await send_assembly_request(request_data, True, trace=trace)
-            return await convert_streaming_response(response, model)
+            # 真实流式模式：首包前支持 bootstrap 重试，首包后不重试
+            async def request_provider():
+                return await send_assembly_request(request_data, True, trace=trace)
+
+            response = await request_provider()
+            return await convert_streaming_response(
+                response,
+                model,
+                trace=trace,
+                request_provider=request_provider,
+            )
         else:
             log.info("使用假流式模式")
             return await fake_stream_response_for_assembly(request_data, trace=trace)
@@ -235,7 +242,7 @@ async def chat_completions(
     # 如果是流式响应，直接返回
     if is_streaming:
         log.debug(f"Converting to streaming response for model: {model}")
-        return await convert_streaming_response(response, model)
+        return await convert_streaming_response(response, model, trace=trace)
     
     # 转换非流式响应（AssemblyAI → OpenAI）
     completion_tokens = 0

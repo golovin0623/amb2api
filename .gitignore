@@ -8,6 +8,7 @@ creds/
 
 # But allow specific important files
 !README.md
+!AGENTS.md
 !pyproject.toml
 !tests/test_*.py
 !docs/**/*.md

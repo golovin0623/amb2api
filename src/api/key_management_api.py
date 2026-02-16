@@ -36,7 +36,7 @@ class BatchUpdateStatusRequest(BaseModel):
 
 class SetAggregationModeRequest(BaseModel):
     """设置聚合模式请求"""
-    mode: str = Field(..., description="聚合模式: round_robin 或 random")
+    mode: str = Field(..., description="聚合模式: round_robin / random / fill_first")
 
 
 class SetCallsPerRotationRequest(BaseModel):

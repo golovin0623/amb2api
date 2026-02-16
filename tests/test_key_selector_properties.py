@@ -255,9 +255,43 @@ class TestKeySelector:
         
         selector.mode = AggregationMode.RANDOM
         assert selector.mode == AggregationMode.RANDOM
+
+        selector.mode = AggregationMode.FILL_FIRST
+        assert selector.mode == AggregationMode.FILL_FIRST
         
         selector.mode = AggregationMode.ROUND_ROBIN
         assert selector.mode == AggregationMode.ROUND_ROBIN
+
+    def test_fill_first_prefers_first_available_key(self):
+        """测试填充优先模式：优先使用第一个可用 key"""
+        selector = KeySelector(mode=AggregationMode.FILL_FIRST)
+        keys = [create_key_info(0), create_key_info(1), create_key_info(2)]
+
+        async def run_test():
+            # 在首个 key 可用时应持续选择 key 0
+            for _ in range(20):
+                selected = await selector.select_next_key(keys)
+                assert selected is not None
+                assert selected.index == 0
+
+            # 当 key 0 用尽后应切换到 key 1
+            keys[0].status = KeyStatus.EXHAUSTED
+            selected = await selector.select_next_key(keys)
+            assert selected is not None
+            assert selected.index == 1
+
+        asyncio.get_event_loop().run_until_complete(run_test())
+
+    def test_fill_first_ignores_calls_per_rotation(self):
+        """测试填充优先模式忽略 calls_per_rotation，仅在配额耗尽时轮换"""
+        selector = KeySelector(mode=AggregationMode.FILL_FIRST)
+        selector.calls_per_rotation = 1
+        selector._call_counts[0] = 100
+
+        # fill_first 不应因为调用次数达到阈值而轮换
+        assert selector.should_rotate(0, rate_limit_remaining=10) is False
+        # 但配额耗尽时仍应触发轮换
+        assert selector.should_rotate(0, rate_limit_remaining=0) is True
 
 
 class TestKeySelectorIntegration:

@@ -161,6 +161,11 @@
             color: var(--text-secondary) !important;
         }
 
+        [data-theme="dark"] .config-note a {
+            color: #4facfe !important;
+            text-decoration: underline;
+        }
+
         [data-theme="dark"] .status-badge {
             color: white !important;
         }
@@ -679,7 +684,7 @@
             color: white !important;
         }
 
-        [data-theme="dark"] #configMetaBar span {
+        [data-theme="dark"] #configMetaBar span:not(.badge) {
             color: var(--text-secondary) !important;
         }
 
@@ -2742,7 +2747,6 @@
             .config-group {
                 padding: 12px;
                 margin: 10px 0;
-                overflow: hidden;
                 word-break: break-word;
                 overflow-wrap: break-word;
             }
@@ -3799,7 +3803,7 @@
             padding: 20px;
             margin: 15px 0;
             transition: background-color 0.3s ease, border-color 0.3s ease;
-            overflow-x: hidden;
+            position: relative;
         }
 
         .config-group h4 {
@@ -6227,6 +6231,7 @@
             font-size: 14px;
             color: var(--text-color);
             transition: background 0.15s;
+            white-space: nowrap;
         }
 
         .custom-select-option:hover {
@@ -6660,10 +6665,12 @@
                                     <div class="key-mode-item">
                                         <label>更新模式</label>
                                         <div class="custom-select-wrapper" data-select-id="keyUpdateMode">
-                                            <div class="custom-select-trigger">追加</div>
+                                            <div class="custom-select-trigger">追加 (Append)</div>
                                             <div class="custom-select-options">
-                                                <div class="custom-select-option selected" data-value="append">追加</div>
-                                                <div class="custom-select-option" data-value="override">覆盖</div>
+                                                <div class="custom-select-option selected" data-value="append">追加
+                                                    (Append)</div>
+                                                <div class="custom-select-option" data-value="override">覆盖 (Override)
+                                                </div>
                                             </div>
                                         </div>
                                         <input type="hidden" id="keyUpdateMode" value="append">
@@ -6671,18 +6678,21 @@
                                     <div class="key-mode-item">
                                         <label>聚合模式</label>
                                         <div class="custom-select-wrapper" data-select-id="keyAggregationMode">
-                                            <div class="custom-select-trigger">轮询</div>
+                                            <div class="custom-select-trigger">轮询 (Round Robin)</div>
                                             <div class="custom-select-options">
                                                 <div class="custom-select-option selected" data-value="round_robin">轮询
-                                                </div>
-                                                <div class="custom-select-option" data-value="random">随机</div>
+                                                    (Round Robin)</div>
+                                                <div class="custom-select-option" data-value="random">随机 (Random)</div>
+                                                <div class="custom-select-option" data-value="fill_first">填充优先 (Fill
+                                                    First)</div>
                                             </div>
                                         </div>
                                         <input type="hidden" id="keyAggregationMode" value="round_robin">
                                     </div>
                                 </div>
                                 <small class="config-note"
-                                    style="margin-top: -8px; display: block;">更新模式：追加=新增密钥到末尾，覆盖=替换所有密钥；聚合模式：轮询=依次使用，随机=随机选择</small>
+                                    style="margin-top: -8px; display: block;">更新模式：追加=新增密钥到末尾，覆盖=替换所有密钥；聚合模式：轮询=依次使用，随机=随机选择，填充优先=先用尽当前
+                                    key 配额再切换</small>
                                 <!-- 隐藏的兼容性字段 -->
                                 <input type="hidden" id="useAssembly" value="true" />
                                 <input type="hidden" id="keyAggregationEnabled" value="true" />
@@ -6844,6 +6854,28 @@
                                     <input type="number" id="fakeStreamSpeed" class="config-input" min="10" max="2000"
                                         value="100" />
                                     <small class="config-note">每秒向客户端输出的字符数，越大越快</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" id="enableRealStreaming" class="config-checkbox" />
+                                        启用真实流式（实验性）
+                                    </label>
+                                    <small class="config-note">直接透传上游流式响应；关闭时使用假流式</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="streamKeepaliveSeconds">流式 Keepalive 秒数:</label>
+                                    <input type="number" id="streamKeepaliveSeconds" class="config-input" min="0"
+                                        max="120" step="1" value="0" />
+                                    <small class="config-note">每隔 N 秒发送 SSE keepalive 注释帧；设为 0 表示禁用</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="streamBootstrapRetries">Bootstrap 重试次数:</label>
+                                    <input type="number" id="streamBootstrapRetries" class="config-input" min="0"
+                                        max="10" step="1" value="1" />
+                                    <small class="config-note">仅在首包前失败时重试；首包后不自动重试</small>
                                 </div>
 
                             </div>
@@ -7131,6 +7163,14 @@
                             <div class="perf-stat-card">
                                 <div class="perf-stat-value" id="perfAvgTPS">-</div>
                                 <div class="perf-stat-label">平均 TPS</div>
+                            </div>
+                            <div class="perf-stat-card">
+                                <div class="perf-stat-value" id="perfStreamRetryRate">-</div>
+                                <div class="perf-stat-label">流式重试率</div>
+                            </div>
+                            <div class="perf-stat-card">
+                                <div class="perf-stat-value" id="perfKeepaliveTotal">0</div>
+                                <div class="perf-stat-label">Keepalive 总数</div>
                             </div>
                         </div>
                     </div>
@@ -7963,6 +8003,23 @@
                             <div id="wfAccount" style="font-size: 14px; color: var(--text-color);">-</div>
                         </div>
                     </div>
+                    <!-- 第四行：流式链路信息 -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 12px;">
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 2px;">流式模式</div>
+                            <div id="wfStreamMode" style="font-size: 14px; color: var(--text-color);">-</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 2px;">Keepalive
+                            </div>
+                            <div id="wfKeepalive" style="font-size: 14px; color: var(--text-color);">0</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 2px;">Bootstrap
+                            </div>
+                            <div id="wfBootstrap" style="font-size: 14px; color: var(--text-color);">-</div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- 链路瀑布图 -->
@@ -8612,7 +8669,12 @@
                     const configResponse = await fetch('/api/keys/config', { headers: getAuthHeaders() });
                     if (configResponse.ok) {
                         const configData = await configResponse.json();
-                        const modeText = configData.aggregation_mode === 'random' ? '随机模式' : '轮询模式';
+                        const modeTextMap = {
+                            round_robin: '轮询模式',
+                            random: '随机模式',
+                            fill_first: '填充优先模式'
+                        };
+                        const modeText = modeTextMap[configData.aggregation_mode] || '轮询模式';
                         document.getElementById('modalAggregationMode').textContent = modeText;
                     }
                 } catch (e) {
@@ -10063,8 +10125,14 @@
             // 全局假流式配置
             const fakeStreamEnEl = document.getElementById('fakeStreamEnabled');
             const fakeStreamSpeedEl = document.getElementById('fakeStreamSpeed');
+            const enableRealStreamEl = document.getElementById('enableRealStreaming');
+            const streamKeepaliveEl = document.getElementById('streamKeepaliveSeconds');
+            const streamBootstrapEl = document.getElementById('streamBootstrapRetries');
             if (fakeStreamEnEl) fakeStreamEnEl.checked = !!currentConfig.fake_stream_enabled;
             if (fakeStreamSpeedEl) fakeStreamSpeedEl.value = currentConfig.fake_stream_speed ?? 100;
+            if (enableRealStreamEl) enableRealStreamEl.checked = !!currentConfig.enable_real_streaming;
+            if (streamKeepaliveEl) streamKeepaliveEl.value = currentConfig.stream_keepalive_seconds ?? 0;
+            if (streamBootstrapEl) streamBootstrapEl.value = currentConfig.stream_bootstrap_retries ?? 1;
             // 秘钥配置不做锁定
             lockField('useAssembly', 'USE_ASSEMBLY');
             lockField('configApiPassword', 'API_PASSWORD');
@@ -10090,6 +10158,9 @@
             lockField('retry429Interval', 'RETRY_429_INTERVAL');
             lockField('autoBanEnabled', 'AUTO_BAN');
             lockField('autoBanErrorCodes', 'AUTO_BAN_ERROR_CODES');
+            lockField('enableRealStreaming', 'ENABLE_REAL_STREAMING');
+            lockField('streamKeepaliveSeconds', 'STREAM_KEEPALIVE_SECONDS');
+            lockField('streamBootstrapRetries', 'STREAM_BOOTSTRAP_RETRIES');
         }
 
         function lockField(id, envName) {
@@ -10141,7 +10212,10 @@
                 auto_ban_error_codes: document.getElementById('autoBanErrorCodes').value,
                 max_tokens_mode: document.getElementById('maxTokensMode')?.value || 'off',
                 fake_stream_enabled: !!document.getElementById('fakeStreamEnabled')?.checked,
-                fake_stream_speed: parseInt(document.getElementById('fakeStreamSpeed')?.value) || 100
+                fake_stream_speed: parseInt(document.getElementById('fakeStreamSpeed')?.value) || 100,
+                enable_real_streaming: !!document.getElementById('enableRealStreaming')?.checked,
+                stream_keepalive_seconds: parseFloat(document.getElementById('streamKeepaliveSeconds')?.value) || 0,
+                stream_bootstrap_retries: parseInt(document.getElementById('streamBootstrapRetries')?.value) || 0
             };
             const generalPwd = document.getElementById('configPassword').value.trim();
             if (generalPwd) payload.password = generalPwd;
@@ -10311,8 +10385,8 @@
                     metaEl.style.gap = '6px';
                     metaEl.style.flexWrap = 'wrap';
                     metaEl.innerHTML = `
-                        <span style="background:${bcol};color:white;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:500;">后端: ${backend}</span>
-                        <span style="background:#17a2b8;color:white;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:500;">前缀: ${prefix}</span>
+                        <span class="badge" style="background:${bcol};color:white;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:500;">后端: ${backend}</span>
+                        <span class="badge" style="background:#17a2b8;color:white;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:500;">前缀: ${prefix}</span>
                         <span style="color:#888;font-size:11px;">共 ${Object.keys(cfg).length} 项</span>
                     `;
                 }
@@ -10320,8 +10394,8 @@
                     const colorMap = { redis: '#28a745', file: '#6c757d', postgres: '#0d6efd', mongodb: '#6f42c1' };
                     const bcol = colorMap[backend] || '#6c757d';
                     metaBar.innerHTML = `
-                        <span style="display:inline-block;background:${bcol};color:white;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:500;">后端: ${backend}</span>
-                        <span style="display:inline-block;background:#17a2b8;color:white;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:500;margin-left:6px;">前缀: ${prefix}</span>
+                        <span class="badge" style="display:inline-block;background:${bcol};color:white;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:500;">后端: ${backend}</span>
+                        <span class="badge" style="display:inline-block;background:#17a2b8;color:white;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:500;margin-left:6px;">前缀: ${prefix}</span>
                         <span style="margin-left:10px;color:#888;font-size:11px;">共 ${Object.keys(cfg).length} 项配置</span>
                     `;
                 }
@@ -10357,6 +10431,9 @@
                     assembly_dashboard_session: '会话信息',
                     fake_stream_enabled: '假流式',
                     fake_stream_speed: '流式速度',
+                    enable_real_streaming: '真实流式',
+                    stream_keepalive_seconds: '流式Keepalive',
+                    stream_bootstrap_retries: '首包重试',
                     max_tokens_mode: '最大令牌'
                 };
 
@@ -12819,6 +12896,10 @@
                 document.getElementById('perfAvgTTFT').textContent = data.ttft?.avg ? formatMs(data.ttft.avg) : '-';
                 document.getElementById('perfP95Latency').textContent = data.latency?.p95 ? formatMs(data.latency.p95) : '-';
                 document.getElementById('perfAvgTPS').textContent = data.tps?.avg ? data.tps.avg.toFixed(1) : '-';
+                const stream = data.stream || {};
+                const retryRate = Number(stream.bootstrap_retry_rate || 0);
+                document.getElementById('perfStreamRetryRate').textContent = `${(retryRate * 100).toFixed(1)}%`;
+                document.getElementById('perfKeepaliveTotal').textContent = stream.keepalive_total || 0;
             } catch (e) {
                 console.error('加载性能统计失败:', e);
             }
@@ -12906,6 +12987,32 @@
                 const keyDisplay = trace.key_masked || (trace.key_index >= 0 ? `Key #${trace.key_index}` : '-');
                 document.getElementById('wfKey').textContent = keyDisplay;
                 document.getElementById('wfAccount').textContent = trace.account_email || '-';
+                const metadata = trace.metadata || {};
+                const streamMode = metadata.stream_mode || 'none';
+                const keepaliveCount = Number(metadata.stream_keepalive_count || 0);
+                const retryAttempts = Number(metadata.stream_bootstrap_attempts || 0);
+                const retriesUsed = Number(metadata.stream_bootstrap_retries_used || 0);
+                const boolVal = (v) => {
+                    if (typeof v === 'boolean') return v;
+                    if (typeof v === 'string') return ['1', 'true', 'yes', 'on'].includes(v.toLowerCase());
+                    return !!v;
+                };
+                const bootstrapFailed = boolVal(metadata.stream_bootstrap_failed);
+                const bootstrapRecovered = boolVal(metadata.stream_bootstrap_recovered);
+
+                document.getElementById('wfStreamMode').textContent = streamMode;
+                document.getElementById('wfKeepalive').textContent = `${keepaliveCount}`;
+                if (streamMode === 'real') {
+                    let bootstrapText = `attempts=${retryAttempts}, retries=${retriesUsed}`;
+                    if (bootstrapFailed) bootstrapText += ', failed';
+                    else if (bootstrapRecovered) bootstrapText += ', recovered';
+                    document.getElementById('wfBootstrap').textContent = bootstrapText;
+                } else if (streamMode === 'fake') {
+                    const fakeHeartbeat = Number(metadata.fake_stream_heartbeat_count || 0);
+                    document.getElementById('wfBootstrap').textContent = `n/a (fake), heartbeats=${fakeHeartbeat}`;
+                } else {
+                    document.getElementById('wfBootstrap').textContent = '-';
+                }
 
                 // 填充指标
                 const metrics = trace.metrics || {};

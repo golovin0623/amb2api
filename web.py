@@ -129,6 +129,13 @@ async def main():
     log.info("启动 AMB2API")
     log.info("=" * 60)
     log.info(f"OpenAI 兼容端点: http://127.0.0.1:{port}/v1")
+    log.info(f"管理控制面板: http://127.0.0.1:{port}/ui")
+    
+    from config import get_api_password, get_panel_password
+    api_pwd = await get_api_password()
+    panel_pwd = await get_panel_password()
+    log.info(f"API 访问密码: {api_pwd}")
+    log.info(f"控制面板密码: {panel_pwd}")
     log.info("=" * 60)
     # 仅保留 OpenAI 兼容端点日志
 

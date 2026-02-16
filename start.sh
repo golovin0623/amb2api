@@ -15,7 +15,13 @@ if [ -z "${REDIS_URI:-}" ]; then
 fi
 
 if [ ! -d ".venv" ]; then
-  python3 -m venv .venv
+  PYTHON_CMD="python3"
+  if command -v python3.13 >/dev/null 2>&1; then
+    PYTHON_CMD="python3.13"
+  elif command -v python3.12 >/dev/null 2>&1; then
+    PYTHON_CMD="python3.12"
+  fi
+  $PYTHON_CMD -m venv .venv
 fi
 source .venv/bin/activate
 
@@ -40,4 +46,6 @@ if [ -n "${ASSEMBLY_API_KEYS:-}" ]; then
 fi
 
 echo "AMB2API 启动: http://${HOST}:${PORT}"
+echo "控制面板地址: http://${HOST}:${PORT}/ui"
+echo "登录密码: ${PANEL_PASSWORD:-pwd}"
 python web.py

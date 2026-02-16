@@ -444,6 +444,46 @@ async def get_enable_real_streaming() -> bool:
     return bool(await get_config_value("enable_real_streaming", False))
 
 
+async def get_stream_keepalive_seconds() -> float:
+    """
+    Get streaming keepalive interval in seconds.
+
+    仅用于真实流式传输。每隔 N 秒向客户端发送 SSE keepalive 注释帧，
+    防止中间层空闲超时。设置为 0 表示禁用。
+
+    Environment variable: STREAM_KEEPALIVE_SECONDS
+    TOML config key: stream_keepalive_seconds
+    Default: 0 (disabled)
+    """
+    env_value = os.getenv("STREAM_KEEPALIVE_SECONDS")
+    if env_value is not None and env_value != "":
+        try:
+            return max(0.0, float(env_value))
+        except ValueError:
+            pass
+    return float(await get_config_value("stream_keepalive_seconds", 0))
+
+
+async def get_stream_bootstrap_retries() -> int:
+    """
+    Get bootstrap retries for real streaming before first chunk.
+
+    首包前允许重试次数。仅在尚未向客户端发送首个有效 chunk 时生效；
+    首包后不会自动重试，避免重复输出。
+
+    Environment variable: STREAM_BOOTSTRAP_RETRIES
+    TOML config key: stream_bootstrap_retries
+    Default: 1
+    """
+    env_value = os.getenv("STREAM_BOOTSTRAP_RETRIES")
+    if env_value is not None and env_value != "":
+        try:
+            return max(0, int(env_value))
+        except ValueError:
+            pass
+    return int(await get_config_value("stream_bootstrap_retries", 1))
+
+
 # ============================================================================
 # Account Preload Queue Configuration
 # ============================================================================

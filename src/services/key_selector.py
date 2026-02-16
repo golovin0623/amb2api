@@ -19,7 +19,7 @@ class KeySelector:
         初始化选择器
         
         Args:
-            mode: 聚合模式，round_robin 或 random
+            mode: 聚合模式，round_robin / random / fill_first
         """
         self._mode = mode
         self._rr_counter = itertools.count()  # 轮询计数器
@@ -98,6 +98,9 @@ class KeySelector:
         if self._mode == AggregationMode.RANDOM:
             # 随机模式
             selected = random.choice(available)
+        elif self._mode == AggregationMode.FILL_FIRST:
+            # 填充优先：始终优先使用当前列表中的第一个可用 key
+            selected = available[0]
         else:
             # 轮询模式
             i = next(self._rr_counter)
@@ -160,7 +163,11 @@ class KeySelector:
         calls = self._call_counts.get(key_index, 0)
         
         # 检查轮换次数
-        calls_should_rotate = calls >= self._calls_per_rotation
+        # fill_first 模式下忽略 calls_per_rotation，仅在配额用尽时切换
+        calls_should_rotate = (
+            self._mode != AggregationMode.FILL_FIRST and
+            calls >= self._calls_per_rotation
+        )
         
         # 检查速率限制
         rate_limit_should_rotate = False

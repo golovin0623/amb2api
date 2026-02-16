@@ -1,0 +1,68 @@
+name: Quick Docker Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image tag to publish (e.g. v0.6.1 or hotfix-20260216)"
+        required: true
+        default: "latest"
+      publish_latest:
+        description: "Also publish :latest tag"
+        required: true
+        type: boolean
+        default: true
+
+env:
+  DOCKER_REGISTRY: ${{ secrets.DOCKER_USERNAME || 'golovin0623' }}
+  DOCKER_REPOSITORY: amb2api
+
+jobs:
+  build-push:
+    if: secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Prepare image tags
+        id: prep
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${DOCKER_REGISTRY}/${DOCKER_REPOSITORY}"
+          tags=("${image}:${{ github.event.inputs.version }}")
+
+          if [[ "${{ github.event.inputs.publish_latest }}" == "true" ]]; then
+            tags+=("${image}:latest")
+          fi
+
+          {
+            echo "tags<<EOF"
+            printf "%s\n" "${tags[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Will push image tags:"
+          printf '  %s\n' "${tags[@]}"
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.prep.outputs.tags }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}:buildcache
+          cache-to: type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}:buildcache,mode=max

@@ -3,11 +3,11 @@ import asyncio
 from typing import Dict, Any, Optional
 import itertools
 
-from fastapi import Response
+from fastapi.responses import StreamingResponse
 
 from log import log
 from ..models.models import ChatCompletionRequest
-from ..core.httpx_client import http_client
+from ..core.httpx_client import http_client, create_streaming_client_with_kwargs
 # 统计功能已迁移到 unified_stats 模块
 from ..storage.storage_adapter import get_storage_adapter
 from .rate_limiter import get_rate_limiter
@@ -315,14 +315,19 @@ async def _next_key_index_async(n: int) -> int:
         log.warning(f"Failed to get rate limiter, key selector or key manager, falling back to sync selection: {e}")
         return _next_key_index(n)
     
-    # 同步 KeyManager 的 calls_per_rotation 配置到 KeySelector
+    # 同步 KeyManager 的聚合模式与 calls_per_rotation 配置到 KeySelector
     try:
+        aggregation_mode = await key_manager.get_aggregation_mode()
+        if key_selector.mode != aggregation_mode:
+            key_selector.mode = aggregation_mode
+            log.debug(f"Synced aggregation_mode to KeySelector: {aggregation_mode.value}")
+
         calls_per_rotation = await key_manager.get_calls_per_rotation()
         if key_selector.calls_per_rotation != calls_per_rotation:
             key_selector.calls_per_rotation = calls_per_rotation
             log.debug(f"Synced calls_per_rotation to KeySelector: {calls_per_rotation}")
     except Exception as e:
-        log.warning(f"Failed to sync calls_per_rotation: {e}")
+        log.warning(f"Failed to sync key selector config: {e}")
     
     # 同步失败记录到 KeySelector
     for idx, fail_time in _failed_keys.items():
@@ -718,6 +723,9 @@ async def send_assembly_request(
             status_code=503
         )
 
+    if is_streaming:
+        payload["stream"] = True
+
     post_data = json.dumps(payload)
     
     # 对于 Claude 4.5，记录完整的请求以便调试
@@ -725,60 +733,85 @@ async def send_assembly_request(
         log.info(f"Claude 4.5 request payload (first 500 chars): {post_data[:500]}")
 
     for attempt in range(max_retries + 1):
+        idx = -1
+        api_key = ""
         try:
-            async with http_client.get_client(timeout=None) as client:
-                # 使用异步密钥选择（集成速率限制检查）
-                idx = await _next_key_index_async(len(keys))
-                
-                # 再次检查（防止在重试过程中所有密钥都被禁用）
-                if idx < 0 or idx >= len(keys):
-                    log.error("No enabled API keys available during retry - all keys are disabled or invalid")
-                    return JSONResponse(
-                        content={
-                            "error": {
-                                "message": "No enabled API keys available. All keys have been disabled.",
-                                "type": "invalid_request_error",
-                                "code": "no_available_keys"
-                            }
-                        },
-                        status_code=503
-                    )
-                
-                api_key = keys[idx]
-                headers = {"Authorization": api_key, "Content-Type": "application/json"}
-                
-                # 记录密钥信息到性能追踪
-                if trace:
-                    trace.key_index = idx
-                    trace.key_masked = _mask_key(api_key)
-                    # 完全异步查找密钥归属账户，不阻塞请求
-                    async def _update_trace_account():
-                        try:
-                            trace.account_email = await _find_account_for_key(api_key)
-                        except Exception as e:
-                            log.debug(f"Failed to update trace account: {e}")
-                    asyncio.create_task(_update_trace_account())
-                
-                # INFO 级别：简要日志
-                log.info(f"REQ model={openai_request.model} key={_mask_key(api_key)} attempt={attempt+1}/{max_retries+1} key_idx={idx}")
-                
-                # [TOOL_DEBUG] 完整请求信息 - 用于调试工具调用
-                log.info(f"[TOOL_DEBUG] REQ Endpoint: {endpoint}")
-                log.info(f"[TOOL_DEBUG] REQ Full Payload:\n{post_data}")
-                
-                resp = await client.post(endpoint, content=post_data, headers=headers)
-                
-                # 更新速率限制信息
+            # 使用异步密钥选择（集成速率限制检查）
+            idx = await _next_key_index_async(len(keys))
+
+            # 再次检查（防止在重试过程中所有密钥都被禁用）
+            if idx < 0 or idx >= len(keys):
+                log.error("No enabled API keys available during retry - all keys are disabled or invalid")
+                return JSONResponse(
+                    content={
+                        "error": {
+                            "message": "No enabled API keys available. All keys have been disabled.",
+                            "type": "invalid_request_error",
+                            "code": "no_available_keys"
+                        }
+                    },
+                    status_code=503
+                )
+
+            api_key = keys[idx]
+            headers = {"Authorization": api_key, "Content-Type": "application/json"}
+
+            # 记录密钥信息到性能追踪
+            if trace:
+                trace.key_index = idx
+                trace.key_masked = _mask_key(api_key)
+
+                async def _update_trace_account():
+                    try:
+                        trace.account_email = await _find_account_for_key(api_key)
+                    except Exception as e:
+                        log.debug(f"Failed to update trace account: {e}")
+
+                asyncio.create_task(_update_trace_account())
+
+            # INFO 级别：简要日志
+            log.info(f"REQ model={openai_request.model} key={_mask_key(api_key)} attempt={attempt+1}/{max_retries+1} key_idx={idx}")
+
+            # [TOOL_DEBUG] 完整请求信息 - 用于调试工具调用
+            log.info(f"[TOOL_DEBUG] REQ Endpoint: {endpoint}")
+            log.info(f"[TOOL_DEBUG] REQ Full Payload:\n{post_data}")
+
+            if is_streaming:
+                stream_client = await create_streaming_client_with_kwargs()
+                stream_ctx = stream_client.stream("POST", endpoint, content=post_data, headers=headers)
+                try:
+                    resp = await stream_ctx.__aenter__()
+                except Exception:
+                    await stream_client.aclose()
+                    raise
+
+                # 更新速率限制信息（流式连接建立时即可读取响应头）
                 await _update_rate_limit_info(idx, api_key, resp.headers)
-                
+
                 # 检查是否需要重试（429 或 400 速率限制错误）
                 should_retry = False
                 retry_reason = ""
-                
+                error_body = None
+                error_msg = ""
+                response_text = ""
+
                 # 检查自动封禁配置
                 auto_ban_enabled = await get_auto_ban_enabled()
                 auto_ban_codes = await get_auto_ban_error_codes() if auto_ban_enabled else []
-                
+
+                if resp.status_code == 400 or resp.status_code >= 400:
+                    try:
+                        raw_body = await resp.aread()
+                        response_text = raw_body.decode("utf-8", errors="replace") if isinstance(raw_body, bytes) else str(raw_body)
+                        try:
+                            error_body = json.loads(response_text)
+                            if isinstance(error_body, dict):
+                                error_msg = str(error_body.get("message", "")).lower()
+                        except Exception:
+                            error_body = None
+                    except Exception:
+                        response_text = ""
+
                 # 如果启用了自动封禁且响应码在封禁列表中，自动禁用该密钥
                 if auto_ban_enabled and resp.status_code in auto_ban_codes:
                     log.warning(f"[AUTO_BAN] Key {_mask_key(api_key)} (idx={idx}) triggered auto-ban due to error code {resp.status_code}")
@@ -794,46 +827,29 @@ async def send_assembly_request(
                     except Exception as ban_err:
                         log.error(f"[AUTO_BAN] Failed to auto-ban key {idx}: {ban_err}")
                     _mark_key_failed(idx)
-                    # 继续重试使用其他密钥
                     if retry_enabled and attempt < max_retries:
                         should_retry = True
                         retry_reason = f"Auto-ban triggered (HTTP {resp.status_code})"
-                        await asyncio.sleep(retry_interval)
-                        continue
-                
+
                 if resp.status_code == 429:
                     should_retry = True
                     retry_reason = "429 Too Many Requests"
                     _mark_key_failed(idx)
-                elif resp.status_code == 400:
+                elif resp.status_code == 400 and not should_retry:
                     # 先解析错误消息，判断是真正的速率限制还是请求错误
-                    error_body = None
-                    error_msg = ""
-                    try:
-                        error_body = resp.json() if hasattr(resp, 'json') else json.loads(resp.text)
-                        error_msg = error_body.get("message", "").lower()
-                    except Exception:
-                        pass
-                    
-                    # 如果是 "LLM processing error" 或类似的请求错误，不要重试，直接返回
-                    # 这类错误通常是请求格式问题，重试没有意义
                     if any(keyword in error_msg for keyword in ["processing error", "invalid", "unsupported", "not supported"]):
                         log.warning(f"Request error (not rate limit): {error_msg}")
-                        # 不标记 key 失败，不重试，直接返回让上层处理
                         should_retry = False
-                    # 检查是否是真正的速率限制错误（消息中明确包含 rate/limit/quota）
                     elif any(keyword in error_msg for keyword in ["rate limit", "rate_limit", "quota exceeded", "too many requests"]):
                         should_retry = True
-                        retry_reason = f"400 Rate Limit: {error_body.get('message', 'Unknown') if error_body else 'Unknown'}"
+                        retry_reason = f"400 Rate Limit: {error_body.get('message', 'Unknown') if isinstance(error_body, dict) else 'Unknown'}"
                         _mark_key_failed(idx)
                         log.warning(f"Key {_mask_key(api_key)} hit rate limit: {error_msg}")
-                    # 只有当响应头显示 remaining=0 时才认为是速率限制
                     else:
                         ratelimit_remaining = resp.headers.get('x-ratelimit-remaining')
                         if ratelimit_remaining is not None:
                             try:
                                 remaining = int(ratelimit_remaining)
-                                # 只有 remaining=0 才是真正的速率限制耗尽
                                 if remaining == 0:
                                     ratelimit_limit = resp.headers.get('x-ratelimit-limit', '?')
                                     should_retry = True
@@ -842,44 +858,181 @@ async def send_assembly_request(
                                     log.warning(f"Key {_mask_key(api_key)} rate limit exhausted: 0/{ratelimit_limit} remaining")
                             except (ValueError, TypeError):
                                 pass
-                
+
                 if should_retry and retry_enabled and attempt < max_retries:
                     log.warning(f"[RETRY] {retry_reason}, switching to next key ({attempt + 1}/{max_retries})")
+                    try:
+                        await stream_ctx.__aexit__(None, None, None)
+                    finally:
+                        await stream_client.aclose()
                     await asyncio.sleep(retry_interval)
-                    continue  # 下次循环会自动选择新的 Key
-                
+                    continue
+
                 status_cat = "OK" if 200 <= resp.status_code < 400 else f"FAIL({resp.status_code})"
-                
-                # INFO 级别：简要响应
                 log.info(f"RES model={openai_request.model} key={_mask_key(api_key)} status={status_cat}")
-                
-                # [TOOL_DEBUG] 完整响应信息 - 用于调试工具调用
                 log.info(f"[TOOL_DEBUG] RES Status Code: {resp.status_code}")
                 log.info(f"[TOOL_DEBUG] RES Headers: {dict(resp.headers)}")
+
+                # 流式请求在响应头阶段失败：直接返回错误，供上层按 bootstrap 策略处理
+                if not (200 <= resp.status_code < 400):
+                    error_message = response_text or f"Upstream HTTP {resp.status_code}"
+                    try:
+                        await stream_ctx.__aexit__(None, None, None)
+                    finally:
+                        await stream_client.aclose()
+                    return JSONResponse(
+                        content={"error": {"message": error_message, "type": "api_error"}},
+                        status_code=resp.status_code
+                    )
+
+                # 记录成功调用（流式连接已建立）
                 try:
-                    response_text = resp.text if hasattr(resp, 'text') else str(resp.content)
-                    log.info(f"[TOOL_DEBUG] RES Full Body:\n{response_text}")
+                    from ..stats.unified_stats import get_unified_stats
+                    unified_stats = await get_unified_stats()
+                    await unified_stats.record_call(api_key, openai_request.model, success=True)
+                    log.debug(f"Recorded streaming usage stats for key {_mask_key(api_key)}, model {openai_request.model}")
                 except Exception as e:
-                    log.info(f"[TOOL_DEBUG] RES Body: [Unable to decode: {e}]")
-                
-                # 记录调用统计（使用统一统计模块）
-                if 200 <= resp.status_code < 400:
+                    log.error(f"Failed to record streaming usage statistics: {e}", exc_info=True)
+
+                async def upstream_stream_generator():
                     try:
-                        from ..stats.unified_stats import get_unified_stats
-                        unified_stats = await get_unified_stats()
-                        await unified_stats.record_call(api_key, openai_request.model, success=True)
-                        log.debug(f"Successfully recorded usage stats for key {_mask_key(api_key)}, model {openai_request.model}")
-                    except Exception as e:
-                        log.error(f"Failed to record usage statistics: {e}", exc_info=True)
+                        async for line in resp.aiter_lines():
+                            if line is None:
+                                continue
+                            line = line.strip()
+                            if not line:
+                                continue
+                            if line.startswith("data:"):
+                                yield f"{line}\n\n".encode("utf-8")
+                            else:
+                                yield f"data: {line}\n\n".encode("utf-8")
+                    finally:
+                        try:
+                            await stream_ctx.__aexit__(None, None, None)
+                        finally:
+                            await stream_client.aclose()
+
+                return StreamingResponse(
+                    upstream_stream_generator(),
+                    media_type="text/event-stream",
+                )
+
+            # 非流式请求保持原行为
+            async with http_client.get_client(timeout=None) as client:
+                resp = await client.post(endpoint, content=post_data, headers=headers)
+
+            # 更新速率限制信息
+            await _update_rate_limit_info(idx, api_key, resp.headers)
+
+            # 检查是否需要重试（429 或 400 速率限制错误）
+            should_retry = False
+            retry_reason = ""
+
+            # 检查自动封禁配置
+            auto_ban_enabled = await get_auto_ban_enabled()
+            auto_ban_codes = await get_auto_ban_error_codes() if auto_ban_enabled else []
+
+            # 如果启用了自动封禁且响应码在封禁列表中，自动禁用该密钥
+            if auto_ban_enabled and resp.status_code in auto_ban_codes:
+                log.warning(f"[AUTO_BAN] Key {_mask_key(api_key)} (idx={idx}) triggered auto-ban due to error code {resp.status_code}")
+                try:
+                    from .key_manager import get_key_manager
+                    key_manager = await get_key_manager()
+                    await key_manager.update_key_state(idx, {
+                        "exhausted": True,
+                        "error": f"Auto-banned: HTTP {resp.status_code}",
+                        "disable_reason": f"自动封禁: HTTP {resp.status_code}",
+                    })
+                    log.info(f"[AUTO_BAN] Key {idx} has been automatically disabled")
+                except Exception as ban_err:
+                    log.error(f"[AUTO_BAN] Failed to auto-ban key {idx}: {ban_err}")
+                _mark_key_failed(idx)
+                # 继续重试使用其他密钥
+                if retry_enabled and attempt < max_retries:
+                    should_retry = True
+                    retry_reason = f"Auto-ban triggered (HTTP {resp.status_code})"
+                    await asyncio.sleep(retry_interval)
+                    continue
+
+            if resp.status_code == 429:
+                should_retry = True
+                retry_reason = "429 Too Many Requests"
+                _mark_key_failed(idx)
+            elif resp.status_code == 400:
+                # 先解析错误消息，判断是真正的速率限制还是请求错误
+                error_body = None
+                error_msg = ""
+                try:
+                    error_body = resp.json() if hasattr(resp, 'json') else json.loads(resp.text)
+                    error_msg = error_body.get("message", "").lower()
+                except Exception:
+                    pass
+
+                # 如果是 "LLM processing error" 或类似的请求错误，不要重试，直接返回
+                # 这类错误通常是请求格式问题，重试没有意义
+                if any(keyword in error_msg for keyword in ["processing error", "invalid", "unsupported", "not supported"]):
+                    log.warning(f"Request error (not rate limit): {error_msg}")
+                    # 不标记 key 失败，不重试，直接返回让上层处理
+                    should_retry = False
+                # 检查是否是真正的速率限制错误（消息中明确包含 rate/limit/quota）
+                elif any(keyword in error_msg for keyword in ["rate limit", "rate_limit", "quota exceeded", "too many requests"]):
+                    should_retry = True
+                    retry_reason = f"400 Rate Limit: {error_body.get('message', 'Unknown') if error_body else 'Unknown'}"
+                    _mark_key_failed(idx)
+                    log.warning(f"Key {_mask_key(api_key)} hit rate limit: {error_msg}")
+                # 只有当响应头显示 remaining=0 时才认为是速率限制
                 else:
-                    # 记录失败的调用
-                    try:
-                        from ..stats.unified_stats import get_unified_stats
-                        unified_stats = await get_unified_stats()
-                        await unified_stats.record_call(api_key, openai_request.model, success=False)
-                    except Exception as e:
-                        log.warning(f"Failed to record failure statistics: {e}")
-                return resp
+                    ratelimit_remaining = resp.headers.get('x-ratelimit-remaining')
+                    if ratelimit_remaining is not None:
+                        try:
+                            remaining = int(ratelimit_remaining)
+                            # 只有 remaining=0 才是真正的速率限制耗尽
+                            if remaining == 0:
+                                ratelimit_limit = resp.headers.get('x-ratelimit-limit', '?')
+                                should_retry = True
+                                retry_reason = f"400 Rate Limit Exhausted (remaining: 0/{ratelimit_limit})"
+                                _mark_key_failed(idx)
+                                log.warning(f"Key {_mask_key(api_key)} rate limit exhausted: 0/{ratelimit_limit} remaining")
+                        except (ValueError, TypeError):
+                            pass
+
+            if should_retry and retry_enabled and attempt < max_retries:
+                log.warning(f"[RETRY] {retry_reason}, switching to next key ({attempt + 1}/{max_retries})")
+                await asyncio.sleep(retry_interval)
+                continue  # 下次循环会自动选择新的 Key
+
+            status_cat = "OK" if 200 <= resp.status_code < 400 else f"FAIL({resp.status_code})"
+
+            # INFO 级别：简要响应
+            log.info(f"RES model={openai_request.model} key={_mask_key(api_key)} status={status_cat}")
+
+            # [TOOL_DEBUG] 完整响应信息 - 用于调试工具调用
+            log.info(f"[TOOL_DEBUG] RES Status Code: {resp.status_code}")
+            log.info(f"[TOOL_DEBUG] RES Headers: {dict(resp.headers)}")
+            try:
+                response_text = resp.text if hasattr(resp, 'text') else str(resp.content)
+                log.info(f"[TOOL_DEBUG] RES Full Body:\n{response_text}")
+            except Exception as e:
+                log.info(f"[TOOL_DEBUG] RES Body: [Unable to decode: {e}]")
+
+            # 记录调用统计（使用统一统计模块）
+            if 200 <= resp.status_code < 400:
+                try:
+                    from ..stats.unified_stats import get_unified_stats
+                    unified_stats = await get_unified_stats()
+                    await unified_stats.record_call(api_key, openai_request.model, success=True)
+                    log.debug(f"Successfully recorded usage stats for key {_mask_key(api_key)}, model {openai_request.model}")
+                except Exception as e:
+                    log.error(f"Failed to record usage statistics: {e}", exc_info=True)
+            else:
+                # 记录失败的调用
+                try:
+                    from ..stats.unified_stats import get_unified_stats
+                    unified_stats = await get_unified_stats()
+                    await unified_stats.record_call(api_key, openai_request.model, success=False)
+                except Exception as e:
+                    log.warning(f"Failed to record failure statistics: {e}")
+            return resp
         except Exception as e:
             error_msg = str(e) if str(e) else repr(e)
             error_type = type(e).__name__

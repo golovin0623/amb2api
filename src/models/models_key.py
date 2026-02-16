@@ -20,6 +20,7 @@ class AggregationMode(str, Enum):
     """密钥聚合模式枚举"""
     ROUND_ROBIN = "round_robin"  # 轮询模式
     RANDOM = "random"            # 随机模式
+    FILL_FIRST = "fill_first"    # 填充优先：先用尽当前可用key再切换
 
 
 @dataclass

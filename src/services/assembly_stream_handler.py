@@ -6,7 +6,7 @@ import json
 import time
 import uuid
 import asyncio
-from typing import Optional
+from typing import Optional, Callable, Awaitable, Any
 
 from fastapi.responses import StreamingResponse, JSONResponse
 
@@ -16,57 +16,167 @@ from src.core.task_manager import create_managed_task
 from src.services.assembly_client import send_assembly_request
 from src.transform.xml_parser import parse_xml_tool_calls
 from src.transform.openai_transfer import gemini_stream_chunk_to_openai
-from config import get_config_value
+from config import (
+    get_config_value,
+    get_stream_keepalive_seconds,
+    get_stream_bootstrap_retries,
+)
 
-async def convert_streaming_response(gemini_response, model: str) -> StreamingResponse:
-    """转换流式响应为OpenAI格式"""
+async def convert_streaming_response(
+    gemini_response,
+    model: str,
+    trace=None,
+    request_provider: Optional[Callable[[], Awaitable[Any]]] = None,
+) -> StreamingResponse:
+    """转换流式响应为OpenAI格式（支持 keepalive 与首包前 bootstrap 重试）"""
     response_id = str(uuid.uuid4())
-    
+
+    keepalive_seconds = await get_stream_keepalive_seconds()
+    bootstrap_retries = await get_stream_bootstrap_retries()
+    if keepalive_seconds < 0:
+        keepalive_seconds = 0
+    if bootstrap_retries < 0:
+        bootstrap_retries = 0
+
+    if trace:
+        trace.metadata["stream_mode"] = "real"
+        trace.metadata["stream_keepalive_seconds"] = keepalive_seconds
+        trace.metadata["stream_bootstrap_retries_config"] = bootstrap_retries
+        trace.metadata["stream_keepalive_count"] = 0
+        trace.metadata["stream_bootstrap_attempts"] = 0
+        trace.metadata["stream_bootstrap_retries_used"] = 0
+        trace.metadata["stream_bootstrap_recovered"] = False
+        trace.metadata["stream_bootstrap_failed"] = False
+        trace.metadata.pop("stream_bootstrap_last_error", None)
+        trace.metadata.pop("stream_bootstrap_last_error_type", None)
+
     async def openai_stream_generator():
-        try:
-            # 处理不同类型的响应对象
-            if hasattr(gemini_response, 'body_iterator'):
-                # FastAPI StreamingResponse
-                async for chunk in gemini_response.body_iterator:
-                    if not chunk:
-                        continue
-                    
-                    # 处理不同数据类型的startswith问题
-                    if isinstance(chunk, bytes):
-                        if not chunk.startswith(b'data: '):
-                            continue
-                        payload = chunk[len(b'data: '):]
-                    else:
-                        chunk_str = str(chunk)
-                        if not chunk_str.startswith('data: '):
-                            continue
-                        payload = chunk_str[len('data: '):].encode()
-                    try:
-                        gemini_chunk = json.loads(payload.decode())
-                        openai_chunk = gemini_stream_chunk_to_openai(gemini_chunk, model, response_id)
-                        yield f"data: {json.dumps(openai_chunk, separators=(',',':'))}\n\n".encode()
-                    except json.JSONDecodeError:
-                        continue
+        nonlocal gemini_response
+        first_chunk_sent = False
+
+        async def _iter_stream_chunks(stream_response):
+            """统一抽象不同响应对象为 chunk 异步迭代器。"""
+            if hasattr(stream_response, 'body_iterator'):
+                async for chunk in stream_response.body_iterator:
+                    yield chunk
+                return
+            raise TypeError(f"Unexpected response type: {type(stream_response)}")
+
+        async def _convert_chunk(chunk) -> Optional[bytes]:
+            """将上游 chunk 转换为 OpenAI SSE chunk。"""
+            if not chunk:
+                return None
+
+            if isinstance(chunk, bytes):
+                if not chunk.startswith(b'data: '):
+                    return None
+                payload = chunk[len(b'data: '):]
             else:
-                # 其他类型的响应，尝试直接处理
-                log.warning(f"Unexpected response type: {type(gemini_response)}")
-                error_chunk = {
-                    "id": response_id,
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": model,
-                    "choices": [{
-                        "index": 0,
-                        "delta": {"role": "assistant", "content": "Response type error"},
-                        "finish_reason": "stop"
-                    }]
-                }
-                yield f"data: {json.dumps(error_chunk)}\n\n".encode()
-            
+                chunk_str = str(chunk)
+                if not chunk_str.startswith('data: '):
+                    return None
+                payload = chunk_str[len('data: '):].encode()
+
+            payload_text = payload.decode('utf-8', errors='replace').strip()
+            if payload_text == "[DONE]":
+                return None
+
+            gemini_chunk = json.loads(payload_text)
+            openai_chunk = gemini_stream_chunk_to_openai(gemini_chunk, model, response_id)
+            return f"data: {json.dumps(openai_chunk, separators=(',',':'))}\n\n".encode()
+
+        total_attempts = bootstrap_retries + 1
+        attempt = 0
+        try:
+            while attempt < total_attempts:
+                attempt += 1
+                if trace:
+                    trace.metadata["stream_bootstrap_attempts"] = attempt
+                try:
+                    chunk_iter = _iter_stream_chunks(gemini_response)
+                    pending_chunk_task = None
+                    try:
+                        while True:
+                            try:
+                                if pending_chunk_task is None:
+                                    pending_chunk_task = asyncio.create_task(chunk_iter.__anext__())
+
+                                if keepalive_seconds > 0:
+                                    try:
+                                        chunk = await asyncio.wait_for(
+                                            asyncio.shield(pending_chunk_task),
+                                            timeout=keepalive_seconds,
+                                        )
+                                        pending_chunk_task = None
+                                    except asyncio.TimeoutError:
+                                        # SSE 注释帧 keepalive，不影响客户端内容解析
+                                        if trace:
+                                            trace.metadata["stream_keepalive_count"] = int(
+                                                trace.metadata.get("stream_keepalive_count", 0)
+                                            ) + 1
+                                        yield b": keepalive\n\n"
+                                        continue
+                                else:
+                                    chunk = await pending_chunk_task
+                                    pending_chunk_task = None
+                            except asyncio.TimeoutError:
+                                # 兜底分支（理论上不会触发）
+                                yield b": keepalive\n\n"
+                                continue
+                            except StopAsyncIteration:
+                                break
+
+                            try:
+                                converted = await _convert_chunk(chunk)
+                            except json.JSONDecodeError:
+                                continue
+
+                            if not converted:
+                                continue
+
+                            if not first_chunk_sent:
+                                first_chunk_sent = True
+                                if trace:
+                                    trace.mark("upstream_first_byte")
+                                    trace.mark("first_chunk_sent")
+                            yield converted
+                    finally:
+                        if pending_chunk_task is not None and not pending_chunk_task.done():
+                            pending_chunk_task.cancel()
+
+                    # 当前尝试正常结束
+                    break
+                except Exception as stream_err:
+                    if not first_chunk_sent and request_provider and attempt < total_attempts:
+                        if trace:
+                            trace.metadata["stream_bootstrap_retries_used"] = attempt
+                            trace.metadata["stream_bootstrap_last_error"] = str(stream_err)[:256]
+                            trace.metadata["stream_bootstrap_last_error_type"] = type(stream_err).__name__
+                        log.warning(f"[STREAM_BOOTSTRAP_RETRY] attempt={attempt}/{total_attempts} err={stream_err}")
+                        gemini_response = await request_provider()
+                        continue
+                    raise
+
+            if trace:
+                trace.metadata["stream_bootstrap_retries_used"] = max(0, attempt - 1)
+                trace.metadata["stream_bootstrap_recovered"] = (
+                    trace.metadata["stream_bootstrap_retries_used"] > 0 and first_chunk_sent
+                )
+
+            if trace:
+                trace.mark("upstream_response_complete")
+
             # 发送结束标记
             yield "data: [DONE]\n\n".encode()
-            
+
         except Exception as e:
+            if trace:
+                trace.metadata["stream_bootstrap_retries_used"] = max(0, attempt - 1)
+                trace.metadata["stream_bootstrap_failed"] = (
+                    (not first_chunk_sent) and attempt >= total_attempts
+                )
+                trace.metadata["stream_bootstrap_last_error"] = str(e)[:256]
+                trace.metadata["stream_bootstrap_last_error_type"] = type(e).__name__
             log.error(f"Stream conversion error: {e}")
             error_chunk = {
                 "id": response_id,
@@ -90,6 +200,15 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
         nonlocal trace
         completion_tokens = 0
         prompt_tokens = 0
+
+        if trace:
+            trace.metadata["stream_mode"] = "fake"
+            trace.metadata["stream_keepalive_count"] = 0
+            trace.metadata["stream_bootstrap_attempts"] = 1
+            trace.metadata["stream_bootstrap_retries_used"] = 0
+            trace.metadata["stream_bootstrap_recovered"] = False
+            trace.metadata["stream_bootstrap_failed"] = False
+            trace.metadata["fake_stream_heartbeat_count"] = 0
         
         try:
             log.debug(f"Starting fake stream for model: {openai_request.model}")
@@ -119,6 +238,8 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                     await asyncio.sleep(3.0)
                     if not response_task.done():
                         heartbeat_count += 1
+                        if trace:
+                            trace.metadata["fake_stream_heartbeat_count"] = heartbeat_count
                         yield f"data: {json.dumps(heartbeat)}\n\n".encode()
                         log.debug(f"Sent heartbeat #{heartbeat_count}")
                 

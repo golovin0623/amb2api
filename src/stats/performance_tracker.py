@@ -432,6 +432,22 @@ class PerformanceTracker:
         if model:
             all_traces = [t for t in all_traces if t.get("model") == model]
         
+        def to_non_negative_int(value: Any, default: int = 0) -> int:
+            try:
+                parsed = int(value)
+                return parsed if parsed >= 0 else default
+            except (TypeError, ValueError):
+                return default
+
+        def to_bool(value: Any) -> bool:
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                return value.strip().lower() in ("1", "true", "yes", "on")
+            if isinstance(value, (int, float)):
+                return value != 0
+            return False
+
         if not all_traces:
             return {
                 "count": 0,
@@ -439,6 +455,19 @@ class PerformanceTracker:
                 "ttft": {"avg": 0, "p50": 0, "p95": 0, "p99": 0},
                 "latency": {"avg": 0, "p50": 0, "p95": 0, "p99": 0},
                 "tps": {"avg": 0, "p50": 0, "p95": 0},
+                "stream": {
+                    "total": 0,
+                    "real": 0,
+                    "fake": 0,
+                    "non_stream": 0,
+                    "keepalive_total": 0,
+                    "keepalive_avg_per_real": 0,
+                    "bootstrap_retry_total": 0,
+                    "bootstrap_retry_requests": 0,
+                    "bootstrap_retry_rate": 0,
+                    "bootstrap_failure_count": 0,
+                    "bootstrap_failure_rate": 0
+                },
                 "models": [],
                 "time_range": {"start": 0, "end": 0}
             }
@@ -449,11 +478,35 @@ class PerformanceTracker:
         latencies = []
         tps_list = []
         models_set = set()
+        stream_real_count = 0
+        stream_fake_count = 0
+        stream_non_count = 0
+        stream_keepalive_total = 0
+        stream_bootstrap_retry_total = 0
+        stream_bootstrap_retry_requests = 0
+        stream_bootstrap_failure_count = 0
         
         for t in all_traces:
             ts = t.get("timestamps", {})
             tokens = t.get("completion_tokens", 0)
             models_set.add(t.get("model", "unknown"))
+            metadata = t.get("metadata") or {}
+            stream_mode = str(metadata.get("stream_mode", "none")).lower()
+
+            if stream_mode == "real":
+                stream_real_count += 1
+                keepalive_count = to_non_negative_int(metadata.get("stream_keepalive_count", 0), 0)
+                retries_used = to_non_negative_int(metadata.get("stream_bootstrap_retries_used", 0), 0)
+                stream_keepalive_total += keepalive_count
+                stream_bootstrap_retry_total += retries_used
+                if retries_used > 0:
+                    stream_bootstrap_retry_requests += 1
+                if to_bool(metadata.get("stream_bootstrap_failed", False)):
+                    stream_bootstrap_failure_count += 1
+            elif stream_mode == "fake":
+                stream_fake_count += 1
+            else:
+                stream_non_count += 1
             
             # TTFB
             if "request_received" in ts and "upstream_first_byte" in ts:
@@ -513,6 +566,25 @@ class PerformanceTracker:
                 "avg": round(avg(tps_list), 1),
                 "p50": round(percentile(tps_list, 50), 1),
                 "p95": round(percentile(tps_list, 95), 1)
+            },
+            "stream": {
+                "total": stream_real_count + stream_fake_count + stream_non_count,
+                "real": stream_real_count,
+                "fake": stream_fake_count,
+                "non_stream": stream_non_count,
+                "keepalive_total": stream_keepalive_total,
+                "keepalive_avg_per_real": round(
+                    stream_keepalive_total / stream_real_count, 2
+                ) if stream_real_count > 0 else 0,
+                "bootstrap_retry_total": stream_bootstrap_retry_total,
+                "bootstrap_retry_requests": stream_bootstrap_retry_requests,
+                "bootstrap_retry_rate": round(
+                    stream_bootstrap_retry_requests / stream_real_count, 4
+                ) if stream_real_count > 0 else 0,
+                "bootstrap_failure_count": stream_bootstrap_failure_count,
+                "bootstrap_failure_rate": round(
+                    stream_bootstrap_failure_count / stream_real_count, 4
+                ) if stream_real_count > 0 else 0,
             },
             "models": list(models_set),
             "time_range": {
