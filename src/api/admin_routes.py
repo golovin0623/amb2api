@@ -1,5 +1,6 @@
 import os
 from typing import Dict, Any
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
@@ -252,15 +253,28 @@ async def usage_stats(token: str = Depends(authenticate)):
     await unified_stats.ensure_keys_exist(cfg_keys)
     stats_data = await unified_stats.get_all_stats(valid_keys=cfg_keys)
     
-    # 转换为旧格式
+    # 转换为前端使用格式（保留旧字段兼容）
     result = {}
     for masked_key, key_data in stats_data.get("keys", {}).items():
+        daily_limit_models = key_data.get("daily_limit_models", {}) or {}
+        gemini_limit = (
+            daily_limit_models.get("gemini-2.5-pro")
+            or daily_limit_models.get("gemini-2.5-pro-preview")
+            or daily_limit_models.get("gemini_2_5_pro")
+            or 100
+        )
+        gemini_calls = key_data.get("model_counts", {}).get("gemini-2.5-pro", 0)
         result[masked_key] = {
             "total_calls": key_data.get("total", 0),
-            "gemini_2_5_pro_calls": 0,
-            "daily_limit_total": 1000,
-            "daily_limit_gemini_2_5_pro": 100,
+            "success_calls": key_data.get("ok", 0),
+            "failure_calls": key_data.get("fail", 0),
+            "gemini_2_5_pro_calls": gemini_calls,
+            "daily_limit_total": key_data.get("daily_limit_total", 1000),
+            "daily_limit_models": daily_limit_models,
+            "daily_limit_gemini_2_5_pro": gemini_limit,
             "model_counts": key_data.get("model_counts", {}),
+            "models": key_data.get("models", {}),
+            "next_reset_time": key_data.get("next_reset_time"),
             "display_name": masked_key,
         }
     
@@ -274,7 +288,7 @@ async def usage_aggregated(model: str = None, key: str = None, only: str = None,
     
     使用统一统计模块，确保总调用数与详情统计保持一致
     """
-    from ..stats.unified_stats import get_unified_stats, mask_key
+    from ..stats.unified_stats import get_unified_stats
     
     # 获取配置的密钥列表
     adapter = await get_storage_adapter()
@@ -305,12 +319,22 @@ async def usage_aggregated(model: str = None, key: str = None, only: str = None,
         filtered_keys = {}
         for masked_key, key_data in keys.items():
             model_counts = key_data.get("model_counts", {})
+            models_detail = key_data.get("models", {})
             if model in model_counts:
+                model_ok = model_counts[model]
+                model_fail = 0
+                if isinstance(models_detail.get(model), dict):
+                    model_fail = int(models_detail.get(model, {}).get("fail", 0) or 0)
                 filtered_keys[masked_key] = {
-                    "ok": model_counts[model],
-                    "fail": 0,
-                    "models": {model: {"ok": model_counts[model], "fail": 0}},
-                    "model_counts": {model: model_counts[model]},
+                    "ok": model_ok,
+                    "fail": model_fail,
+                    "models": {model: {"ok": model_ok, "fail": model_fail}},
+                    "model_counts": {model: model_ok},
+                    "total": model_ok + model_fail,
+                    "daily_limit_total": key_data.get("daily_limit_total", 1000),
+                    "daily_limit_models": key_data.get("daily_limit_models", {}),
+                    "next_reset_time": key_data.get("next_reset_time"),
+                    "last_call_time": key_data.get("last_call_time", 0),
                     "masked_key": masked_key,
                     "display_key": masked_key,
                 }
@@ -359,6 +383,27 @@ async def usage_aggregated(model: str = None, key: str = None, only: str = None,
                 md["ok"] = 0
         ok_total = 0
     
+    # 汇总 next_reset_time（取最早的一个，便于前端展示）
+    reset_candidates = []
+    for key_data in keys.values():
+        raw_reset = key_data.get("next_reset_time")
+        if not raw_reset or not isinstance(raw_reset, str):
+            continue
+        text = raw_reset.strip()
+        if not text:
+            continue
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(text)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            reset_candidates.append(dt.astimezone(timezone.utc))
+        except Exception:
+            continue
+
+    next_reset_time = min(reset_candidates).isoformat() if reset_candidates else None
+
     # 构建聚合响应
     agg = {
         "total_files": len(keys),
@@ -366,7 +411,7 @@ async def usage_aggregated(model: str = None, key: str = None, only: str = None,
         "total_all_model_calls": ok_total + fail_total,
         "avg_gemini_2_5_pro_per_file": 0,
         "avg_total_per_file": (ok_total + fail_total) / max(len(keys), 1),
-        "next_reset_time": None,
+        "next_reset_time": next_reset_time,
         "log_summary": {
             "models": models,
             "keys": keys,
@@ -419,10 +464,64 @@ async def models_save(payload: Dict[str, Any], token: str = Depends(authenticate
 
 @router.post("/usage/update-limits")
 async def usage_update_limits(payload: Dict[str, Any], token: str = Depends(authenticate)):
-    """更新使用限制（此功能已简化，统一统计不再支持限制）"""
-    # 统一统计模块不再支持每日限制功能
-    # 保留接口以兼容前端
-    return JSONResponse(content={"message": "限制已更新（注：统一统计不再支持限制功能）"})
+    """更新使用限制（总限制 + 按模型限制）"""
+    from ..stats.unified_stats import get_unified_stats
+
+    masked_key = str(payload.get("filename", "")).strip()
+    if not masked_key:
+        raise HTTPException(status_code=400, detail="缺少 filename（masked_key）")
+
+    total_limit = payload.get("total_limit")
+    if total_limit is not None:
+        try:
+            total_limit = int(total_limit)
+        except Exception:
+            raise HTTPException(status_code=400, detail="total_limit 必须是正整数")
+        if total_limit <= 0:
+            raise HTTPException(status_code=400, detail="total_limit 必须是正整数")
+
+    model_limits = payload.get("model_limits")
+    if model_limits is not None and not isinstance(model_limits, dict):
+        raise HTTPException(status_code=400, detail="model_limits 必须是对象")
+
+    normalized_model_limits = None
+    if isinstance(model_limits, dict):
+        normalized_model_limits = {}
+        for model_name, limit in model_limits.items():
+            model = str(model_name).strip()
+            if not model:
+                continue
+            try:
+                parsed_limit = int(limit)
+            except Exception:
+                raise HTTPException(status_code=400, detail=f"模型 {model} 的限制必须是正整数")
+            if parsed_limit <= 0:
+                raise HTTPException(status_code=400, detail=f"模型 {model} 的限制必须是正整数")
+            normalized_model_limits[model] = parsed_limit
+
+    unified_stats = await get_unified_stats()
+    try:
+        updated = await unified_stats.update_daily_limits(
+            masked_key=masked_key,
+            total_limit=total_limit,
+            model_limits=normalized_model_limits if model_limits is not None else None,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        log.error(f"Failed to update usage limits for {masked_key}: {e}")
+        raise HTTPException(status_code=500, detail="更新限制失败")
+
+    if updated is None:
+        raise HTTPException(status_code=404, detail="未找到对应密钥统计")
+
+    return JSONResponse(content={
+        "message": "限制已更新",
+        "masked_key": masked_key,
+        "daily_limit_total": updated.get("daily_limit_total", 1000),
+        "daily_limit_models": updated.get("daily_limit_models", {}),
+        "next_reset_time": updated.get("next_reset_time"),
+    })
 
 
 @router.post("/usage/reset")

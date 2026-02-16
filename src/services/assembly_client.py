@@ -1,9 +1,9 @@
 import json
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Set
 import itertools
 
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 
 from log import log
 from ..models.models import ChatCompletionRequest
@@ -286,7 +286,7 @@ def _next_key_index(n: int) -> int:
     return oldest_idx
 
 
-async def _next_key_index_async(n: int) -> int:
+async def _next_key_index_async(n: int, excluded_indices: Optional[Set[int]] = None) -> int:
     """
     异步智能 Key 选择（集成速率限制和轮换策略）：
     1. 使用 KeySelector 进行智能选择
@@ -294,10 +294,16 @@ async def _next_key_index_async(n: int) -> int:
     3. 考虑轮换策略
     4. 考虑密钥禁用状态
     5. 失败记录会在 60 秒后自动清除
+
+    Args:
+        n: key 总数
+        excluded_indices: 本次选择需要临时排除的 key 索引集合
     """
     import time
     from ..models.models_key import KeyInfo, KeyStatus
     from .key_manager import get_key_manager
+
+    excluded = excluded_indices or set()
     
     current_time = time.time()
     
@@ -313,7 +319,14 @@ async def _next_key_index_async(n: int) -> int:
         key_manager = await get_key_manager()
     except Exception as e:
         log.warning(f"Failed to get rate limiter, key selector or key manager, falling back to sync selection: {e}")
-        return _next_key_index(n)
+        fallback = _next_key_index(n)
+        if fallback not in excluded:
+            return fallback
+        available_indices = [i for i in range(n) if i not in excluded]
+        if not available_indices:
+            return -1
+        i = next(_rr_counter)
+        return available_indices[i % len(available_indices)]
     
     # 同步 KeyManager 的聚合模式与 calls_per_rotation 配置到 KeySelector
     try:
@@ -347,11 +360,12 @@ async def _next_key_index_async(n: int) -> int:
     keys = []
     for i in range(n):
         # 检查速率限制状态
-        is_exhausted = await rate_limiter.is_key_exhausted(i)
+        is_excluded = i in excluded
+        is_exhausted = await rate_limiter.is_key_exhausted(i) or is_excluded
         status = KeyStatus.EXHAUSTED if is_exhausted else KeyStatus.ACTIVE
         
         # 从 KeyManager 获取实际的禁用状态，默认为启用
-        is_enabled = enabled_map.get(i, True)
+        is_enabled = enabled_map.get(i, True) and not is_excluded
         
         keys.append(KeyInfo(
             index=i,
@@ -361,7 +375,7 @@ async def _next_key_index_async(n: int) -> int:
         ))
     
     # 获取所有启用的密钥索引（用于后续回退逻辑）
-    enabled_indices = [i for i in range(n) if enabled_map.get(i, True)]
+    enabled_indices = [i for i in range(n) if enabled_map.get(i, True) and i not in excluded]
     
     # 如果没有启用的密钥，返回 -1 表示无可用密钥
     if not enabled_indices:
@@ -396,6 +410,108 @@ async def _next_key_index_async(n: int) -> int:
     # 最后回退到 Round-Robin（只在启用的密钥中选择）
     i = next(_rr_counter)
     return enabled_indices[i % len(enabled_indices)]
+
+
+def _build_no_available_keys_response():
+    """返回无可用密钥错误响应"""
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content={
+            "error": {
+                "message": "No enabled API keys available. All keys have been disabled.",
+                "type": "invalid_request_error",
+                "code": "no_available_keys"
+            }
+        },
+        status_code=503
+    )
+
+
+def _build_quota_exhausted_response(blocked_keys: List[Dict[str, Any]]):
+    """返回全部密钥达到每日限额的错误响应"""
+    from fastapi.responses import JSONResponse
+
+    next_reset_candidates = []
+    for item in blocked_keys:
+        next_reset = item.get("next_reset_time")
+        if isinstance(next_reset, str) and next_reset.strip():
+            next_reset_candidates.append(next_reset)
+    next_reset_time = min(next_reset_candidates) if next_reset_candidates else None
+
+    return JSONResponse(
+        content={
+            "error": {
+                "message": "All enabled API keys reached daily usage limits for this model.",
+                "type": "rate_limit_error",
+                "code": "daily_limit_exhausted",
+                "next_reset_time": next_reset_time,
+                "blocked_keys": blocked_keys,
+            }
+        },
+        status_code=429
+    )
+
+
+async def _select_key_with_daily_quota(keys: List[str], model: str) -> Dict[str, Any]:
+    """
+    选择一个可用且未触达每日限额的 key。
+
+    Returns:
+        {
+            "idx": int,
+            "api_key": str,
+            "reason": "" | "quota_exhausted" | "no_available_keys",
+            "blocked": [...]
+        }
+    """
+    from ..stats.unified_stats import get_unified_stats
+
+    unified_stats = await get_unified_stats()
+    excluded_indices: Set[int] = set()
+    blocked_by_quota: List[Dict[str, Any]] = []
+
+    for _ in range(len(keys)):
+        idx = await _next_key_index_async(len(keys), excluded_indices=excluded_indices)
+        if idx < 0 or idx >= len(keys):
+            break
+
+        api_key = keys[idx]
+        quota_state = await unified_stats.can_use_key_for_model(api_key, model)
+        if quota_state.get("allowed", True):
+            return {
+                "idx": idx,
+                "api_key": api_key,
+                "reason": "",
+                "blocked": [],
+            }
+
+        excluded_indices.add(idx)
+        blocked_by_quota.append({
+            "idx": idx,
+            "key": _mask_key(api_key),
+            "reason": quota_state.get("reason", "quota_reached"),
+            "success_count": quota_state.get("success_count", 0),
+            "total_limit": quota_state.get("total_limit"),
+            "model": quota_state.get("model"),
+            "model_success_count": quota_state.get("model_success_count"),
+            "model_limit": quota_state.get("model_limit"),
+            "next_reset_time": quota_state.get("next_reset_time"),
+        })
+
+    if blocked_by_quota:
+        return {
+            "idx": -1,
+            "api_key": "",
+            "reason": "quota_exhausted",
+            "blocked": blocked_by_quota,
+        }
+
+    return {
+        "idx": -1,
+        "api_key": "",
+        "reason": "no_available_keys",
+        "blocked": [],
+    }
 
 def _mark_key_failed(idx: int):
     """标记 Key 失败"""
@@ -699,29 +815,11 @@ async def send_assembly_request(
     endpoint = await get_assembly_endpoint()
     keys = await get_assembly_api_keys()
     if not keys:
-        from fastapi.responses import JSONResponse
         return JSONResponse(content={"error": {"message": "No AssemblyAI API keys configured", "type": "config_error"}}, status_code=500)
 
     max_retries = await get_retry_429_max_retries()
     retry_enabled = await get_retry_429_enabled()
     retry_interval = await get_retry_429_interval()
-
-    # 在重试循环前检查是否有可用的密钥
-    from fastapi.responses import JSONResponse
-    precheck_idx = await _next_key_index_async(len(keys))
-    if precheck_idx < 0 or precheck_idx >= len(keys):
-        log.error("No enabled API keys available - all keys are disabled or invalid")
-        # 返回符合 OpenAI 格式的错误响应
-        return JSONResponse(
-            content={
-                "error": {
-                    "message": "No enabled API keys available. All keys have been disabled.",
-                    "type": "invalid_request_error",
-                    "code": "no_available_keys"
-                }
-            },
-            status_code=503
-        )
 
     if is_streaming:
         payload["stream"] = True
@@ -736,24 +834,18 @@ async def send_assembly_request(
         idx = -1
         api_key = ""
         try:
-            # 使用异步密钥选择（集成速率限制检查）
-            idx = await _next_key_index_async(len(keys))
+            # 选择可用且未触达每日限额的 key
+            selection = await _select_key_with_daily_quota(keys, openai_request.model)
+            idx = selection.get("idx", -1)
+            api_key = selection.get("api_key", "")
 
-            # 再次检查（防止在重试过程中所有密钥都被禁用）
             if idx < 0 or idx >= len(keys):
+                if selection.get("reason") == "quota_exhausted":
+                    log.warning("All enabled keys reached daily usage limits")
+                    return _build_quota_exhausted_response(selection.get("blocked", []))
                 log.error("No enabled API keys available during retry - all keys are disabled or invalid")
-                return JSONResponse(
-                    content={
-                        "error": {
-                            "message": "No enabled API keys available. All keys have been disabled.",
-                            "type": "invalid_request_error",
-                            "code": "no_available_keys"
-                        }
-                    },
-                    status_code=503
-                )
+                return _build_no_available_keys_response()
 
-            api_key = keys[idx]
             headers = {"Authorization": api_key, "Content-Type": "application/json"}
 
             # 记录密钥信息到性能追踪
@@ -1042,7 +1134,7 @@ async def send_assembly_request(
                 from ..stats.unified_stats import get_unified_stats
                 unified_stats = await get_unified_stats()
                 # 尝试获取当前使用的密钥
-                current_key = keys[idx] if 'idx' in dir() and idx < len(keys) else (keys[0] if keys else "unknown")
+                current_key = keys[idx] if isinstance(idx, int) and 0 <= idx < len(keys) else (keys[0] if keys else "unknown")
                 await unified_stats.record_call(current_key, openai_request.model, success=False)
                 log.debug(f"Recorded connection failure for key {_mask_key(current_key)}, model {openai_request.model}")
             except Exception as stats_err:

@@ -7,15 +7,16 @@
 2. 所有统计数据存储在一个地方
 3. 当密钥被删除时，同步删除其统计数据
 """
-import time
 import asyncio
 import hashlib
-from typing import Dict, List, Optional, Any
+import time
 from datetime import datetime, timezone, timedelta
+from typing import Dict, List, Optional, Any, Tuple
 
 from log import log
 from ..storage.storage_adapter import get_storage_adapter
 
+DEFAULT_DAILY_LIMIT_TOTAL = 1000
 
 def _get_next_utc_7am() -> datetime:
     """计算下一个 UTC 07:00 时间用于配额重置"""
@@ -26,6 +27,57 @@ def _get_next_utc_7am() -> datetime:
         return today_7am
     else:
         return today_7am + timedelta(days=1)
+
+
+def _parse_datetime(value: Any) -> Optional[datetime]:
+    """解析 ISO 时间字符串为 UTC datetime"""
+    if not value or not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except Exception:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _as_non_negative_int(value: Any, default: int = 0) -> int:
+    """将任意值转换为非负整数"""
+    try:
+        parsed = int(value)
+        if parsed < 0:
+            return default
+        return parsed
+    except Exception:
+        return default
+
+
+def _as_positive_int(value: Any, default: int) -> int:
+    """将任意值转换为正整数"""
+    try:
+        parsed = int(value)
+        if parsed > 0:
+            return parsed
+    except Exception:
+        pass
+    return default
+
+
+def _as_non_negative_float(value: Any, default: float = 0.0) -> float:
+    """将任意值转换为非负浮点数"""
+    try:
+        parsed = float(value)
+        if parsed < 0:
+            return default
+        return parsed
+    except Exception:
+        return default
 
 
 def mask_key(key: str) -> str:
@@ -69,6 +121,193 @@ class UnifiedStats:
         self._dirty = False
         self._last_save_time = 0
         self._save_interval = 30  # 保存间隔（秒）
+
+    def _build_default_entry(self, key_hash: str = "") -> Dict[str, Any]:
+        """构建默认统计结构"""
+        return {
+            "full_key_hash": key_hash,
+            "success_count": 0,
+            "failure_count": 0,
+            "model_counts": {},
+            "last_call_time": 0,
+            "created_time": time.time(),
+            "daily_limit_total": DEFAULT_DAILY_LIMIT_TOTAL,
+            "daily_limit_models": {},
+            "next_reset_time": _get_next_utc_7am().isoformat(),
+        }
+
+    def _normalize_model_counts(self, raw: Any) -> Tuple[Dict[str, Dict[str, int]], bool]:
+        """标准化模型计数结构，兼容旧数据格式"""
+        normalized: Dict[str, Dict[str, int]] = {}
+        changed = False
+        if not isinstance(raw, dict):
+            return normalized, True
+
+        for model_name, count_data in raw.items():
+            model = str(model_name).strip()
+            if not model:
+                changed = True
+                continue
+
+            if isinstance(count_data, int):
+                normalized[model] = {"ok": _as_non_negative_int(count_data), "fail": 0}
+                changed = True
+                continue
+
+            if not isinstance(count_data, dict):
+                changed = True
+                continue
+
+            ok = _as_non_negative_int(count_data.get("ok", 0))
+            fail = _as_non_negative_int(count_data.get("fail", 0))
+            if ok != count_data.get("ok", 0) or fail != count_data.get("fail", 0):
+                changed = True
+            normalized[model] = {"ok": ok, "fail": fail}
+
+        return normalized, changed
+
+    def _normalize_model_limits(self, raw: Any) -> Dict[str, int]:
+        """标准化模型限额结构，仅保留正整数限额"""
+        if not isinstance(raw, dict):
+            return {}
+
+        normalized: Dict[str, int] = {}
+        for model_name, limit in raw.items():
+            model = str(model_name).strip()
+            if not model:
+                continue
+            parsed_limit = _as_positive_int(limit, 0)
+            if parsed_limit > 0:
+                normalized[model] = parsed_limit
+        return normalized
+
+    def _normalize_entry(self, entry: Any, key_hash: str = "") -> Tuple[Dict[str, Any], bool]:
+        """标准化单个 key 的统计数据"""
+        changed = False
+        if not isinstance(entry, dict):
+            entry = {}
+            changed = True
+
+        normalized = dict(entry)
+        created_time_default = time.time()
+
+        if not isinstance(normalized.get("full_key_hash"), str):
+            normalized["full_key_hash"] = str(normalized.get("full_key_hash") or "")
+            changed = True
+        if key_hash and not normalized.get("full_key_hash"):
+            normalized["full_key_hash"] = key_hash
+            changed = True
+
+        success_count = _as_non_negative_int(normalized.get("success_count", 0))
+        if success_count != normalized.get("success_count", 0):
+            changed = True
+        normalized["success_count"] = success_count
+
+        failure_count = _as_non_negative_int(normalized.get("failure_count", 0))
+        if failure_count != normalized.get("failure_count", 0):
+            changed = True
+        normalized["failure_count"] = failure_count
+
+        last_call_time = _as_non_negative_float(normalized.get("last_call_time", 0))
+        if last_call_time != normalized.get("last_call_time", 0):
+            changed = True
+        normalized["last_call_time"] = last_call_time
+
+        created_time = _as_non_negative_float(normalized.get("created_time", created_time_default), created_time_default)
+        if created_time != normalized.get("created_time", created_time_default):
+            changed = True
+        normalized["created_time"] = created_time
+
+        model_counts, model_counts_changed = self._normalize_model_counts(normalized.get("model_counts", {}))
+        normalized["model_counts"] = model_counts
+        changed = changed or model_counts_changed
+
+        daily_limit_total = _as_positive_int(normalized.get("daily_limit_total", DEFAULT_DAILY_LIMIT_TOTAL), DEFAULT_DAILY_LIMIT_TOTAL)
+        if daily_limit_total != normalized.get("daily_limit_total"):
+            changed = True
+        normalized["daily_limit_total"] = daily_limit_total
+
+        model_limits = self._normalize_model_limits(normalized.get("daily_limit_models", {}))
+        if model_limits != normalized.get("daily_limit_models", {}):
+            changed = True
+        normalized["daily_limit_models"] = model_limits
+
+        reset_time = _parse_datetime(normalized.get("next_reset_time"))
+        if reset_time is None:
+            reset_time = _get_next_utc_7am()
+            changed = True
+        normalized["next_reset_time"] = reset_time.isoformat()
+
+        return normalized, changed
+
+    def _reset_usage_only(self, stats: Dict[str, Any]):
+        """重置调用计数但保留限额配置"""
+        stats["success_count"] = 0
+        stats["failure_count"] = 0
+        stats["model_counts"] = {}
+        stats["last_call_time"] = 0
+        stats["next_reset_time"] = _get_next_utc_7am().isoformat()
+
+    def _apply_daily_reset_if_needed(self, stats: Dict[str, Any]) -> bool:
+        """根据 next_reset_time 执行每日重置"""
+        reset_time = _parse_datetime(stats.get("next_reset_time"))
+        if reset_time is None:
+            stats["next_reset_time"] = _get_next_utc_7am().isoformat()
+            return True
+
+        now = datetime.now(timezone.utc)
+        if now >= reset_time:
+            self._reset_usage_only(stats)
+            return True
+
+        return False
+
+    def _touch_entry(self, masked_key: str, key_hash: str = "") -> Dict[str, Any]:
+        """
+        获取并标准化某个 key 的统计 entry。
+        如果不存在则创建。
+        """
+        existing = self._stats.get(masked_key)
+        if existing is None:
+            self._stats[masked_key] = self._build_default_entry(key_hash)
+            self._dirty = True
+            return self._stats[masked_key]
+
+        normalized, changed = self._normalize_entry(existing, key_hash=key_hash)
+        reset_changed = self._apply_daily_reset_if_needed(normalized)
+        if changed or reset_changed:
+            self._stats[masked_key] = normalized
+            self._dirty = True
+            return self._stats[masked_key]
+
+        return existing
+
+    def _normalize_all_entries(self) -> bool:
+        """标准化并按需重置所有 entry"""
+        changed = False
+        for masked_key in list(self._stats.keys()):
+            normalized, normalized_changed = self._normalize_entry(self._stats.get(masked_key))
+            reset_changed = self._apply_daily_reset_if_needed(normalized)
+            if normalized_changed or reset_changed:
+                self._stats[masked_key] = normalized
+                changed = True
+        return changed
+
+    @staticmethod
+    def _build_model_views(model_counts: Dict[str, Dict[str, int]]) -> Tuple[Dict[str, int], Dict[str, Dict[str, int]]]:
+        """
+        构建两种模型统计视图：
+        1) model_counts: 成功调用次数（用于限额展示）
+        2) models: 成功/失败详情
+        """
+        model_counts_success: Dict[str, int] = {}
+        models_detail: Dict[str, Dict[str, int]] = {}
+        for model, detail in model_counts.items():
+            ok = _as_non_negative_int(detail.get("ok", 0))
+            fail = _as_non_negative_int(detail.get("fail", 0))
+            model_counts_success[model] = ok
+            models_detail[model] = {"ok": ok, "fail": fail}
+        return model_counts_success, models_detail
     
     async def initialize(self):
         """初始化统计管理器"""
@@ -86,7 +325,11 @@ class UnifiedStats:
             
             if isinstance(data, dict):
                 self._stats = data
-            
+
+            if self._normalize_all_entries():
+                self._dirty = True
+                await self._save_stats(force=True)
+
             log.debug(f"Loaded unified stats for {len(self._stats)} keys")
         except Exception as e:
             log.error(f"Failed to load unified stats: {e}")
@@ -126,67 +369,168 @@ class UnifiedStats:
         """
         if not self._initialized:
             await self.initialize()
-        
+
         masked = mask_key(api_key)
         key_hash = get_key_hash(api_key)
-        
-        if masked not in self._stats:
-            self._stats[masked] = {
-                "full_key_hash": key_hash,
-                "success_count": 0,
-                "failure_count": 0,
-                "model_counts": {},
-                "last_call_time": 0,
-                "created_time": time.time(),
-            }
-        
-        stats = self._stats[masked]
-        
+
+        stats = self._touch_entry(masked, key_hash=key_hash)
+
         if success:
             stats["success_count"] = stats.get("success_count", 0) + 1
         else:
             stats["failure_count"] = stats.get("failure_count", 0) + 1
-        
+
         # 更新模型计数（区分成功和失败）
         model_counts = stats.get("model_counts", {})
         if model not in model_counts:
             model_counts[model] = {"ok": 0, "fail": 0}
-        # 兼容旧格式（如果是数字则转换为新格式）
-        if isinstance(model_counts.get(model), int):
-            old_count = model_counts[model]
-            model_counts[model] = {"ok": old_count, "fail": 0}
-        
+
         if success:
             model_counts[model]["ok"] = model_counts[model].get("ok", 0) + 1
         else:
             model_counts[model]["fail"] = model_counts[model].get("fail", 0) + 1
         stats["model_counts"] = model_counts
-        
+
         # 更新最后调用时间
         stats["last_call_time"] = time.time()
-        
+
         self._dirty = True
-        
+
         log.debug(f"Recorded {'success' if success else 'failure'} call for key {masked}, model={model}")
-        
+
         # 异步保存
         asyncio.create_task(self._save_stats())
-    
+
+    async def can_use_key_for_model(self, api_key: str, model: str) -> Dict[str, Any]:
+        """
+        判断密钥是否可以继续用于指定模型（仅按成功请求计数配额）
+
+        规则：
+        1. 总配额限制：success_count < daily_limit_total
+        2. 模型配额限制：model_ok < daily_limit_models[model]（如果配置了该模型）
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        masked = mask_key(api_key)
+        key_hash = get_key_hash(api_key)
+        stats = self._touch_entry(masked, key_hash=key_hash)
+
+        success_count = _as_non_negative_int(stats.get("success_count", 0))
+        total_limit = _as_positive_int(stats.get("daily_limit_total", DEFAULT_DAILY_LIMIT_TOTAL), DEFAULT_DAILY_LIMIT_TOTAL)
+        model_limits = self._normalize_model_limits(stats.get("daily_limit_models", {}))
+        model_limit = model_limits.get(model)
+
+        model_data = stats.get("model_counts", {}).get(model, {})
+        model_success = _as_non_negative_int(model_data.get("ok", 0)) if isinstance(model_data, dict) else 0
+
+        total_remaining = max(total_limit - success_count, 0)
+        model_remaining = None
+        if model_limit is not None:
+            model_remaining = max(model_limit - model_success, 0)
+
+        if self._dirty:
+            asyncio.create_task(self._save_stats())
+
+        allowed = True
+        reason = ""
+        if success_count >= total_limit:
+            allowed = False
+            reason = "total_limit_reached"
+        elif model_limit is not None and model_success >= model_limit:
+            allowed = False
+            reason = "model_limit_reached"
+
+        effective_limit = total_limit if model_limit is None else min(total_limit, model_limit)
+
+        return {
+            "allowed": allowed,
+            "reason": reason,
+            "masked_key": masked,
+            "next_reset_time": stats.get("next_reset_time"),
+            "success_count": success_count,
+            "failure_count": _as_non_negative_int(stats.get("failure_count", 0)),
+            "total_limit": total_limit,
+            "total_remaining": total_remaining,
+            "model": model,
+            "model_success_count": model_success,
+            "model_limit": model_limit,
+            "model_remaining": model_remaining,
+            "effective_limit": effective_limit,
+        }
+
+    async def update_daily_limits(
+        self,
+        masked_key: str,
+        total_limit: Optional[int] = None,
+        model_limits: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        更新指定密钥的限额配置
+
+        Args:
+            masked_key: 脱敏密钥
+            total_limit: 每日总成功请求上限（可选）
+            model_limits: 每日模型成功请求上限映射（可选，传入即覆盖）
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        if masked_key not in self._stats:
+            return None
+
+        stats = self._touch_entry(masked_key)
+        changed = False
+
+        if total_limit is not None:
+            parsed_total = _as_positive_int(total_limit, 0)
+            if parsed_total <= 0:
+                raise ValueError("total_limit must be a positive integer")
+            if stats.get("daily_limit_total") != parsed_total:
+                stats["daily_limit_total"] = parsed_total
+                changed = True
+
+        if model_limits is not None:
+            normalized_limits = self._normalize_model_limits(model_limits)
+            if stats.get("daily_limit_models", {}) != normalized_limits:
+                stats["daily_limit_models"] = normalized_limits
+                changed = True
+
+        if changed:
+            self._dirty = True
+            await self._save_stats(force=True)
+
+        return {
+            "masked_key": masked_key,
+            "daily_limit_total": stats.get("daily_limit_total", DEFAULT_DAILY_LIMIT_TOTAL),
+            "daily_limit_models": stats.get("daily_limit_models", {}),
+            "next_reset_time": stats.get("next_reset_time"),
+        }
+
     async def get_stats_for_key(self, masked_key: str) -> Dict[str, Any]:
         """获取单个密钥的统计信息"""
         if not self._initialized:
             await self.initialize()
-        
-        stats = self._stats.get(masked_key, {})
+
+        stats = self._touch_entry(masked_key) if masked_key in self._stats else self._build_default_entry("")
+        model_counts_success, models_detail = self._build_model_views(stats.get("model_counts", {}))
+
+        if self._dirty:
+            await self._save_stats()
+
         return {
             "masked_key": masked_key,
             "success_count": stats.get("success_count", 0),
             "failure_count": stats.get("failure_count", 0),
             "total_calls": stats.get("success_count", 0) + stats.get("failure_count", 0),
-            "model_counts": stats.get("model_counts", {}),
+            "model_counts": model_counts_success,
+            "models": models_detail,
             "last_call_time": stats.get("last_call_time", 0),
+            "daily_limit_total": stats.get("daily_limit_total", DEFAULT_DAILY_LIMIT_TOTAL),
+            "daily_limit_models": stats.get("daily_limit_models", {}),
+            "next_reset_time": stats.get("next_reset_time"),
         }
-    
+
     async def get_all_stats(self, valid_keys: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         获取所有统计信息
@@ -199,12 +543,15 @@ class UnifiedStats:
         """
         if not self._initialized:
             await self.initialize()
-        
+
+        if self._normalize_all_entries():
+            self._dirty = True
+
         # 如果提供了有效密钥列表，构建脱敏密钥集合
         valid_masked_keys = None
         if valid_keys is not None:
             valid_masked_keys = {mask_key(k) for k in valid_keys}
-        
+
         result = {
             "keys": {},
             "total": {
@@ -214,55 +561,47 @@ class UnifiedStats:
             },
             "models": {},
         }
-        
+
         for masked_key, stats in self._stats.items():
             # 如果提供了有效密钥列表，只统计有效密钥
             if valid_masked_keys is not None and masked_key not in valid_masked_keys:
                 continue
-            
+
             success = stats.get("success_count", 0)
             failure = stats.get("failure_count", 0)
             total = success + failure
-            
-            # 处理 model_counts（兼容新旧格式）
-            model_counts_raw = stats.get("model_counts", {})
-            model_counts_display = {}  # 用于显示的格式
-            models_detail = {}  # 详细的成功/失败信息
-            
-            for model, count_data in model_counts_raw.items():
-                if isinstance(count_data, int):
-                    # 旧格式：只有总数
-                    model_counts_display[model] = count_data
-                    models_detail[model] = {"ok": count_data, "fail": 0}
-                elif isinstance(count_data, dict):
-                    # 新格式：区分成功失败
-                    ok = count_data.get("ok", 0)
-                    fail = count_data.get("fail", 0)
-                    model_counts_display[model] = ok + fail
-                    models_detail[model] = {"ok": ok, "fail": fail}
-            
+
+            model_counts_display, models_detail = self._build_model_views(stats.get("model_counts", {}))
+
             result["keys"][masked_key] = {
                 "ok": success,
                 "fail": failure,
                 "total": total,
                 "model_counts": model_counts_display,
                 "models": models_detail,
+                "daily_limit_total": stats.get("daily_limit_total", DEFAULT_DAILY_LIMIT_TOTAL),
+                "daily_limit_models": stats.get("daily_limit_models", {}),
+                "next_reset_time": stats.get("next_reset_time"),
+                "last_call_time": stats.get("last_call_time", 0),
             }
-            
+
             # 累加总数
             result["total"]["success"] += success
             result["total"]["failure"] += failure
             result["total"]["total_calls"] += total
-            
+
             # 累加模型统计
             for model, detail in models_detail.items():
                 if model not in result["models"]:
                     result["models"][model] = {"ok": 0, "fail": 0}
                 result["models"][model]["ok"] += detail["ok"]
                 result["models"][model]["fail"] += detail["fail"]
-        
+
+        if self._dirty:
+            await self._save_stats()
+
         return result
-    
+
     async def delete_stats_for_key(self, api_key: str) -> bool:
         """
         删除指定密钥的统计数据
@@ -275,18 +614,18 @@ class UnifiedStats:
         """
         if not self._initialized:
             await self.initialize()
-        
+
         masked = mask_key(api_key)
-        
+
         if masked in self._stats:
             del self._stats[masked]
             self._dirty = True
             await self._save_stats(force=True)
             log.info(f"Deleted stats for key {masked}")
             return True
-        
+
         return False
-    
+
     async def delete_stats_for_masked_key(self, masked_key: str) -> bool:
         """
         删除指定脱敏密钥的统计数据
@@ -299,16 +638,16 @@ class UnifiedStats:
         """
         if not self._initialized:
             await self.initialize()
-        
+
         if masked_key in self._stats:
             del self._stats[masked_key]
             self._dirty = True
             await self._save_stats(force=True)
             log.info(f"Deleted stats for masked key {masked_key}")
             return True
-        
+
         return False
-    
+
     async def cleanup_invalid_keys(self, valid_keys: List[str]) -> int:
         """
         清理无效密钥的统计数据
@@ -321,22 +660,22 @@ class UnifiedStats:
         """
         if not self._initialized:
             await self.initialize()
-        
+
         valid_masked_keys = {mask_key(k) for k in valid_keys}
-        
+
         # 找出需要删除的统计
         to_delete = [k for k in self._stats.keys() if k not in valid_masked_keys]
-        
+
         for masked_key in to_delete:
             del self._stats[masked_key]
-        
+
         if to_delete:
             self._dirty = True
             await self._save_stats(force=True)
             log.info(f"Cleaned up stats for {len(to_delete)} invalid keys: {to_delete}")
-        
+
         return len(to_delete)
-    
+
     async def reset_stats(self, masked_key: Optional[str] = None):
         """
         重置统计数据
@@ -346,33 +685,21 @@ class UnifiedStats:
         """
         if not self._initialized:
             await self.initialize()
-        
+
         if masked_key is not None:
             if masked_key in self._stats:
-                self._stats[masked_key] = {
-                    "full_key_hash": self._stats[masked_key].get("full_key_hash", ""),
-                    "success_count": 0,
-                    "failure_count": 0,
-                    "model_counts": {},
-                    "last_call_time": 0,
-                    "created_time": self._stats[masked_key].get("created_time", time.time()),
-                }
+                stats = self._touch_entry(masked_key)
+                self._reset_usage_only(stats)
                 log.info(f"Reset stats for key {masked_key}")
         else:
             for key in self._stats:
-                self._stats[key] = {
-                    "full_key_hash": self._stats[key].get("full_key_hash", ""),
-                    "success_count": 0,
-                    "failure_count": 0,
-                    "model_counts": {},
-                    "last_call_time": 0,
-                    "created_time": self._stats[key].get("created_time", time.time()),
-                }
+                stats = self._touch_entry(key)
+                self._reset_usage_only(stats)
             log.info("Reset all stats")
-        
+
         self._dirty = True
         await self._save_stats(force=True)
-    
+
     async def ensure_keys_exist(self, keys: List[str]):
         """
         确保指定的密钥在统计中存在（即使没有调用记录）
@@ -382,20 +709,11 @@ class UnifiedStats:
         """
         if not self._initialized:
             await self.initialize()
-        
+
         for key in keys:
             masked = mask_key(key)
-            if masked not in self._stats:
-                self._stats[masked] = {
-                    "full_key_hash": get_key_hash(key),
-                    "success_count": 0,
-                    "failure_count": 0,
-                    "model_counts": {},
-                    "last_call_time": 0,
-                    "created_time": time.time(),
-                }
-                self._dirty = True
-        
+            self._touch_entry(masked, key_hash=get_key_hash(key))
+
         if self._dirty:
             await self._save_stats()
 

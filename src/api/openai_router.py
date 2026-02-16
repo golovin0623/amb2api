@@ -233,6 +233,33 @@ async def chat_completions(
     log.debug(f"Sending request to AssemblyAI - stream: {is_streaming}, messages: {len(request_data.messages)}")
     
     response = await send_assembly_request(request_data, False, trace=trace)
+
+    # 上游或网关已返回错误响应时，直接透传状态码和错误体
+    response_status = getattr(response, "status_code", 200)
+    if response_status >= 400:
+        try:
+            if hasattr(response, "body") and response.body:
+                raw = response.body.decode("utf-8", errors="replace") if isinstance(response.body, bytes) else str(response.body)
+                parsed_error = json.loads(raw)
+            elif hasattr(response, "text"):
+                parsed_error = response.json() if hasattr(response, "json") else json.loads(response.text or "{}")
+            else:
+                parsed_error = None
+        except Exception:
+            parsed_error = None
+
+        if trace:
+            try:
+                await tracker.end_trace(trace.trace_id)
+            except Exception:
+                pass
+
+        if isinstance(parsed_error, dict):
+            return JSONResponse(content=parsed_error, status_code=response_status)
+        return JSONResponse(
+            content={"error": {"message": f"Upstream request failed with status {response_status}", "type": "api_error"}},
+            status_code=response_status,
+        )
     
     # 性能追踪：上游响应完成
     if trace:

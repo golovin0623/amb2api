@@ -6413,7 +6413,6 @@
                     <div class="stats-container" id="statsContainer">
                         <div class="stat-item total">
                             <span class="stat-number" id="statTotal">0</span>
-                            <span class="stat-label">总计</span>
                         </div>
                         <div class="stat-item normal">
                             <span class="stat-number" id="statNormal">0</span>
@@ -7924,6 +7923,14 @@
                     <label for="modalTotalLimit">所有模型每日限制:</label>
                     <input type="number" id="modalTotalLimit" class="config-input" min="1" max="50000" />
                     <small class="config-note">每日所有模型调用次数总限制</small>
+                </div>
+                <div class="form-group">
+                    <label>按模型每日限制:</label>
+                    <div id="modalModelLimitsList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                    <div style="margin-top: 8px;">
+                        <button class="btn" onclick="addModelLimitRow()" style="background-color: #6c757d; padding: 6px 12px; font-size: 12px;" type="button">+ 添加模型限制</button>
+                    </div>
+                    <small class="config-note">仅统计成功请求。未设置的模型不单独限制。</small>
                 </div>
             </div>
             <div class="modal-footer">
@@ -11661,8 +11668,17 @@
 
                     // 为每个key创建统计数据结构
                     for (const [keyName, keyData] of Object.entries(keys)) {
-                        // 计算总调用次数（成功+失败）
-                        const totalCalls = (keyData.ok || 0) + (keyData.fail || 0);
+                        const successCalls = keyData.ok || 0;
+                        const failCalls = keyData.fail || 0;
+                        const modelsDetail = keyData.models || {};
+                        const modelCounts = {};
+                        Object.entries(modelsDetail).forEach(([modelName, detail]) => {
+                            const ok = Number(detail?.ok || 0);
+                            modelCounts[modelName] = ok;
+                        });
+                        if (Object.keys(modelCounts).length === 0 && keyData.model_counts) {
+                            Object.assign(modelCounts, keyData.model_counts);
+                        }
 
                         // 查找对应的凭证状态
                         // keyName可能是脱敏后的密钥（masked key）或 "creds/filename.json" 格式
@@ -11737,10 +11753,14 @@
 
                         usageStatsData[keyName] = {
                             display_name: keyName,
-                            total_calls: totalCalls,
-                            daily_limit_total: 1000, // 默认限制
-                            model_counts: keyData.model_counts || {},
-                            next_reset_time: aggregatedData.next_reset_time || null,
+                            total_calls: successCalls,
+                            success_calls: successCalls,
+                            failure_calls: failCalls,
+                            daily_limit_total: keyData.daily_limit_total || 1000,
+                            daily_limit_models: keyData.daily_limit_models || {},
+                            model_counts: modelCounts,
+                            models_detail: modelsDetail,
+                            next_reset_time: keyData.next_reset_time || aggregatedData.next_reset_time || null,
                             disabled: disabled,
                             isInvalid: isInvalid, // 标记是否是失效密钥
                             isKey: isKey // 标记是否是密钥
@@ -11759,7 +11779,10 @@
                                         usageStatsData[keyStat.masked_key] = {
                                             display_name: keyStat.masked_key,
                                             total_calls: 0,
+                                            success_calls: 0,
+                                            failure_calls: 0,
                                             daily_limit_total: 1000,
+                                            daily_limit_models: {},
                                             model_counts: keyStat.model_counts || {},
                                             next_reset_time: aggregatedData.next_reset_time || null,
                                             disabled: true  // 来自disabled数组，直接设置为禁用
@@ -11781,7 +11804,10 @@
                                         usageStatsData[keyStat.masked_key] = {
                                             display_name: keyStat.masked_key,
                                             total_calls: 0,
+                                            success_calls: 0,
+                                            failure_calls: 0,
                                             daily_limit_total: 1000,
+                                            daily_limit_models: {},
                                             model_counts: keyStat.model_counts || {},
                                             next_reset_time: aggregatedData.next_reset_time || null,
                                             disabled: false  // 来自enabled数组，直接设置为启用
@@ -12043,7 +12069,7 @@
             if (totalEntries === 0) {
                 container.innerHTML = `<div class="ranking-header">
                     <div class="ranking-title">模型调用次数排行</div>
-                    <div class="ranking-total">总计: 0</div>
+                    <div class="ranking-total">0</div>
                 </div>
                     <div style="text-align:center; color:var(--text-secondary); padding:40px 0;">暂无数据</div>`;
                 return;
@@ -12085,7 +12111,7 @@
 
             let html = `<div class="ranking-header">
                 <div class="ranking-title">模型调用次数排行</div>
-                <div class="ranking-total">总计: ${total}</div>
+                <div class="ranking-total">${total}</div>
             </div>`;
 
             html += `<div class="ranking-body">`;
@@ -12428,8 +12454,7 @@
                             <g id="donutArcs">${arcsHtml}</g>
                             <g id="donutLabels">${labelsHtml}</g>
                             <circle cx="${cx}" cy="${cy}" r="${innerRadius - 5}" fill="var(--card-bg)" />
-                            <text x="${cx}" y="${cy - 5}" text-anchor="middle" fill="var(--text-color)" font-size="18" font-weight="600">${total}</text>
-                            <text x="${cx}" y="${cy + 12}" text-anchor="middle" fill="var(--text-secondary)" font-size="10">总计</text>
+                            <text x="${cx}" y="${cy + 7}" text-anchor="middle" fill="var(--text-color)" font-size="18" font-weight="600">${total}</text>
                         </svg>
                     </div>
                     <div id="distributionLegendContainer" style="width:100%; display:flex; flex-direction:column;"></div>
@@ -12441,8 +12466,7 @@
                             <g id="donutArcs">${arcsHtml}</g>
                             <g id="donutLabels">${labelsHtml}</g>
                             <circle cx="${cx}" cy="${cy}" r="${innerRadius - 5}" fill="var(--card-bg)" />
-                            <text x="${cx}" y="${cy - 5}" text-anchor="middle" fill="var(--text-color)" font-size="20" font-weight="600">${total}</text>
-                            <text x="${cx}" y="${cy + 15}" text-anchor="middle" fill="var(--text-secondary)" font-size="11">总计</text>
+                            <text x="${cx}" y="${cy + 8}" text-anchor="middle" fill="var(--text-color)" font-size="20" font-weight="600">${total}</text>
                         </svg>
                     </div>
                     <div id="distributionLegendContainer" style="width: 200px; display: flex; flex-direction: column; justify-content: center; height: ${height}px;"></div>
@@ -12584,7 +12608,10 @@
             div.className = 'usage-card';
 
             // 计算使用百分比
-            const totalPercent = Math.min((stats.total_calls / stats.daily_limit_total) * 100, 100);
+            const successCalls = Number(stats.success_calls ?? stats.total_calls ?? 0);
+            const failureCalls = Number(stats.failure_calls ?? 0);
+            const totalLimit = Number(stats.daily_limit_total || 1000);
+            const totalPercent = Math.min((successCalls / Math.max(totalLimit, 1)) * 100, 100);
 
             function getTotalProgressClass(percent) {
                 if (percent >= 90) return 'danger';
@@ -12614,6 +12641,7 @@
             // 根据禁用状态添加样式
             const disabledClass = stats.disabled ? 'usage-card-disabled' : '';
             const disabledBadge = stats.disabled ? '<span class="status-badge" style="background-color: #6c757d; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 8px;">已禁用</span>' : '';
+            const modelLimits = stats.daily_limit_models || {};
 
             div.className = `usage-card ${disabledClass}`;
 
@@ -12627,8 +12655,8 @@
                 
                 <div class="usage-progress">
                     <div class="usage-progress-label">
-                        <span>所有模型</span>
-                        <span>${stats.total_calls}/${stats.daily_limit_total} (${totalPercent.toFixed(1)}%)</span>
+                        <span>所有模型（成功请求）</span>
+                        <span>${successCalls}/${totalLimit} (${totalPercent.toFixed(1)}%)</span>
                     </div>
                     <div class="usage-progress-bar">
                         <div class="usage-progress-fill ${getTotalProgressClass(totalPercent)}" style="width: ${totalPercent}%"></div>
@@ -12636,13 +12664,17 @@
                 </div>
                 
                 <div class="usage-info">
+                    <div class="usage-info-item">
+                        <span class="usage-info-label">失败请求</span>
+                        <span class="usage-info-value">${failureCalls}</span>
+                    </div>
                     <div class="usage-info-item" style="grid-column: 1 / -1;">
                         <span class="usage-info-label">下次重置时间</span>
                         <span class="usage-info-value">${formatTime(stats.next_reset_time)}</span>
                     </div>
                 </div>
                 <div style="margin-top:12px">
-                    <div style="font-size:13px; font-weight:600; color:var(--text-secondary); margin-bottom:8px">各模型调用次数</div>
+                    <div style="font-size:13px; font-weight:600; color:var(--text-secondary); margin-bottom:8px">各模型成功调用次数</div>
                     <div style="display:flex; gap:6px; flex-wrap:wrap; min-height:24px">
                         ${Object.keys(stats.model_counts || {}).length === 0 ?
                     '<span style="color:#999; font-size:12px">暂无数据</span>' :
@@ -12651,8 +12683,10 @@
                         .map(([m, c]) => {
                             const cat = getModelCategory(m);
                             const colors = getCatColors(cat);
+                            const modelLimit = modelLimits[m];
+                            const modelLimitText = modelLimit ? `${c}/${modelLimit}` : `${c}/∞`;
                             return `<span style="display:inline-flex; align-items:center; gap:4px; background:${colors.bg}; color:${colors.text}; padding:4px 10px; border-radius:12px; font-size:12px; border-left:4px solid ${colors.border}">
-                                        <span style="font-weight:600; color:${colors.border}">【${c}】</span>
+                                        <span style="font-weight:600; color:${colors.border}">【${modelLimitText}】</span>
                                         <span>${m}</span>
                                     </span>`;
                         }).join('')
@@ -12679,7 +12713,83 @@
             currentEditingFile = filename;
             document.getElementById('modalFilename').value = filename;
             document.getElementById('modalTotalLimit').value = stats.daily_limit_total;
+            renderModelLimitRows(stats.daily_limit_models || {});
             document.getElementById('limitsModal').style.display = 'block';
+        }
+
+        function renderModelLimitRows(modelLimits = {}) {
+            const list = document.getElementById('modalModelLimitsList');
+            if (!list) return;
+            list.innerHTML = '';
+            const entries = Object.entries(modelLimits);
+            if (entries.length === 0) {
+                addModelLimitRow('', '');
+                return;
+            }
+            entries.forEach(([model, limit]) => addModelLimitRow(model, limit));
+        }
+
+        function addModelLimitRow(model = '', limit = '') {
+            const list = document.getElementById('modalModelLimitsList');
+            if (!list) return;
+
+            const row = document.createElement('div');
+            row.className = 'model-limit-row';
+            row.style.display = 'grid';
+            row.style.gridTemplateColumns = '1fr 130px 42px';
+            row.style.gap = '8px';
+
+            const modelInput = document.createElement('input');
+            modelInput.type = 'text';
+            modelInput.className = 'config-input model-limit-model';
+            modelInput.placeholder = '模型名，例如 gpt-4o-mini';
+            modelInput.value = String(model || '');
+
+            const limitInput = document.createElement('input');
+            limitInput.type = 'number';
+            limitInput.className = 'config-input model-limit-value';
+            limitInput.min = '1';
+            limitInput.max = '50000';
+            limitInput.placeholder = '次数';
+            limitInput.value = limit ? String(limit) : '';
+
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'btn';
+            delBtn.style.backgroundColor = '#dc3545';
+            delBtn.style.padding = '0';
+            delBtn.style.height = '38px';
+            delBtn.textContent = '×';
+            delBtn.onclick = () => {
+                row.remove();
+                if (list.children.length === 0) {
+                    addModelLimitRow('', '');
+                }
+            };
+
+            row.appendChild(modelInput);
+            row.appendChild(limitInput);
+            row.appendChild(delBtn);
+            list.appendChild(row);
+        }
+
+        function collectModelLimitsFromModal() {
+            const list = document.getElementById('modalModelLimitsList');
+            const modelLimits = {};
+            if (!list) return modelLimits;
+            const rows = list.querySelectorAll('.model-limit-row');
+            rows.forEach(row => {
+                const modelInput = row.querySelector('.model-limit-model');
+                const limitInput = row.querySelector('.model-limit-value');
+                const modelName = String(modelInput?.value || '').trim();
+                const limitVal = parseInt(limitInput?.value || '', 10);
+                if (!modelName) return;
+                if (!Number.isInteger(limitVal) || limitVal <= 0) {
+                    throw new Error(`模型 ${modelName} 的限制必须是大于0的整数`);
+                }
+                modelLimits[modelName] = limitVal;
+            });
+            return modelLimits;
         }
 
         // 关闭限制设置弹窗
@@ -12696,13 +12806,22 @@
                 return;
             }
 
+            let modelLimits = {};
+            try {
+                modelLimits = collectModelLimitsFromModal();
+            } catch (e) {
+                showStatus(e.message || '模型限制配置无效', 'error');
+                return;
+            }
+
             try {
                 const response = await fetch('/usage/update-limits', {
                     method: 'POST',
                     headers: getAuthHeaders(),
                     body: JSON.stringify({
                         filename: currentEditingFile,
-                        total_limit: totalLimit
+                        total_limit: totalLimit,
+                        model_limits: modelLimits
                     })
                 });
 
