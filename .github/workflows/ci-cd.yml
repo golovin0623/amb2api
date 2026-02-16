@@ -60,23 +60,42 @@ jobs:
     needs:
       - test
       - config-validate
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != ''
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    outputs:
+      image_pushed: ${{ steps.docker-creds.outputs.enabled }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check Docker credentials
+        id: docker-creds
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DOCKER_USERNAME:-}" ] || [ -z "${DOCKER_PASSWORD:-}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Docker credentials not configured. Skip docker build/push."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Docker Buildx
+        if: steps.docker-creds.outputs.enabled == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
+        if: steps.docker-creds.outputs.enabled == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Prepare image tags
+        if: steps.docker-creds.outputs.enabled == 'true'
         id: prep
         shell: bash
         run: |
@@ -104,6 +123,7 @@ jobs:
           printf '  %s\n' "${tags[@]}"
 
       - name: Build and push Docker image
+        if: steps.docker-creds.outputs.enabled == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -116,7 +136,7 @@ jobs:
 
   deploy:
     needs: docker-build-push
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.DEPLOY_WEBHOOK_URL != '' && secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != ''
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.docker-build-push.outputs.image_pushed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -126,6 +146,11 @@ jobs:
           DEPLOY_WEBHOOK_TOKEN: ${{ secrets.DEPLOY_WEBHOOK_TOKEN }}
         run: |
           set -euo pipefail
+
+          if [ -z "${DEPLOY_WEBHOOK_URL:-}" ]; then
+            echo "DEPLOY_WEBHOOK_URL is empty. Skip deploy webhook."
+            exit 0
+          fi
 
           response_file=$(mktemp)
           auth_args=()
