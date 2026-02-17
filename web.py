@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
 # 创建FastAPI应用
 app = FastAPI(
     title="AMB2API",
-    description="AssemblyAI LLM Gateway proxy with OpenAI compatibility",
+    description="AssemblyAI LLM Gateway proxy with OpenAI and Anthropic compatibility",
     version="0.6.1",
     lifespan=lifespan
 )
@@ -129,6 +129,7 @@ async def main():
     log.info("启动 AMB2API")
     log.info("=" * 60)
     log.info(f"OpenAI 兼容端点: http://127.0.0.1:{port}/v1")
+    log.info(f"Anthropic 兼容端点: http://127.0.0.1:{port}/v1/messages")
     log.info(f"管理控制面板: http://127.0.0.1:{port}/ui")
     
     from config import get_api_password, get_panel_password
