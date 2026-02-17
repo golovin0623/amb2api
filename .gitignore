@@ -1,7 +1,6 @@
 # Credential files - should never be committed
 *.json
 *.toml
-*.md
 test_*
 debug_*
 creds/
@@ -9,6 +8,7 @@ creds/
 # But allow specific important files
 !README.md
 !AGENTS.md
+!AGENTS.plan.md
 !pyproject.toml
 !tests/test_*.py
 !docs/**/*.md
