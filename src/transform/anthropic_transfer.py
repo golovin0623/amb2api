@@ -254,3 +254,125 @@ def anthropic_request_to_openai_payload(anthropic_request: Dict[str, Any]) -> Di
 
     return payload
 
+
+def _parse_openai_tool_arguments(arguments: Any) -> Dict[str, Any]:
+    """Parse OpenAI function arguments into object for Anthropic tool_use.input."""
+    if isinstance(arguments, dict):
+        return arguments
+    if isinstance(arguments, str):
+        arguments = arguments.strip()
+        if not arguments:
+            return {}
+        try:
+            parsed = json.loads(arguments)
+            if isinstance(parsed, dict):
+                return parsed
+            return {"value": parsed}
+        except Exception:
+            return {"raw": arguments}
+    if arguments is None:
+        return {}
+    return {"value": arguments}
+
+
+def _map_openai_finish_reason_to_anthropic(finish_reason: Any) -> Optional[str]:
+    """Map OpenAI finish_reason to Anthropic stop_reason."""
+    if finish_reason == "stop":
+        return "end_turn"
+    if finish_reason == "length":
+        return "max_tokens"
+    if finish_reason == "tool_calls":
+        return "tool_use"
+    if finish_reason == "content_filter":
+        return "refusal"
+    return None
+
+
+def openai_response_to_anthropic_message(
+    openai_response: Dict[str, Any], fallback_model: Optional[str] = None
+) -> Dict[str, Any]:
+    """Convert OpenAI non-stream response to Anthropic message response."""
+    choices = openai_response.get("choices")
+    if not isinstance(choices, list):
+        choices = []
+    first_choice = choices[0] if choices else {}
+    if not isinstance(first_choice, dict):
+        first_choice = {}
+
+    message = first_choice.get("message")
+    if not isinstance(message, dict):
+        message = {}
+
+    content_blocks: List[Dict[str, Any]] = []
+    content = message.get("content")
+    if isinstance(content, str):
+        if content:
+            content_blocks.append({"type": "text", "text": content})
+    elif isinstance(content, list):
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            part_type = part.get("type")
+            if part_type in ("text", "output_text"):
+                text = part.get("text")
+                if isinstance(text, str) and text:
+                    content_blocks.append({"type": "text", "text": text})
+
+    tool_calls = message.get("tool_calls")
+    if isinstance(tool_calls, list):
+        for tool_call in tool_calls:
+            if not isinstance(tool_call, dict):
+                continue
+            function_info = tool_call.get("function")
+            if not isinstance(function_info, dict):
+                function_info = {}
+            tool_id = tool_call.get("id")
+            if not isinstance(tool_id, str) or not tool_id:
+                tool_id = f"toolu_{uuid.uuid4().hex[:24]}"
+            tool_name = function_info.get("name")
+            if not isinstance(tool_name, str) or not tool_name:
+                tool_name = "unknown_tool"
+            tool_input = _parse_openai_tool_arguments(function_info.get("arguments"))
+            content_blocks.append(
+                {
+                    "type": "tool_use",
+                    "id": tool_id,
+                    "name": tool_name,
+                    "input": tool_input,
+                }
+            )
+
+    if not content_blocks:
+        content_blocks.append({"type": "text", "text": ""})
+
+    usage = openai_response.get("usage")
+    if not isinstance(usage, dict):
+        usage = {}
+    input_tokens = usage.get("prompt_tokens")
+    output_tokens = usage.get("completion_tokens")
+    if not isinstance(input_tokens, int):
+        input_tokens = 0
+    if not isinstance(output_tokens, int):
+        output_tokens = 0
+
+    response_id = openai_response.get("id")
+    if not isinstance(response_id, str) or not response_id:
+        response_id = f"msg_{uuid.uuid4().hex}"
+
+    model = openai_response.get("model")
+    if not isinstance(model, str) or not model:
+        model = fallback_model or ""
+
+    return {
+        "id": response_id,
+        "type": "message",
+        "role": "assistant",
+        "model": model,
+        "content": content_blocks,
+        "stop_reason": _map_openai_finish_reason_to_anthropic(first_choice.get("finish_reason")),
+        "stop_sequence": None,
+        "usage": {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+        },
+    }
