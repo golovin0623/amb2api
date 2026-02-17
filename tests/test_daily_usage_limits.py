@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
+from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
@@ -138,21 +139,54 @@ async def test_usage_update_limits_accepts_total_and_model_limits():
             }
 
     fake_stats = _FakeUnifiedStats()
+    adapter = _MemoryAdapter()
+    adapter._config["available_models_selected"] = ["model-a", "model-b"]
     with patch("src.stats.unified_stats.get_unified_stats", new=AsyncMock(return_value=fake_stats)):
-        response = await admin_routes.usage_update_limits(
-            {
-                "filename": "sk-a...0001",
-                "total_limit": 12,
-                "model_limits": {"model-a": 6},
-            },
-            token="x",
-        )
+        with patch("src.api.admin_routes.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+            response = await admin_routes.usage_update_limits(
+                {
+                    "filename": "sk-a...0001",
+                    "total_limit": 12,
+                    "model_limits": {"model-a": 6},
+                },
+                token="x",
+            )
 
     payload = json.loads(response.body.decode("utf-8"))
     assert payload["daily_limit_total"] == 12
     assert payload["daily_limit_models"] == {"model-a": 6}
     assert fake_stats.received["total_limit"] == 12
     assert fake_stats.received["model_limits"] == {"model-a": 6}
+
+
+@pytest.mark.asyncio
+async def test_usage_update_limits_rejects_model_not_in_system_list():
+    class _FakeUnifiedStats:
+        async def update_daily_limits(self, masked_key, total_limit=None, model_limits=None):
+            return {
+                "daily_limit_total": total_limit,
+                "daily_limit_models": model_limits or {},
+                "next_reset_time": "2099-01-01T07:00:00+00:00",
+            }
+
+    fake_stats = _FakeUnifiedStats()
+    adapter = _MemoryAdapter()
+    adapter._config["available_models_selected"] = ["model-a"]
+
+    with patch("src.stats.unified_stats.get_unified_stats", new=AsyncMock(return_value=fake_stats)):
+        with patch("src.api.admin_routes.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+            with pytest.raises(HTTPException) as exc_info:
+                await admin_routes.usage_update_limits(
+                    {
+                        "filename": "sk-a...0001",
+                        "total_limit": 12,
+                        "model_limits": {"model-not-exists": 6},
+                    },
+                    token="x",
+                )
+
+    assert exc_info.value.status_code == 400
+    assert "不在系统模型列表中" in str(exc_info.value.detail)
 
 
 def test_openai_router_passthroughs_error_status_from_gateway():

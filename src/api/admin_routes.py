@@ -81,6 +81,9 @@ async def get_config(token: str = Depends(authenticate)):
         cfg["enable_real_streaming"] = await adapter.get_config("enable_real_streaming", False)
         cfg["stream_keepalive_seconds"] = await adapter.get_config("stream_keepalive_seconds", 0)
         cfg["stream_bootstrap_retries"] = await adapter.get_config("stream_bootstrap_retries", 1)
+        cfg["available_models"] = await adapter.get_config("available_models", [])
+        cfg["available_models_selected"] = await adapter.get_config("available_models_selected", [])
+        cfg["available_models_meta"] = await adapter.get_config("available_models_meta", {})
     except Exception:
         pass
     try:
@@ -498,6 +501,28 @@ async def usage_update_limits(payload: Dict[str, Any], token: str = Depends(auth
             if parsed_limit <= 0:
                 raise HTTPException(status_code=400, detail=f"模型 {model} 的限制必须是正整数")
             normalized_model_limits[model] = parsed_limit
+
+    # 当系统已配置模型列表时，仅允许配置列表内的模型
+    allowed_model_set = set()
+    try:
+        adapter = await get_storage_adapter()
+        selected_models = await adapter.get_config("available_models_selected", [])
+        all_models = await adapter.get_config("available_models", [])
+        source_models = selected_models if isinstance(selected_models, list) and len(selected_models) > 0 else all_models
+        if isinstance(source_models, list):
+            allowed_model_set = {
+                str(m).strip() for m in source_models if str(m).strip()
+            }
+    except Exception as e:
+        log.warning(f"Failed to load available models for usage limit validation: {e}")
+
+    if normalized_model_limits and allowed_model_set:
+        invalid_models = [m for m in normalized_model_limits.keys() if m not in allowed_model_set]
+        if invalid_models:
+            raise HTTPException(
+                status_code=400,
+                detail=f"以下模型不在系统模型列表中: {', '.join(invalid_models)}",
+            )
 
     unified_stats = await get_unified_stats()
     try:

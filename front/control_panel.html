@@ -7927,6 +7927,7 @@
                 <div class="form-group">
                     <label>按模型每日限制:</label>
                     <div id="modalModelLimitsList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                    <div id="modalModelLimitHint" style="min-height: 18px; margin-top: 4px; font-size: 12px; color: #dc3545;"></div>
                     <div style="margin-top: 8px;">
                         <button class="btn" onclick="addModelLimitRow()" style="background-color: #6c757d; padding: 6px 12px; font-size: 12px;" type="button">+ 添加模型限制</button>
                     </div>
@@ -11573,6 +11574,32 @@
 
         let usageStatsData = {};
         let currentEditingFile = '';
+        let usageLimitModelOptions = [];
+
+        function refreshUsageLimitModelOptions(configData = null) {
+            const modelSet = new Set();
+            const addModel = (model) => {
+                const m = String(model || '').trim();
+                if (m) modelSet.add(m);
+            };
+
+            // 优先使用系统配置里的模型列表
+            const cfg = configData?.config || {};
+            (cfg.available_models_selected || []).forEach(addModel);
+            (cfg.available_models || []).forEach(addModel);
+
+            // 兜底：使用已查询的模型缓存
+            (queriedModels.models || []).forEach(addModel);
+            (selectedModels || []).forEach(addModel);
+
+            // 兜底：使用当前统计里出现过的模型
+            Object.values(usageStatsData || {}).forEach(stats => {
+                Object.keys(stats.model_counts || {}).forEach(addModel);
+                Object.keys(stats.daily_limit_models || {}).forEach(addModel);
+            });
+
+            usageLimitModelOptions = Array.from(modelSet).sort((a, b) => a.localeCompare(b));
+        }
 
         // 刷新使用统计
         async function refreshUsageStats(silent = false) {
@@ -11829,6 +11856,8 @@
                     const activeKeys = Object.values(usageStatsData).filter(s => !s.disabled && !s.isInvalid).length;
                     const disabledKeys = Object.values(usageStatsData).filter(s => s.disabled && s.isKey && !s.isInvalid).length;
                     const invalidKeys = Object.values(usageStatsData).filter(s => s.isInvalid).length;
+
+                    refreshUsageLimitModelOptions(configData);
 
                     document.getElementById('totalApiCalls').textContent = aggregatedData.total_all_model_calls || 0;
                     document.getElementById('activeKeys').textContent = activeKeys;
@@ -12711,22 +12740,108 @@
             }
 
             currentEditingFile = filename;
+            refreshUsageLimitModelOptions();
             document.getElementById('modalFilename').value = filename;
             document.getElementById('modalTotalLimit').value = stats.daily_limit_total;
             renderModelLimitRows(stats.daily_limit_models || {});
             document.getElementById('limitsModal').style.display = 'block';
         }
 
+        function renderModelLimitHint(message = '') {
+            const hint = document.getElementById('modalModelLimitHint');
+            if (hint) hint.textContent = message;
+        }
+
+        function validateModelLimitRows(showError = false) {
+            const list = document.getElementById('modalModelLimitsList');
+            if (!list) return true;
+
+            const rows = Array.from(list.querySelectorAll('.model-limit-row'));
+            const seen = new Set();
+            const duplicates = new Set();
+
+            rows.forEach(row => {
+                row.style.border = '';
+                row.style.borderRadius = '';
+                row.style.padding = '';
+            });
+
+            rows.forEach(row => {
+                const modelSelect = row.querySelector('.model-limit-model');
+                const modelName = String(modelSelect?.value || '').trim();
+                if (!modelName) return;
+                if (seen.has(modelName)) {
+                    duplicates.add(modelName);
+                } else {
+                    seen.add(modelName);
+                }
+            });
+
+            rows.forEach(row => {
+                const modelSelect = row.querySelector('.model-limit-model');
+                const modelName = String(modelSelect?.value || '').trim();
+                if (!modelName || !duplicates.has(modelName)) return;
+                row.style.border = '1px solid #dc3545';
+                row.style.borderRadius = '8px';
+                row.style.padding = '4px';
+            });
+
+            if (duplicates.size > 0) {
+                const dupNames = Array.from(duplicates).join(', ');
+                const msg = `模型限制存在重复项：${dupNames}。每个模型只能配置一次。`;
+                renderModelLimitHint(msg);
+                if (showError) {
+                    throw new Error(msg);
+                }
+                return false;
+            }
+
+            renderModelLimitHint('');
+            return true;
+        }
+
+        function buildModelSelectOptions(selectEl, selectedModel = '') {
+            selectEl.innerHTML = '';
+
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = '请选择模型';
+            selectEl.appendChild(placeholder);
+
+            usageLimitModelOptions.forEach(modelName => {
+                const option = document.createElement('option');
+                option.value = modelName;
+                option.textContent = modelName;
+                selectEl.appendChild(option);
+            });
+
+            const selected = String(selectedModel || '').trim();
+            if (selected && !usageLimitModelOptions.includes(selected)) {
+                const invalidOption = document.createElement('option');
+                invalidOption.value = selected;
+                invalidOption.textContent = `${selected}（不在系统模型列表）`;
+                selectEl.appendChild(invalidOption);
+            }
+
+            selectEl.value = selected;
+        }
+
         function renderModelLimitRows(modelLimits = {}) {
             const list = document.getElementById('modalModelLimitsList');
             if (!list) return;
             list.innerHTML = '';
+            if (usageLimitModelOptions.length === 0) {
+                renderModelLimitHint('当前系统模型列表为空，请先在“模型配置”中查询并保存模型');
+            } else {
+                renderModelLimitHint('');
+            }
             const entries = Object.entries(modelLimits);
             if (entries.length === 0) {
                 addModelLimitRow('', '');
                 return;
             }
             entries.forEach(([model, limit]) => addModelLimitRow(model, limit));
+            validateModelLimitRows(false);
         }
 
         function addModelLimitRow(model = '', limit = '') {
@@ -12739,11 +12854,10 @@
             row.style.gridTemplateColumns = '1fr 130px 42px';
             row.style.gap = '8px';
 
-            const modelInput = document.createElement('input');
-            modelInput.type = 'text';
-            modelInput.className = 'config-input model-limit-model';
-            modelInput.placeholder = '模型名，例如 gpt-4o-mini';
-            modelInput.value = String(model || '');
+            const modelSelect = document.createElement('select');
+            modelSelect.className = 'config-input model-limit-model';
+            buildModelSelectOptions(modelSelect, model);
+            modelSelect.addEventListener('change', () => validateModelLimitRows(false));
 
             const limitInput = document.createElement('input');
             limitInput.type = 'number';
@@ -12765,18 +12879,23 @@
                 if (list.children.length === 0) {
                     addModelLimitRow('', '');
                 }
+                validateModelLimitRows(false);
             };
 
-            row.appendChild(modelInput);
+            row.appendChild(modelSelect);
             row.appendChild(limitInput);
             row.appendChild(delBtn);
             list.appendChild(row);
+            validateModelLimitRows(false);
         }
 
         function collectModelLimitsFromModal() {
+            validateModelLimitRows(true);
+
             const list = document.getElementById('modalModelLimitsList');
             const modelLimits = {};
             if (!list) return modelLimits;
+            const allowedModels = new Set(usageLimitModelOptions);
             const rows = list.querySelectorAll('.model-limit-row');
             rows.forEach(row => {
                 const modelInput = row.querySelector('.model-limit-model');
@@ -12784,8 +12903,14 @@
                 const modelName = String(modelInput?.value || '').trim();
                 const limitVal = parseInt(limitInput?.value || '', 10);
                 if (!modelName) return;
+                if (allowedModels.size > 0 && !allowedModels.has(modelName)) {
+                    throw new Error(`模型 ${modelName} 不在系统模型列表中，请重新选择`);
+                }
                 if (!Number.isInteger(limitVal) || limitVal <= 0) {
                     throw new Error(`模型 ${modelName} 的限制必须是大于0的整数`);
+                }
+                if (Object.prototype.hasOwnProperty.call(modelLimits, modelName)) {
+                    throw new Error(`模型 ${modelName} 重复配置，请保留一条`);
                 }
                 modelLimits[modelName] = limitVal;
             });
@@ -14205,6 +14330,7 @@
                 const sel = cfg.available_models_selected || [];
                 selectedModels = Array.isArray(sel) ? sel : [];
                 modelMetaFromConfig = cfg.available_models_meta || {};
+                refreshUsageLimitModelOptions({ config: cfg });
                 renderSelectedModelsChips();
             } catch (e) {
                 // ignore
@@ -14216,6 +14342,7 @@
                 const res = await fetch('/models/query', { headers: getAuthHeaders() });
                 const data = await res.json();
                 queriedModels = { grouped: data.grouped || {}, models: data.models || [], meta: data.meta || {} };
+                refreshUsageLimitModelOptions();
                 openModelsModal();
             } catch (e) {
                 showStatus('获取模型列表失败: ' + e.message, 'error');
@@ -14266,6 +14393,7 @@
                     queriedModels = { grouped: data.grouped || {}, models: data.models || [], meta: data.meta || {} };
                 }
                 selectedModels = Array.from(new Set([...(queriedModels.models || [])]));
+                refreshUsageLimitModelOptions();
                 renderSelectedModelsChips();
                 const res2 = await fetch('/models/save', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ selected_models: selectedModels }) });
                 const data2 = await res2.json();
@@ -14281,6 +14409,7 @@
 
         function clearSelectedModels() {
             selectedModels = [];
+            refreshUsageLimitModelOptions();
             renderSelectedModelsChips();
         }
 
@@ -14294,6 +14423,7 @@
                 const res = await fetch('/models/save', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ selected_models: selectedModels }) });
                 const data = await res.json();
                 if (res.ok) {
+                    refreshUsageLimitModelOptions();
                     renderSelectedModelsChips();
                     closeModelsModal();
                     showStatus(`已保存 ${data.saved_count} 个模型`, 'success');
