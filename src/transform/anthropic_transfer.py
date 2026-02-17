@@ -618,3 +618,28 @@ def estimate_openai_messages_input_tokens(messages: Any) -> int:
     # ~4 chars/token + per-message overhead
     estimated = (text_chars // 4) + (len(messages) * 4)
     return max(1, estimated)
+
+
+def openai_models_to_anthropic_models(models: List[str]) -> Dict[str, Any]:
+    """Convert OpenAI-style model id list to Anthropic /v1/models shape."""
+    data: List[Dict[str, Any]] = []
+    for model_id in models:
+        if not isinstance(model_id, str):
+            continue
+        data.append(
+            {
+                "type": "model",
+                "id": model_id,
+                "display_name": model_id,
+                "created_at": "1970-01-01T00:00:00Z",
+            }
+        )
+
+    first_id = data[0]["id"] if data else None
+    last_id = data[-1]["id"] if data else None
+    return {
+        "data": data,
+        "has_more": False,
+        "first_id": first_id,
+        "last_id": last_id,
+    }

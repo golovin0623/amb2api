@@ -25,6 +25,7 @@ from ..transform.anthropic_transfer import (
     anthropic_events_to_sse_bytes,
     openai_error_to_anthropic_error_body,
     estimate_openai_messages_input_tokens,
+    openai_models_to_anthropic_models,
 )
 from ..stats.performance_tracker import get_performance_tracker
 
@@ -45,10 +46,12 @@ async def authenticate(credentials: HTTPAuthorizationCredentials = Depends(secur
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="密码错误")
     return token
 
-@router.get("/v1/models", response_model=ModelList)
-async def list_models():
-    """返回OpenAI格式的模型列表"""
+@router.get("/v1/models")
+async def list_models(request: Request):
+    """返回 OpenAI/Anthropic 兼容的模型列表。"""
     models = await get_available_models_async("openai")
+    if request.headers.get("anthropic-version"):
+        return JSONResponse(content=openai_models_to_anthropic_models([str(m) for m in models]))
     return ModelList(data=[Model(id=m) for m in models])
 
 
