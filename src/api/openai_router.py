@@ -6,6 +6,7 @@ import json
 import time
 import uuid
 import asyncio
+from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Depends, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -17,6 +18,13 @@ from ..services.assembly_client import send_assembly_request
 from ..services.assembly_stream_handler import fake_stream_response_for_assembly, convert_streaming_response
 from ..models.models import ChatCompletionRequest, ModelList, Model
 from ..transform.openai_transfer import assembly_response_to_openai
+from ..transform.anthropic_transfer import (
+    anthropic_request_to_openai_payload,
+    openai_response_to_anthropic_message,
+    convert_openai_sse_payload_to_anthropic_events,
+    anthropic_events_to_sse_bytes,
+    estimate_openai_messages_input_tokens,
+)
 from ..stats.performance_tracker import get_performance_tracker
 
 
@@ -41,6 +49,297 @@ async def list_models():
     """返回OpenAI格式的模型列表"""
     models = await get_available_models_async("openai")
     return ModelList(data=[Model(id=m) for m in models])
+
+
+def _anthropic_error_body(message: str, error_type: str = "invalid_request_error") -> Dict[str, Any]:
+    return {"type": "error", "error": {"type": error_type, "message": message}}
+
+
+async def authenticate_anthropic_request(request: Request) -> str:
+    """Anthropic-compatible auth: x-api-key first, then Bearer."""
+    from config import get_api_password
+
+    password = await get_api_password()
+
+    token = request.headers.get("x-api-key", "").strip()
+    if not token:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
+
+    if token != password:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="密码错误")
+    return token
+
+
+def _extract_response_text(response: Any) -> str:
+    """Decode generic response object to text."""
+    if hasattr(response, "text") and isinstance(getattr(response, "text"), str):
+        return response.text
+    if hasattr(response, "body"):
+        body = response.body
+        if isinstance(body, bytes):
+            return body.decode("utf-8", errors="replace")
+        return str(body)
+    if hasattr(response, "content"):
+        content = response.content
+        if isinstance(content, bytes):
+            return content.decode("utf-8", errors="replace")
+        return str(content)
+    return str(response)
+
+
+def _parse_response_json(text: str, response: Any) -> Any:
+    """Best-effort parse of response body as JSON."""
+    parsed = None
+    try:
+        parsed = json.loads(text.strip())
+    except Exception:
+        if "data:" in text:
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            for line in reversed(lines):
+                if not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if payload == "[DONE]":
+                    continue
+                try:
+                    parsed = json.loads(payload)
+                    break
+                except Exception:
+                    pass
+        if parsed is None and hasattr(response, "json"):
+            try:
+                parsed = response.json()
+            except Exception:
+                parsed = None
+    return parsed
+
+
+def _build_openai_fallback_text_response(model: str, text: str) -> Dict[str, Any]:
+    return {
+        "id": str(uuid.uuid4()),
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": model,
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": text.strip()},
+                "finish_reason": "stop",
+            }
+        ],
+    }
+
+
+def _coerce_anthropic_error_type(status_code: int) -> str:
+    if status_code in (401, 403):
+        return "authentication_error"
+    if status_code == 429:
+        return "rate_limit_error"
+    if status_code == 400:
+        return "invalid_request_error"
+    return "api_error"
+
+
+async def _convert_openai_stream_to_anthropic(
+    openai_stream_response: StreamingResponse, model: str
+) -> StreamingResponse:
+    """Re-map OpenAI SSE stream body to Anthropic SSE events."""
+
+    async def anthropic_stream_generator():
+        state: Dict[str, Any] = {"model": model}
+        buf = ""
+        async for chunk in openai_stream_response.body_iterator:
+            if isinstance(chunk, bytes):
+                buf += chunk.decode("utf-8", errors="replace")
+            else:
+                buf += str(chunk)
+
+            parts = buf.split("\n\n")
+            buf = parts.pop()
+            for part in parts:
+                line = part.strip()
+                if not line:
+                    continue
+                if line.startswith(":"):
+                    yield f"{line}\n\n".encode("utf-8")
+                    continue
+                for single_line in line.splitlines():
+                    single_line = single_line.strip()
+                    if not single_line.startswith("data:"):
+                        continue
+                    payload = single_line[5:].strip()
+                    events = convert_openai_sse_payload_to_anthropic_events(
+                        payload, state=state, default_model=model
+                    )
+                    if events:
+                        yield anthropic_events_to_sse_bytes(events)
+
+        if buf.strip():
+            line = buf.strip()
+            if line.startswith("data:"):
+                payload = line[5:].strip()
+                events = convert_openai_sse_payload_to_anthropic_events(
+                    payload, state=state, default_model=model
+                )
+                if events:
+                    yield anthropic_events_to_sse_bytes(events)
+
+        # Ensure message_stop exists even if upstream only ended with [DONE].
+        events = convert_openai_sse_payload_to_anthropic_events(
+            "[DONE]", state=state, default_model=model
+        )
+        if events:
+            yield anthropic_events_to_sse_bytes(events)
+
+    return StreamingResponse(anthropic_stream_generator(), media_type="text/event-stream")
+
+
+@router.post("/v1/messages")
+async def anthropic_messages(
+    request: Request,
+    token: str = Depends(authenticate_anthropic_request),
+):
+    """处理 Anthropic Messages API 请求。"""
+    trace_id = str(uuid.uuid4())
+    tracker = await get_performance_tracker()
+    trace = tracker.start_trace(trace_id, "pending")
+    trace.mark("auth_complete")
+
+    try:
+        raw_data = await request.json()
+    except Exception as e:
+        return JSONResponse(
+            content=_anthropic_error_body(f"Invalid JSON: {str(e)}", "invalid_request_error"),
+            status_code=400,
+        )
+
+    try:
+        openai_payload = anthropic_request_to_openai_payload(raw_data)
+    except Exception as e:
+        return JSONResponse(
+            content=_anthropic_error_body(str(e), "invalid_request_error"),
+            status_code=400,
+        )
+
+    try:
+        request_data = ChatCompletionRequest(**openai_payload)
+        trace.model = request_data.model
+    except Exception as e:
+        return JSONResponse(
+            content=_anthropic_error_body(f"Request validation error: {str(e)}", "invalid_request_error"),
+            status_code=400,
+        )
+
+    if getattr(request_data, "max_tokens", None) is not None and request_data.max_tokens > 65535:
+        request_data.max_tokens = 65535
+
+    setattr(request_data, "top_k", 64)
+    trace.mark("preprocessing_complete")
+
+    model = request_data.model
+    is_streaming = bool(getattr(request_data, "stream", False))
+    use_fake_streaming = is_fake_streaming_model(model)
+
+    if use_fake_streaming and is_streaming:
+        request_data.stream = False
+        openai_stream = await fake_stream_response_for_assembly(request_data, trace=trace)
+        return await _convert_openai_stream_to_anthropic(openai_stream, model)
+
+    if is_streaming:
+        from config import get_enable_real_streaming
+
+        enable_real_streaming = await get_enable_real_streaming()
+        if enable_real_streaming:
+            async def request_provider():
+                return await send_assembly_request(request_data, True, trace=trace)
+
+            upstream_response = await request_provider()
+            openai_stream = await convert_streaming_response(
+                upstream_response,
+                model,
+                trace=trace,
+                request_provider=request_provider,
+            )
+        else:
+            openai_stream = await fake_stream_response_for_assembly(request_data, trace=trace)
+
+        return await _convert_openai_stream_to_anthropic(openai_stream, model)
+
+    upstream_response = await send_assembly_request(request_data, False, trace=trace)
+    response_status = getattr(upstream_response, "status_code", 200)
+    if response_status >= 400:
+        parsed_error = None
+        try:
+            raw = _extract_response_text(upstream_response)
+            parsed_error = json.loads(raw)
+        except Exception:
+            parsed_error = None
+
+        if trace:
+            try:
+                await tracker.end_trace(trace.trace_id)
+            except Exception:
+                pass
+
+        message = "Upstream request failed"
+        if isinstance(parsed_error, dict):
+            if isinstance(parsed_error.get("error"), dict):
+                message = str(parsed_error["error"].get("message") or message)
+            else:
+                message = str(parsed_error.get("message") or message)
+
+        return JSONResponse(
+            content=_anthropic_error_body(message, _coerce_anthropic_error_type(response_status)),
+            status_code=response_status,
+        )
+
+    text = _extract_response_text(upstream_response)
+    parsed = _parse_response_json(text, upstream_response)
+    if isinstance(parsed, dict):
+        openai_response = assembly_response_to_openai(parsed, model)
+    else:
+        openai_response = _build_openai_fallback_text_response(model, text)
+    anthropic_response = openai_response_to_anthropic_message(openai_response, fallback_model=model)
+
+    usage = openai_response.get("usage", {}) if isinstance(openai_response, dict) else {}
+    completion_tokens = usage.get("completion_tokens", 0) if isinstance(usage, dict) else 0
+    prompt_tokens = usage.get("prompt_tokens", 0) if isinstance(usage, dict) else 0
+
+    if trace:
+        trace.mark("conversion_complete")
+        trace.mark("first_chunk_sent")
+        await tracker.end_trace(trace.trace_id, completion_tokens=completion_tokens, prompt_tokens=prompt_tokens)
+
+    return JSONResponse(content=anthropic_response)
+
+
+@router.post("/v1/messages/count_tokens")
+async def anthropic_count_tokens(
+    request: Request,
+    token: str = Depends(authenticate_anthropic_request),
+):
+    """Anthropic count_tokens compatibility endpoint."""
+    try:
+        raw_data = await request.json()
+    except Exception as e:
+        return JSONResponse(
+            content=_anthropic_error_body(f"Invalid JSON: {str(e)}", "invalid_request_error"),
+            status_code=400,
+        )
+
+    try:
+        openai_payload = anthropic_request_to_openai_payload(raw_data)
+    except Exception as e:
+        return JSONResponse(
+            content=_anthropic_error_body(str(e), "invalid_request_error"),
+            status_code=400,
+        )
+
+    messages = openai_payload.get("messages", [])
+    input_tokens = estimate_openai_messages_input_tokens(messages)
+    return JSONResponse(content={"input_tokens": input_tokens})
 
 @router.post("/v1/chat/completions")
 async def chat_completions(

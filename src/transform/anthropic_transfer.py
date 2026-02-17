@@ -545,3 +545,51 @@ def anthropic_events_to_sse_bytes(events: List[Dict[str, Any]]) -> bytes:
         payload = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
         out.append(f"event: {event_type}\ndata: {payload}\n\n")
     return "".join(out).encode("utf-8")
+
+
+def estimate_openai_messages_input_tokens(messages: Any) -> int:
+    """
+    Estimate prompt/input tokens from OpenAI-like messages.
+
+    This is a conservative approximation for count_tokens compatibility.
+    """
+    if not isinstance(messages, list):
+        return 0
+
+    def _content_text_length(content: Any) -> int:
+        if isinstance(content, str):
+            return len(content)
+        if isinstance(content, list):
+            total = 0
+            for part in content:
+                if isinstance(part, dict):
+                    if part.get("type") == "text":
+                        total += len(str(part.get("text", "")))
+                    elif part.get("type") == "image_url":
+                        # Account for multimodal prompt overhead.
+                        total += 256
+                elif isinstance(part, str):
+                    total += len(part)
+            return total
+        if content is None:
+            return 0
+        return len(str(content))
+
+    text_chars = 0
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        text_chars += _content_text_length(message.get("content"))
+        tool_calls = message.get("tool_calls")
+        if isinstance(tool_calls, list):
+            for tool_call in tool_calls:
+                if not isinstance(tool_call, dict):
+                    continue
+                function_info = tool_call.get("function")
+                if isinstance(function_info, dict):
+                    text_chars += len(str(function_info.get("name", "")))
+                    text_chars += len(str(function_info.get("arguments", "")))
+
+    # ~4 chars/token + per-message overhead
+    estimated = (text_chars // 4) + (len(messages) * 4)
+    return max(1, estimated)
