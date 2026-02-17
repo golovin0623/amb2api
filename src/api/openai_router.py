@@ -23,6 +23,7 @@ from ..transform.anthropic_transfer import (
     openai_response_to_anthropic_message,
     convert_openai_sse_payload_to_anthropic_events,
     anthropic_events_to_sse_bytes,
+    openai_error_to_anthropic_error_body,
     estimate_openai_messages_input_tokens,
 )
 from ..stats.performance_tracker import get_performance_tracker
@@ -49,10 +50,6 @@ async def list_models():
     """返回OpenAI格式的模型列表"""
     models = await get_available_models_async("openai")
     return ModelList(data=[Model(id=m) for m in models])
-
-
-def _anthropic_error_body(message: str, error_type: str = "invalid_request_error") -> Dict[str, Any]:
-    return {"type": "error", "error": {"type": error_type, "message": message}}
 
 
 async def authenticate_anthropic_request(request: Request) -> str:
@@ -132,16 +129,6 @@ def _build_openai_fallback_text_response(model: str, text: str) -> Dict[str, Any
     }
 
 
-def _coerce_anthropic_error_type(status_code: int) -> str:
-    if status_code in (401, 403):
-        return "authentication_error"
-    if status_code == 429:
-        return "rate_limit_error"
-    if status_code == 400:
-        return "invalid_request_error"
-    return "api_error"
-
-
 async def _convert_openai_stream_to_anthropic(
     openai_stream_response: StreamingResponse, model: str
 ) -> StreamingResponse:
@@ -199,9 +186,18 @@ async def _convert_openai_stream_to_anthropic(
 @router.post("/v1/messages")
 async def anthropic_messages(
     request: Request,
-    token: str = Depends(authenticate_anthropic_request),
 ):
     """处理 Anthropic Messages API 请求。"""
+    try:
+        await authenticate_anthropic_request(request)
+    except HTTPException as e:
+        return JSONResponse(
+            content=openai_error_to_anthropic_error_body(
+                e.status_code, {"message": str(e.detail)}, fallback_message=str(e.detail)
+            ),
+            status_code=e.status_code,
+        )
+
     trace_id = str(uuid.uuid4())
     tracker = await get_performance_tracker()
     trace = tracker.start_trace(trace_id, "pending")
@@ -211,7 +207,9 @@ async def anthropic_messages(
         raw_data = await request.json()
     except Exception as e:
         return JSONResponse(
-            content=_anthropic_error_body(f"Invalid JSON: {str(e)}", "invalid_request_error"),
+            content=openai_error_to_anthropic_error_body(
+                400, {"message": f"Invalid JSON: {str(e)}"}, fallback_message="Invalid JSON"
+            ),
             status_code=400,
         )
 
@@ -219,7 +217,9 @@ async def anthropic_messages(
         openai_payload = anthropic_request_to_openai_payload(raw_data)
     except Exception as e:
         return JSONResponse(
-            content=_anthropic_error_body(str(e), "invalid_request_error"),
+            content=openai_error_to_anthropic_error_body(
+                400, {"message": str(e)}, fallback_message="Invalid request"
+            ),
             status_code=400,
         )
 
@@ -228,7 +228,9 @@ async def anthropic_messages(
         trace.model = request_data.model
     except Exception as e:
         return JSONResponse(
-            content=_anthropic_error_body(f"Request validation error: {str(e)}", "invalid_request_error"),
+            content=openai_error_to_anthropic_error_body(
+                400, {"message": f"Request validation error: {str(e)}"}, fallback_message="Request validation error"
+            ),
             status_code=400,
         )
 
@@ -291,7 +293,9 @@ async def anthropic_messages(
                 message = str(parsed_error.get("message") or message)
 
         return JSONResponse(
-            content=_anthropic_error_body(message, _coerce_anthropic_error_type(response_status)),
+            content=openai_error_to_anthropic_error_body(
+                response_status, parsed_error, fallback_message=message
+            ),
             status_code=response_status,
         )
 
@@ -318,14 +322,25 @@ async def anthropic_messages(
 @router.post("/v1/messages/count_tokens")
 async def anthropic_count_tokens(
     request: Request,
-    token: str = Depends(authenticate_anthropic_request),
 ):
     """Anthropic count_tokens compatibility endpoint."""
+    try:
+        await authenticate_anthropic_request(request)
+    except HTTPException as e:
+        return JSONResponse(
+            content=openai_error_to_anthropic_error_body(
+                e.status_code, {"message": str(e.detail)}, fallback_message=str(e.detail)
+            ),
+            status_code=e.status_code,
+        )
+
     try:
         raw_data = await request.json()
     except Exception as e:
         return JSONResponse(
-            content=_anthropic_error_body(f"Invalid JSON: {str(e)}", "invalid_request_error"),
+            content=openai_error_to_anthropic_error_body(
+                400, {"message": f"Invalid JSON: {str(e)}"}, fallback_message="Invalid JSON"
+            ),
             status_code=400,
         )
 
@@ -333,7 +348,9 @@ async def anthropic_count_tokens(
         openai_payload = anthropic_request_to_openai_payload(raw_data)
     except Exception as e:
         return JSONResponse(
-            content=_anthropic_error_body(str(e), "invalid_request_error"),
+            content=openai_error_to_anthropic_error_body(
+                400, {"message": str(e)}, fallback_message="Invalid request"
+            ),
             status_code=400,
         )
 

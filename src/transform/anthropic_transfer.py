@@ -547,6 +547,31 @@ def anthropic_events_to_sse_bytes(events: List[Dict[str, Any]]) -> bytes:
     return "".join(out).encode("utf-8")
 
 
+def openai_error_to_anthropic_error_body(
+    status_code: int,
+    parsed_error: Any = None,
+    fallback_message: str = "Upstream request failed",
+) -> Dict[str, Any]:
+    """Normalize error payload to Anthropic-style error object."""
+    if status_code in (401, 403):
+        error_type = "authentication_error"
+    elif status_code == 429:
+        error_type = "rate_limit_error"
+    elif status_code == 400:
+        error_type = "invalid_request_error"
+    else:
+        error_type = "api_error"
+
+    message = fallback_message
+    if isinstance(parsed_error, dict):
+        if isinstance(parsed_error.get("error"), dict):
+            message = str(parsed_error["error"].get("message") or message)
+        elif parsed_error.get("message") is not None:
+            message = str(parsed_error.get("message"))
+
+    return {"type": "error", "error": {"type": error_type, "message": message}}
+
+
 def estimate_openai_messages_input_tokens(messages: Any) -> int:
     """
     Estimate prompt/input tokens from OpenAI-like messages.
