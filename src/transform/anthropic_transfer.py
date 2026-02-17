@@ -376,3 +376,172 @@ def openai_response_to_anthropic_message(
             "output_tokens": output_tokens,
         },
     }
+
+
+def openai_chunk_to_anthropic_events(
+    openai_chunk: Dict[str, Any],
+    state: Dict[str, Any],
+    default_model: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Convert one OpenAI stream chunk JSON to Anthropic event list."""
+    events: List[Dict[str, Any]] = []
+
+    model = openai_chunk.get("model")
+    if not isinstance(model, str) or not model:
+        model = default_model or state.get("model") or ""
+    state["model"] = model
+
+    message_id = openai_chunk.get("id")
+    if not isinstance(message_id, str) or not message_id:
+        message_id = state.get("message_id") or f"msg_{uuid.uuid4().hex}"
+    state["message_id"] = message_id
+
+    if not state.get("message_started"):
+        events.append(
+            {
+                "type": "message_start",
+                "message": {
+                    "id": message_id,
+                    "type": "message",
+                    "role": "assistant",
+                    "model": model,
+                    "content": [],
+                    "stop_reason": None,
+                    "stop_sequence": None,
+                    "usage": {"input_tokens": 0, "output_tokens": 0},
+                },
+            }
+        )
+        state["message_started"] = True
+
+    choices = openai_chunk.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return events
+    first_choice = choices[0]
+    if not isinstance(first_choice, dict):
+        return events
+
+    delta = first_choice.get("delta")
+    if not isinstance(delta, dict):
+        delta = {}
+
+    # text delta mapping
+    text_delta = delta.get("content")
+    if isinstance(text_delta, str) and text_delta:
+        if not state.get("text_block_started"):
+            events.append(
+                {
+                    "type": "content_block_start",
+                    "index": 0,
+                    "content_block": {"type": "text", "text": ""},
+                }
+            )
+            state["text_block_started"] = True
+
+        events.append(
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "text_delta", "text": text_delta},
+            }
+        )
+
+    # tool delta mapping (best effort for chunked tool_calls)
+    tool_calls = delta.get("tool_calls")
+    if isinstance(tool_calls, list):
+        for idx, tool_call in enumerate(tool_calls, start=1):
+            if not isinstance(tool_call, dict):
+                continue
+            function_info = tool_call.get("function")
+            if not isinstance(function_info, dict):
+                function_info = {}
+            tool_name = function_info.get("name")
+            if not isinstance(tool_name, str) or not tool_name:
+                tool_name = "unknown_tool"
+            tool_id = tool_call.get("id")
+            if not isinstance(tool_id, str) or not tool_id:
+                tool_id = f"toolu_{uuid.uuid4().hex[:24]}"
+            tool_input = _parse_openai_tool_arguments(function_info.get("arguments"))
+
+            events.append(
+                {
+                    "type": "content_block_start",
+                    "index": idx,
+                    "content_block": {
+                        "type": "tool_use",
+                        "id": tool_id,
+                        "name": tool_name,
+                        "input": tool_input,
+                    },
+                }
+            )
+            events.append({"type": "content_block_stop", "index": idx})
+
+    finish_reason = first_choice.get("finish_reason")
+    if finish_reason is not None:
+        if state.get("text_block_started"):
+            events.append({"type": "content_block_stop", "index": 0})
+            state["text_block_started"] = False
+
+        usage = openai_chunk.get("usage")
+        if not isinstance(usage, dict):
+            usage = {}
+        output_tokens = usage.get("completion_tokens")
+        if not isinstance(output_tokens, int):
+            output_tokens = usage.get("output_tokens", 0)
+        if not isinstance(output_tokens, int):
+            output_tokens = 0
+
+        events.append(
+            {
+                "type": "message_delta",
+                "delta": {
+                    "stop_reason": _map_openai_finish_reason_to_anthropic(finish_reason),
+                    "stop_sequence": None,
+                },
+                "usage": {"output_tokens": output_tokens},
+            }
+        )
+        events.append({"type": "message_stop"})
+        state["message_stopped"] = True
+
+    return events
+
+
+def convert_openai_sse_payload_to_anthropic_events(
+    payload_text: str, state: Dict[str, Any], default_model: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """Convert OpenAI SSE payload text to Anthropic event objects."""
+    clean = payload_text.strip()
+    if not clean:
+        return []
+    if clean == "[DONE]":
+        events: List[Dict[str, Any]] = []
+        if state.get("text_block_started"):
+            events.append({"type": "content_block_stop", "index": 0})
+            state["text_block_started"] = False
+        if state.get("message_started") and not state.get("message_stopped"):
+            events.append({"type": "message_stop"})
+            state["message_stopped"] = True
+        return events
+
+    try:
+        chunk = json.loads(clean)
+    except Exception:
+        return []
+
+    if not isinstance(chunk, dict):
+        return []
+    return openai_chunk_to_anthropic_events(chunk, state=state, default_model=default_model)
+
+
+def anthropic_events_to_sse_bytes(events: List[Dict[str, Any]]) -> bytes:
+    """Encode Anthropic event objects to SSE bytes."""
+    out: List[str] = []
+    for event in events:
+        event_type = event.get("type")
+        if not isinstance(event_type, str) or not event_type:
+            continue
+        payload = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+        out.append(f"event: {event_type}\ndata: {payload}\n\n")
+    return "".join(out).encode("utf-8")
