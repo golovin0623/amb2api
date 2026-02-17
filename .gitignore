@@ -116,3 +116,4 @@ Thumbs.db
 *.log
 log.txt
 *.txt
+.agent/**

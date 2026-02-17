@@ -20,6 +20,7 @@ from config import (
     get_retry_429_interval,
     get_auto_ban_enabled,
     get_auto_ban_error_codes,
+    get_tool_debug_logs_enabled,
 )
 
 
@@ -527,6 +528,32 @@ def _mask_key(key: str) -> str:
         return k[:2] + "***"
     return k[:4] + "..." + k[-4:]
 
+
+def _truncate_for_log(text: Any, limit: int = 2000) -> str:
+    s = "" if text is None else str(text)
+    if len(s) <= limit:
+        return s
+    return f"{s[:limit]}... [truncated, total_len={len(s)}]"
+
+
+def _sanitize_headers_for_log(headers: Any, max_value_len: int = 240) -> Dict[str, str]:
+    try:
+        source = dict(headers)
+    except Exception:
+        return {"_raw": _truncate_for_log(headers, 400)}
+
+    sanitized: Dict[str, str] = {}
+    redact_keys = {"authorization", "cookie", "set-cookie"}
+
+    for k, v in source.items():
+        key_lower = str(k).lower()
+        if key_lower in redact_keys:
+            sanitized[str(k)] = "[REDACTED]"
+            continue
+        sanitized[str(k)] = _truncate_for_log(v, max_value_len)
+
+    return sanitized
+
 async def _update_rate_limit_info(idx: int, api_key: str, headers: dict):
     """更新速率限制信息 - 使用新的 RateLimiter"""
     import time
@@ -810,10 +837,11 @@ async def send_assembly_request(
     
     # 记录完整的 payload（用于调试）
     payload_debug = {k: v for k, v in payload.items() if k != 'messages'}
-    log.info(f"Final payload for {openai_request.model}: {payload_debug}")
+    log.debug(f"Final payload for {openai_request.model}: {payload_debug}")
 
     endpoint = await get_assembly_endpoint()
     keys = await get_assembly_api_keys()
+    tool_debug_enabled = await get_tool_debug_logs_enabled()
     if not keys:
         return JSONResponse(content={"error": {"message": "No AssemblyAI API keys configured", "type": "config_error"}}, status_code=500)
 
@@ -828,7 +856,7 @@ async def send_assembly_request(
     
     # 对于 Claude 4.5，记录完整的请求以便调试
     if is_claude_45:
-        log.info(f"Claude 4.5 request payload (first 500 chars): {post_data[:500]}")
+        log.debug(f"Claude 4.5 request payload: {_truncate_for_log(post_data, 1200)}")
 
     for attempt in range(max_retries + 1):
         idx = -1
@@ -865,8 +893,9 @@ async def send_assembly_request(
             log.info(f"REQ model={openai_request.model} key={_mask_key(api_key)} attempt={attempt+1}/{max_retries+1} key_idx={idx}")
 
             # [TOOL_DEBUG] 完整请求信息 - 用于调试工具调用
-            log.info(f"[TOOL_DEBUG] REQ Endpoint: {endpoint}")
-            log.info(f"[TOOL_DEBUG] REQ Full Payload:\n{post_data}")
+            if tool_debug_enabled:
+                log.debug(f"[TOOL_DEBUG] REQ Endpoint: {endpoint}")
+                log.debug(f"[TOOL_DEBUG] REQ Payload: {_truncate_for_log(post_data, 4000)}")
 
             if is_streaming:
                 stream_client = await create_streaming_client_with_kwargs()
@@ -962,8 +991,9 @@ async def send_assembly_request(
 
                 status_cat = "OK" if 200 <= resp.status_code < 400 else f"FAIL({resp.status_code})"
                 log.info(f"RES model={openai_request.model} key={_mask_key(api_key)} status={status_cat}")
-                log.info(f"[TOOL_DEBUG] RES Status Code: {resp.status_code}")
-                log.info(f"[TOOL_DEBUG] RES Headers: {dict(resp.headers)}")
+                if tool_debug_enabled:
+                    log.debug(f"[TOOL_DEBUG] RES Status Code: {resp.status_code}")
+                    log.debug(f"[TOOL_DEBUG] RES Headers: {_sanitize_headers_for_log(resp.headers)}")
 
                 # 流式请求在响应头阶段失败：直接返回错误，供上层按 bootstrap 策略处理
                 if not (200 <= resp.status_code < 400):
@@ -1099,13 +1129,14 @@ async def send_assembly_request(
             log.info(f"RES model={openai_request.model} key={_mask_key(api_key)} status={status_cat}")
 
             # [TOOL_DEBUG] 完整响应信息 - 用于调试工具调用
-            log.info(f"[TOOL_DEBUG] RES Status Code: {resp.status_code}")
-            log.info(f"[TOOL_DEBUG] RES Headers: {dict(resp.headers)}")
-            try:
-                response_text = resp.text if hasattr(resp, 'text') else str(resp.content)
-                log.info(f"[TOOL_DEBUG] RES Full Body:\n{response_text}")
-            except Exception as e:
-                log.info(f"[TOOL_DEBUG] RES Body: [Unable to decode: {e}]")
+            if tool_debug_enabled:
+                log.debug(f"[TOOL_DEBUG] RES Status Code: {resp.status_code}")
+                log.debug(f"[TOOL_DEBUG] RES Headers: {_sanitize_headers_for_log(resp.headers)}")
+                try:
+                    response_text = resp.text if hasattr(resp, 'text') else str(resp.content)
+                    log.debug(f"[TOOL_DEBUG] RES Body: {_truncate_for_log(response_text, 6000)}")
+                except Exception as e:
+                    log.debug(f"[TOOL_DEBUG] RES Body: [Unable to decode: {e}]")
 
             # 记录调用统计（使用统一统计模块）
             if 200 <= resp.status_code < 400:

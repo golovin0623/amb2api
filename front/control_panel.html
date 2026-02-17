@@ -893,6 +893,29 @@
             background: var(--border-color);
         }
 
+        .usage-trace-controls {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: flex-end;
+        }
+
+        .usage-trace-pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .trace-token-cell {
+            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+            font-size: 11px;
+            color: var(--text-color);
+            white-space: nowrap;
+        }
+
         /* 暗黑模式切换按钮 */
         .theme-toggle {
             position: fixed;
@@ -6592,6 +6615,68 @@
                         <div id="usageList"></div>
                     </div>
 
+                    <div class="config-group">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                            <h4 style="margin:0;">请求明细追踪（分页）</h4>
+                            <button class="btn btn-sm" style="background:#4285f4;" onclick="loadUsageRequestTraces(1)">刷新明细</button>
+                        </div>
+                        <div id="usageRequestTraceStatus" style="margin-bottom:10px;"></div>
+                        <div class="usage-trace-controls">
+                            <div>
+                                <label style="font-size:12px; color:var(--text-secondary); display:block; margin-bottom:4px;">模型</label>
+                                <select id="usageTraceModelFilter" class="config-input" style="width:220px;" onchange="loadUsageRequestTraces(1)">
+                                    <option value="">全部模型</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size:12px; color:var(--text-secondary); display:block; margin-bottom:4px;">密钥</label>
+                                <select id="usageTraceKeyFilter" class="config-input" style="width:220px;" onchange="loadUsageRequestTraces(1)">
+                                    <option value="">全部密钥</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size:12px; color:var(--text-secondary); display:block; margin-bottom:4px;">Trace 搜索</label>
+                                <input type="text" id="usageTraceSearchInput" class="config-input" style="width:230px;" placeholder="输入 Trace ID..." onkeypress="if(event.key==='Enter')loadUsageRequestTraces(1)" />
+                            </div>
+                            <div>
+                                <label style="font-size:12px; color:var(--text-secondary); display:block; margin-bottom:4px;">每页</label>
+                                <select id="usageTracePageSize" class="config-input" style="width:100px;" onchange="loadUsageRequestTraces(1)">
+                                    <option value="10">10 条</option>
+                                    <option value="20" selected>20 条</option>
+                                    <option value="50">50 条</option>
+                                    <option value="100">100 条</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="overflow-x:auto; margin-top:12px;">
+                            <table class="table" id="usageRequestTracesTable">
+                                <thead>
+                                    <tr>
+                                        <th style="width:95px;">时间</th>
+                                        <th>模型</th>
+                                        <th style="width:95px;">密钥</th>
+                                        <th style="width:85px;">输入</th>
+                                        <th style="width:85px;">输出</th>
+                                        <th style="width:85px;">缓存</th>
+                                        <th style="width:95px;">总计</th>
+                                        <th style="width:90px;">延迟</th>
+                                        <th style="width:60px;">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="usageRequestTracesBody">
+                                    <tr>
+                                        <td colspan="9" style="text-align:center; color:var(--text-secondary);">暂无数据</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="usage-trace-pagination" id="usageRequestTracesPagination" style="display:none;">
+                            <button class="btn btn-sm" style="background:#6c757d;" id="usageTracePrevBtn" onclick="loadUsageRequestTraces(currentUsageTracePage - 1)">上一页</button>
+                            <span id="usageTracePageInfo" style="margin:0 12px; color:var(--text-secondary);">第 1 / 1 页 (共 0 条)</span>
+                            <button class="btn btn-sm" style="background:#6c757d;" id="usageTraceNextBtn" onclick="loadUsageRequestTraces(currentUsageTracePage + 1)">下一页</button>
+                        </div>
+                    </div>
+
                     <!-- 使用说明 -->
                     <div class="config-group"
                         style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
@@ -7171,6 +7256,22 @@
                                 <div class="perf-stat-value" id="perfKeepaliveTotal">0</div>
                                 <div class="perf-stat-label">Keepalive 总数</div>
                             </div>
+                            <div class="perf-stat-card">
+                                <div class="perf-stat-value" id="perfPromptTotal">0</div>
+                                <div class="perf-stat-label">输入 Tokens</div>
+                            </div>
+                            <div class="perf-stat-card">
+                                <div class="perf-stat-value" id="perfCompletionTotal">0</div>
+                                <div class="perf-stat-label">输出 Tokens</div>
+                            </div>
+                            <div class="perf-stat-card">
+                                <div class="perf-stat-value" id="perfCachedTotal">0</div>
+                                <div class="perf-stat-label">缓存 Tokens</div>
+                            </div>
+                            <div class="perf-stat-card">
+                                <div class="perf-stat-value" id="perfTotalTokens">0</div>
+                                <div class="perf-stat-label">总 Tokens</div>
+                            </div>
                         </div>
                     </div>
 
@@ -7191,6 +7292,13 @@
                                     Trace ID</label>
                                 <input type="text" id="perfSearchInput" class="config-input"
                                     placeholder="输入 Trace ID..." style="width: 220px;"
+                                    onkeypress="if(event.key==='Enter')loadPerfTraces(1)" />
+                            </div>
+                            <div>
+                                <label
+                                    style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px;">密钥筛选</label>
+                                <input type="text" id="perfKeyFilter" class="config-input"
+                                    placeholder="例如 sk-ab...xy" style="width: 170px;"
                                     onkeypress="if(event.key==='Enter')loadPerfTraces(1)" />
                             </div>
                             <div>
@@ -7227,12 +7335,16 @@
                                         <th style="width: 55px;">TPS</th>
                                         <th style="width: 70px;">总耗时</th>
                                         <th style="width: 90px;">密钥</th>
+                                        <th style="width: 80px;">输入</th>
+                                        <th style="width: 80px;">输出</th>
+                                        <th style="width: 80px;">缓存</th>
+                                        <th style="width: 90px;">总 Tokens</th>
                                         <th style="width: 50px;">操作</th>
                                     </tr>
                                 </thead>
                                 <tbody id="perfTracesBody">
                                     <tr>
-                                        <td colspan="8" style="text-align: center; color: var(--text-secondary);">暂无数据
+                                        <td colspan="12" style="text-align: center; color: var(--text-secondary);">暂无数据
                                         </td>
                                     </tr>
                                 </tbody>
@@ -7972,7 +8084,7 @@
 
     <!-- 性能链路分析弹窗 -->
     <div id="perfWaterfallModal" class="modal">
-        <div class="modal-content" style="max-width: 700px; width: 95%; box-sizing: border-box;">
+        <div class="modal-content" style="max-width: 920px; width: 96%; box-sizing: border-box;">
             <div class="modal-header">
                 <h3 class="modal-title">请求链路分析</h3>
                 <button class="modal-close" onclick="closePerfWaterfallModal()">&times;</button>
@@ -8034,23 +8146,44 @@
                 <div id="perfWaterfallChart" style="margin-bottom: 16px;"></div>
 
                 <!-- 指标汇总 -->
-                <div
-                    style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 12px; background: var(--card-bg); border-radius: 6px;">
-                    <div style="text-align: center;">
-                        <div style="font-size: 11px; color: var(--text-secondary);">TTFB</div>
-                        <div id="wfTTFB" style="font-size: 18px; font-weight: bold; color: #4285f4;">-</div>
+                <div style="display: grid; gap: 12px;">
+                    <div
+                        style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; padding: 12px; background: var(--card-bg); border-radius: 6px;">
+                        <div style="text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">TTFB</div>
+                            <div id="wfTTFB" style="font-size: 18px; font-weight: bold; color: #4285f4;">-</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">TTFT</div>
+                            <div id="wfTTFT" style="font-size: 18px; font-weight: bold; color: #34a853;">-</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">TPS</div>
+                            <div id="wfTPS" style="font-size: 18px; font-weight: bold; color: #fbbc05;">-</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">总耗时</div>
+                            <div id="wfTotal" style="font-size: 18px; font-weight: bold; color: #ea4335;">-</div>
+                        </div>
                     </div>
-                    <div style="text-align: center;">
-                        <div style="font-size: 11px; color: var(--text-secondary);">TTFT</div>
-                        <div id="wfTTFT" style="font-size: 18px; font-weight: bold; color: #34a853;">-</div>
-                    </div>
-                    <div style="text-align: center;">
-                        <div style="font-size: 11px; color: var(--text-secondary);">TPS</div>
-                        <div id="wfTPS" style="font-size: 18px; font-weight: bold; color: #fbbc05;">-</div>
-                    </div>
-                    <div style="text-align: center;">
-                        <div style="font-size: 11px; color: var(--text-secondary);">总耗时</div>
-                        <div id="wfTotal" style="font-size: 18px; font-weight: bold; color: #ea4335;">-</div>
+                    <div
+                        style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; padding: 12px; background: var(--card-bg); border-radius: 6px;">
+                        <div style="text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">输入 Tokens</div>
+                            <div id="wfPromptTokens" style="font-size: 16px; font-weight: 700; color: var(--text-color);">0</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">输出 Tokens</div>
+                            <div id="wfCompletionTokens" style="font-size: 16px; font-weight: 700; color: var(--text-color);">0</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">缓存 Tokens</div>
+                            <div id="wfCachedTokens" style="font-size: 16px; font-weight: 700; color: var(--text-color);">0</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">总 Tokens</div>
+                            <div id="wfTotalTokens" style="font-size: 16px; font-weight: 700; color: var(--text-color);">0</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -11575,6 +11708,8 @@
         let usageStatsData = {};
         let currentEditingFile = '';
         let usageLimitModelOptions = [];
+        let currentUsageTracePage = 1;
+        let usageTraceTotalPages = 1;
 
         function refreshUsageLimitModelOptions(configData = null) {
             const modelSet = new Set();
@@ -11599,6 +11734,39 @@
             });
 
             usageLimitModelOptions = Array.from(modelSet).sort((a, b) => a.localeCompare(b));
+        }
+
+        function syncUsageTraceFilterOptions() {
+            const modelSelect = document.getElementById('usageTraceModelFilter');
+            const keySelect = document.getElementById('usageTraceKeyFilter');
+
+            if (modelSelect) {
+                const prevModel = modelSelect.value;
+                modelSelect.innerHTML = '<option value="">全部模型</option>';
+                usageLimitModelOptions.forEach(modelName => {
+                    const opt = document.createElement('option');
+                    opt.value = modelName;
+                    opt.textContent = modelName;
+                    modelSelect.appendChild(opt);
+                });
+                if (prevModel && Array.from(modelSelect.options).some(o => o.value === prevModel)) {
+                    modelSelect.value = prevModel;
+                }
+            }
+
+            if (keySelect) {
+                const prevKey = keySelect.value;
+                keySelect.innerHTML = '<option value="">全部密钥</option>';
+                Object.keys(usageStatsData || {}).sort((a, b) => a.localeCompare(b)).forEach(keyName => {
+                    const opt = document.createElement('option');
+                    opt.value = keyName;
+                    opt.textContent = keyName;
+                    keySelect.appendChild(opt);
+                });
+                if (prevKey && Array.from(keySelect.options).some(o => o.value === prevKey)) {
+                    keySelect.value = prevKey;
+                }
+            }
         }
 
         // 刷新使用统计
@@ -11858,6 +12026,7 @@
                     const invalidKeys = Object.values(usageStatsData).filter(s => s.isInvalid).length;
 
                     refreshUsageLimitModelOptions(configData);
+                    syncUsageTraceFilterOptions();
 
                     document.getElementById('totalApiCalls').textContent = aggregatedData.total_all_model_calls || 0;
                     document.getElementById('activeKeys').textContent = activeKeys;
@@ -11868,6 +12037,10 @@
 
                     if (!silent) {
                         showStatus(`已加载 ${Object.keys(usageStatsData).length} 个密钥的使用统计（活跃: ${activeKeys}, 禁用: ${disabledKeys}）`, 'success');
+                    }
+                    const usageTabActive = document.getElementById('usageTab')?.classList.contains('active');
+                    if (usageTabActive) {
+                        await loadUsageRequestTraces(1, true);
                     }
                 } else {
                     if (!silent) {
@@ -11881,6 +12054,110 @@
             } finally {
                 if (!silent) {
                     usageLoading.style.display = 'none';
+                }
+            }
+        }
+
+        async function loadUsageRequestTraces(page = 1, silent = false) {
+            const tbody = document.getElementById('usageRequestTracesBody');
+            const statusEl = document.getElementById('usageRequestTraceStatus');
+            const paginationEl = document.getElementById('usageRequestTracesPagination');
+            if (!tbody) return;
+
+            const safePage = Math.max(1, page);
+            currentUsageTracePage = safePage;
+
+            if (!silent) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color: var(--text-secondary);">正在加载...</td></tr>';
+            }
+
+            try {
+                const model = document.getElementById('usageTraceModelFilter')?.value || '';
+                const key = document.getElementById('usageTraceKeyFilter')?.value || '';
+                const search = (document.getElementById('usageTraceSearchInput')?.value || '').trim();
+                const pageSize = parseInt(document.getElementById('usageTracePageSize')?.value || '20', 10);
+
+                const params = new URLSearchParams();
+                params.append('page', safePage);
+                params.append('page_size', Math.max(1, pageSize));
+                if (model) params.append('model', model);
+                if (key) params.append('key', key);
+                if (search) params.append('search', search);
+
+                const res = await fetch(`/usage/request-traces?${params.toString()}`, { headers: getAuthHeaders() });
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    throw new Error(errorText || `HTTP ${res.status}`);
+                }
+                const data = await res.json();
+
+                currentUsageTracePage = data.page || safePage;
+                usageTraceTotalPages = data.total_pages || 1;
+                const traces = Array.isArray(data.traces) ? data.traces : [];
+
+                if (!traces.length) {
+                    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color: var(--text-secondary);">暂无请求明细</td></tr>';
+                    if (paginationEl) paginationEl.style.display = 'none';
+                    if (statusEl && !silent) statusEl.innerHTML = '<div class="status info">没有符合筛选条件的请求记录</div>';
+                    return;
+                }
+
+                const tokenVal = (trace, keyName) => {
+                    const usage = trace.usage || {};
+                    const raw = trace[keyName] ?? usage[keyName] ?? 0;
+                    const parsed = Number(raw);
+                    return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 0;
+                };
+
+                tbody.innerHTML = traces.map(trace => {
+                    const traceId = String(trace.trace_id || '');
+                    const date = new Date((Number(trace.start_time) || 0) * 1000);
+                    const dateStr = date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+                    const timeStr = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    const fullTime = date.toLocaleString('zh-CN');
+                    const modelText = escapeHtml(String(trace.model || '-'));
+                    const keyDisplay = escapeHtml(String(trace.key_masked || (trace.key_index >= 0 ? `Key #${trace.key_index}` : '-')));
+                    const metrics = trace.metrics || {};
+                    const latency = Number(metrics.total_latency || 0);
+                    const prompt = tokenVal(trace, 'prompt_tokens');
+                    const completion = tokenVal(trace, 'completion_tokens');
+                    const cached = tokenVal(trace, 'cached_tokens');
+                    const total = tokenVal(trace, 'total_tokens');
+                    const traceIdSafe = traceId.replace(/'/g, "\\'");
+
+                    return `
+                        <tr>
+                            <td style="font-size:11px; white-space:nowrap;" title="${escapeHtml(fullTime)}">${dateStr}<br/>${timeStr}</td>
+                            <td style="font-size:11px; max-width:210px; word-break:break-all;" title="${modelText}">${modelText}</td>
+                            <td style="font-size:10px; font-family:'SF Mono', 'Monaco', 'Consolas', monospace; color:#9c27b0;">${keyDisplay}</td>
+                            <td class="trace-token-cell">${prompt.toLocaleString()}</td>
+                            <td class="trace-token-cell">${completion.toLocaleString()}</td>
+                            <td class="trace-token-cell">${cached.toLocaleString()}</td>
+                            <td class="trace-token-cell">${total.toLocaleString()}</td>
+                            <td style="font-size:11px;">${latency > 0 ? formatMs(latency) : '-'}</td>
+                            <td>
+                                <button class="btn btn-sm" style="background:#17a2b8; padding:2px 6px; font-size:10px;" onclick="showPerfWaterfall('${traceIdSafe}')">详情</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+                if (paginationEl) paginationEl.style.display = 'flex';
+                const pageInfoEl = document.getElementById('usageTracePageInfo');
+                if (pageInfoEl) pageInfoEl.textContent = `第 ${currentUsageTracePage} / ${usageTraceTotalPages} 页 (共 ${data.total || traces.length} 条)`;
+                const prevBtn = document.getElementById('usageTracePrevBtn');
+                const nextBtn = document.getElementById('usageTraceNextBtn');
+                if (prevBtn) prevBtn.disabled = currentUsageTracePage <= 1;
+                if (nextBtn) nextBtn.disabled = currentUsageTracePage >= usageTraceTotalPages;
+
+                if (statusEl && !silent) {
+                    statusEl.innerHTML = `<div class="status success">已加载请求明细 ${traces.length} 条（总计 ${data.total || traces.length}）</div>`;
+                }
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:#dc3545;">请求明细加载失败</td></tr>';
+                if (paginationEl) paginationEl.style.display = 'none';
+                if (statusEl) {
+                    statusEl.innerHTML = `<div class="status error">请求明细加载失败: ${escapeHtml(String(e.message || e))}</div>`;
                 }
             }
         }
@@ -13144,6 +13421,11 @@
                 const retryRate = Number(stream.bootstrap_retry_rate || 0);
                 document.getElementById('perfStreamRetryRate').textContent = `${(retryRate * 100).toFixed(1)}%`;
                 document.getElementById('perfKeepaliveTotal').textContent = stream.keepalive_total || 0;
+                const tokens = data.tokens || {};
+                document.getElementById('perfPromptTotal').textContent = Number(tokens.prompt_total || 0).toLocaleString();
+                document.getElementById('perfCompletionTotal').textContent = Number(tokens.completion_total || 0).toLocaleString();
+                document.getElementById('perfCachedTotal').textContent = Number(tokens.cached_total || 0).toLocaleString();
+                document.getElementById('perfTotalTokens').textContent = Number(tokens.total || 0).toLocaleString();
             } catch (e) {
                 console.error('加载性能统计失败:', e);
             }
@@ -13156,12 +13438,14 @@
 
                 const model = document.getElementById('perfModelFilter')?.value || '';
                 const search = document.getElementById('perfSearchInput')?.value || '';
+                const key = (document.getElementById('perfKeyFilter')?.value || '').trim();
                 const pageSize = parseInt(document.getElementById('perfPageSize')?.value || '20');
 
                 const params = new URLSearchParams();
                 params.append('page', page);
                 params.append('page_size', pageSize);
                 if (model) params.append('model', model);
+                if (key) params.append('key', key);
                 if (search) params.append('search', search);
 
                 const res = await fetch(`/api/playground/performance/traces?${params}`, { headers: getAuthHeaders() });
@@ -13172,7 +13456,7 @@
 
                 const tbody = document.getElementById('perfTracesBody');
                 if (!data.traces || data.traces.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-secondary);">暂无数据</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="12" style="text-align: center; color: var(--text-secondary);">暂无数据</td></tr>';
                     document.getElementById('perfPagination').style.display = 'none';
                     return;
                 }
@@ -13185,6 +13469,16 @@
                     const fullTime = date.toLocaleString('zh-CN');
                     const metrics = trace.metrics || {};
                     const keyDisplay = trace.key_masked || (trace.key_index >= 0 ? `Key #${trace.key_index}` : '-');
+                    const usage = trace.usage || {};
+                    const toToken = (field) => {
+                        const raw = trace[field] ?? usage[field] ?? 0;
+                        const parsed = Number(raw);
+                        return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 0;
+                    };
+                    const promptTokens = toToken('prompt_tokens');
+                    const completionTokens = toToken('completion_tokens');
+                    const cachedTokens = toToken('cached_tokens');
+                    const totalTokens = toToken('total_tokens');
                     return `
                         <tr>
                             <td style="font-size: 11px; white-space: nowrap;" title="${fullTime}">${dateStr}<br/>${timeStr}</td>
@@ -13194,6 +13488,10 @@
                             <td style="font-size: 11px;">${metrics.tps ? metrics.tps.toFixed(1) : '-'}</td>
                             <td style="font-size: 11px;">${metrics.total_latency ? formatMs(metrics.total_latency) : '-'}</td>
                             <td style="font-size: 10px; font-family: 'SF Mono', 'Monaco', 'Consolas', monospace; color: #9c27b0;" title="${trace.account_email || ''}">${keyDisplay}</td>
+                            <td class="trace-token-cell">${promptTokens.toLocaleString()}</td>
+                            <td class="trace-token-cell">${completionTokens.toLocaleString()}</td>
+                            <td class="trace-token-cell">${cachedTokens.toLocaleString()}</td>
+                            <td class="trace-token-cell">${totalTokens.toLocaleString()}</td>
                             <td><button class="btn btn-sm" onclick="showPerfWaterfall('${trace.trace_id}')" style="background: #17a2b8; padding: 2px 6px; font-size: 10px;">详情</button></td>
                         </tr>
                     `;
@@ -13210,7 +13508,7 @@
                 await loadPerfStats();
             } catch (e) {
                 console.error('加载性能追踪失败:', e);
-                document.getElementById('perfTracesBody').innerHTML = '<tr><td colspan="7" style="text-align: center; color: #dc3545;">加载失败</td></tr>';
+                document.getElementById('perfTracesBody').innerHTML = '<tr><td colspan="12" style="text-align: center; color: #dc3545;">加载失败</td></tr>';
             }
         }
 
@@ -13264,6 +13562,16 @@
                 document.getElementById('wfTTFT').textContent = metrics.ttft ? formatMs(metrics.ttft) : '-';
                 document.getElementById('wfTPS').textContent = metrics.tps ? metrics.tps.toFixed(1) : '-';
                 document.getElementById('wfTotal').textContent = metrics.total_latency ? formatMs(metrics.total_latency) : '-';
+                const usage = trace.usage || {};
+                const toToken = (field) => {
+                    const raw = trace[field] ?? usage[field] ?? 0;
+                    const parsed = Number(raw);
+                    return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 0;
+                };
+                document.getElementById('wfPromptTokens').textContent = toToken('prompt_tokens').toLocaleString();
+                document.getElementById('wfCompletionTokens').textContent = toToken('completion_tokens').toLocaleString();
+                document.getElementById('wfCachedTokens').textContent = toToken('cached_tokens').toLocaleString();
+                document.getElementById('wfTotalTokens').textContent = toToken('total_tokens').toLocaleString();
 
                 // 渲染瀑布图
                 renderWaterfall(trace);

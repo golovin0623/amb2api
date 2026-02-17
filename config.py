@@ -444,6 +444,22 @@ async def get_enable_real_streaming() -> bool:
     return bool(await get_config_value("enable_real_streaming", False))
 
 
+async def get_tool_debug_logs_enabled() -> bool:
+    """
+    Get tool debug logging switch.
+
+    控制是否输出 [TOOL_DEBUG] 详细请求/响应日志（可能包含较大报文）。
+
+    Environment variable: ENABLE_TOOL_DEBUG_LOGS
+    TOML config key: enable_tool_debug_logs
+    Default: False
+    """
+    env_value = os.getenv("ENABLE_TOOL_DEBUG_LOGS")
+    if env_value:
+        return env_value.lower() in ("true", "1", "yes", "on")
+    return bool(await get_config_value("enable_tool_debug_logs", False))
+
+
 async def get_stream_keepalive_seconds() -> float:
     """
     Get streaming keepalive interval in seconds.

@@ -20,6 +20,7 @@ from config import (
     get_config_value,
     get_stream_keepalive_seconds,
     get_stream_bootstrap_retries,
+    get_tool_debug_logs_enabled,
 )
 
 async def convert_streaming_response(
@@ -53,6 +54,17 @@ async def convert_streaming_response(
     async def openai_stream_generator():
         nonlocal gemini_response
         first_chunk_sent = False
+        prompt_tokens = 0
+        completion_tokens = 0
+        cached_tokens = 0
+        total_tokens = 0
+
+        def _safe_non_negative_int(value: Any, default: int = 0) -> int:
+            try:
+                parsed = int(value)
+                return parsed if parsed >= 0 else default
+            except (TypeError, ValueError):
+                return default
 
         async def _iter_stream_chunks(stream_response):
             """统一抽象不同响应对象为 chunk 异步迭代器。"""
@@ -64,6 +76,7 @@ async def convert_streaming_response(
 
         async def _convert_chunk(chunk) -> Optional[bytes]:
             """将上游 chunk 转换为 OpenAI SSE chunk。"""
+            nonlocal prompt_tokens, completion_tokens, cached_tokens, total_tokens
             if not chunk:
                 return None
 
@@ -83,6 +96,29 @@ async def convert_streaming_response(
 
             gemini_chunk = json.loads(payload_text)
             openai_chunk = gemini_stream_chunk_to_openai(gemini_chunk, model, response_id)
+            usage_raw = (
+                (openai_chunk.get("usage") if isinstance(openai_chunk, dict) else None)
+                or (gemini_chunk.get("usage") if isinstance(gemini_chunk, dict) else None)
+                or {}
+            )
+            if isinstance(usage_raw, dict):
+                prompt_tokens = _safe_non_negative_int(
+                    usage_raw.get("prompt_tokens", usage_raw.get("input_tokens", prompt_tokens)),
+                    prompt_tokens,
+                )
+                completion_tokens = _safe_non_negative_int(
+                    usage_raw.get("completion_tokens", usage_raw.get("output_tokens", completion_tokens)),
+                    completion_tokens,
+                )
+                cached_tokens = _safe_non_negative_int(
+                    usage_raw.get("cached_tokens", usage_raw.get("input_cached_tokens", cached_tokens)),
+                    cached_tokens,
+                )
+                candidate_total = _safe_non_negative_int(
+                    usage_raw.get("total_tokens", prompt_tokens + completion_tokens),
+                    prompt_tokens + completion_tokens,
+                )
+                total_tokens = max(total_tokens, candidate_total, prompt_tokens + completion_tokens)
             return f"data: {json.dumps(openai_chunk, separators=(',',':'))}\n\n".encode()
 
         total_attempts = bootstrap_retries + 1
@@ -191,6 +227,19 @@ async def convert_streaming_response(
             }
             yield f"data: {json.dumps(error_chunk)}\n\n".encode()
             yield "data: [DONE]\n\n".encode()
+        finally:
+            trace_id = getattr(trace, "trace_id", "") if trace else ""
+            if trace_id:
+                from src.stats.performance_tracker import get_performance_tracker
+
+                tracker = await get_performance_tracker()
+                await tracker.end_trace(
+                    trace_id,
+                    completion_tokens=completion_tokens,
+                    prompt_tokens=prompt_tokens,
+                    cached_tokens=cached_tokens,
+                    total_tokens=total_tokens,
+                )
 
     return StreamingResponse(openai_stream_generator(), media_type="text/event-stream")
 
@@ -200,6 +249,16 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
         nonlocal trace
         completion_tokens = 0
         prompt_tokens = 0
+        cached_tokens = 0
+        total_tokens = 0
+        tool_debug_logs_enabled = await get_tool_debug_logs_enabled()
+
+        def _safe_non_negative_int(value: Any) -> int:
+            try:
+                parsed = int(value)
+                return parsed if parsed >= 0 else 0
+            except (TypeError, ValueError):
+                return 0
 
         if trace:
             trace.metadata["stream_mode"] = "fake"
@@ -414,7 +473,8 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                     log.warning("Fake stream response contains only thinking content")
                     content = "[模型正在思考中，请稍后再试或重新提问]"
                 
-                log.info(f"[TOOL_DEBUG] Extracted content length: {len(content)}, tool_calls count: {len(all_tool_calls)}")
+                if tool_debug_logs_enabled:
+                    log.debug(f"[TOOL_DEBUG] Extracted content length: {len(content)}, tool_calls count: {len(all_tool_calls)}")
                 
                 # 性能追踪：格式转换完成
                 if trace:
@@ -426,14 +486,25 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                     
                     # 转换usageMetadata为OpenAI格式（兼容多种格式）
                     usage_raw = response_data.get("usage") or {}
-                    prompt_tokens = usage_raw.get("prompt_tokens") or usage_raw.get("input_tokens", 0)
-                    completion_tokens = usage_raw.get("completion_tokens") or usage_raw.get("output_tokens", 0)
-                    cached_tokens = usage_raw.get("cached_tokens") or usage_raw.get("input_cached_tokens", 0)
+                    prompt_tokens = _safe_non_negative_int(
+                        usage_raw.get("prompt_tokens", usage_raw.get("input_tokens", 0))
+                    )
+                    completion_tokens = _safe_non_negative_int(
+                        usage_raw.get("completion_tokens", usage_raw.get("output_tokens", 0))
+                    )
+                    cached_tokens = _safe_non_negative_int(
+                        usage_raw.get("cached_tokens", usage_raw.get("input_cached_tokens", 0))
+                    )
+                    total_tokens = _safe_non_negative_int(
+                        usage_raw.get("total_tokens", prompt_tokens + completion_tokens)
+                    )
+                    total_tokens = max(total_tokens, prompt_tokens + completion_tokens)
                     
                     usage = {
                         "prompt_tokens": prompt_tokens,
                         "completion_tokens": completion_tokens,
-                        "total_tokens": usage_raw.get("total_tokens", prompt_tokens + completion_tokens),
+                        "cached_tokens": cached_tokens,
+                        "total_tokens": total_tokens,
                         # 添加详细的 token 信息以支持 LobeChat 等客户端显示
                         "prompt_tokens_details": {
                             "cached_tokens": cached_tokens,
@@ -447,10 +518,6 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                         }
                     } if usage_raw else None
                     
-                    # 记录 token 数用于追踪
-                    completion_tokens = usage_raw.get("completion_tokens") or usage_raw.get("output_tokens", 0)
-                    prompt_tokens = usage_raw.get("prompt_tokens") or usage_raw.get("input_tokens", 0)
-
                     # 确定 finish_reason
                     finish_reason = "tool_calls" if has_tool_use else "stop"
                     
@@ -468,7 +535,7 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                     
                     if fake_stream_enabled and content and not tool_calls:
                         # 渐进式流式输出：按速度逐块返回内容
-                        log.info(f"Fake stream progressive output: speed={fake_stream_speed} chars/s, content_len={len(content)}")
+                        log.debug(f"Fake stream progressive output: speed={fake_stream_speed} chars/s, content_len={len(content)}")
                         
                         # 计算每块大小和间隔
                         # 例如: 100 chars/s, 每 50ms 输出 5 个字符
@@ -624,10 +691,17 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
             yield f"data: {json.dumps(error_chunk)}\n\n".encode()
             yield b"data: [DONE]\n\n"
         finally:
-            if trace:
+            trace_id = getattr(trace, "trace_id", "") if trace else ""
+            if trace_id:
                 from src.stats.performance_tracker import get_performance_tracker
                 tracker = await get_performance_tracker()
-                await tracker.end_trace(trace.trace_id, completion_tokens=completion_tokens, prompt_tokens=prompt_tokens)
+                await tracker.end_trace(
+                    trace_id,
+                    completion_tokens=completion_tokens,
+                    prompt_tokens=prompt_tokens,
+                    cached_tokens=cached_tokens,
+                    total_tokens=total_tokens,
+                )
 
     return StreamingResponse(
         stream_generator(),

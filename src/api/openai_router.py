@@ -132,6 +132,45 @@ def _build_openai_fallback_text_response(model: str, text: str) -> Dict[str, Any
     }
 
 
+def _to_non_negative_int(value: Any, default: int = 0) -> int:
+    try:
+        parsed = int(value)
+        return parsed if parsed >= 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _extract_usage_metrics(usage: Any) -> Dict[str, int]:
+    usage_map = usage if isinstance(usage, dict) else {}
+    prompt_tokens = _to_non_negative_int(
+        usage_map.get("prompt_tokens", usage_map.get("input_tokens", 0)),
+        0,
+    )
+    completion_tokens = _to_non_negative_int(
+        usage_map.get("completion_tokens", usage_map.get("output_tokens", 0)),
+        0,
+    )
+    cached_tokens = _to_non_negative_int(
+        usage_map.get("cached_tokens", usage_map.get("input_cached_tokens", 0)),
+        0,
+    )
+    if cached_tokens == 0:
+        prompt_details = usage_map.get("prompt_tokens_details")
+        if isinstance(prompt_details, dict):
+            cached_tokens = _to_non_negative_int(prompt_details.get("cached_tokens", 0), 0)
+    total_tokens = _to_non_negative_int(
+        usage_map.get("total_tokens", prompt_tokens + completion_tokens),
+        prompt_tokens + completion_tokens,
+    )
+    total_tokens = max(total_tokens, prompt_tokens + completion_tokens)
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "cached_tokens": cached_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
 async def _convert_openai_stream_to_anthropic(
     openai_stream_response: StreamingResponse, model: str
 ) -> StreamingResponse:
@@ -310,14 +349,18 @@ async def anthropic_messages(
         openai_response = _build_openai_fallback_text_response(model, text)
     anthropic_response = openai_response_to_anthropic_message(openai_response, fallback_model=model)
 
-    usage = openai_response.get("usage", {}) if isinstance(openai_response, dict) else {}
-    completion_tokens = usage.get("completion_tokens", 0) if isinstance(usage, dict) else 0
-    prompt_tokens = usage.get("prompt_tokens", 0) if isinstance(usage, dict) else 0
+    usage_metrics = _extract_usage_metrics(openai_response.get("usage", {}) if isinstance(openai_response, dict) else {})
 
     if trace:
         trace.mark("conversion_complete")
         trace.mark("first_chunk_sent")
-        await tracker.end_trace(trace.trace_id, completion_tokens=completion_tokens, prompt_tokens=prompt_tokens)
+        await tracker.end_trace(
+            trace.trace_id,
+            completion_tokens=usage_metrics["completion_tokens"],
+            prompt_tokens=usage_metrics["prompt_tokens"],
+            cached_tokens=usage_metrics["cached_tokens"],
+            total_tokens=usage_metrics["total_tokens"],
+        )
 
     return JSONResponse(content=anthropic_response)
 
@@ -591,8 +634,12 @@ async def chat_completions(
         return await convert_streaming_response(response, model, trace=trace)
     
     # 转换非流式响应（AssemblyAI → OpenAI）
-    completion_tokens = 0
-    prompt_tokens = 0
+    usage_metrics = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "cached_tokens": 0,
+        "total_tokens": 0,
+    }
     try:
         try:
             if hasattr(response, 'text') and isinstance(getattr(response, 'text'), str):
@@ -642,12 +689,13 @@ async def chat_completions(
                 )
             
             # 提取 token 数量
-            usage = parsed.get('usage', {})
-            completion_tokens = usage.get('output_tokens') or usage.get('completion_tokens', 0)
-            prompt_tokens = usage.get('input_tokens') or usage.get('prompt_tokens', 0)
+            usage_metrics = _extract_usage_metrics(parsed.get('usage', {}))
             
             # AssemblyAI 返回 OpenAI 格式，直接使用或进行微调
             openai_response = assembly_response_to_openai(parsed, model)
+            converted_usage_metrics = _extract_usage_metrics(openai_response.get("usage", {}))
+            if converted_usage_metrics["total_tokens"] > 0 or converted_usage_metrics["cached_tokens"] > 0:
+                usage_metrics = converted_usage_metrics
         else:
             openai_response = {
                 "id": str(uuid.uuid4()),
@@ -689,7 +737,13 @@ async def chat_completions(
         
         # 性能追踪：响应完成
         if trace:
-            await tracker.end_trace(trace.trace_id, completion_tokens=completion_tokens, prompt_tokens=prompt_tokens)
+            await tracker.end_trace(
+                trace.trace_id,
+                completion_tokens=usage_metrics["completion_tokens"],
+                prompt_tokens=usage_metrics["prompt_tokens"],
+                cached_tokens=usage_metrics["cached_tokens"],
+                total_tokens=usage_metrics["total_tokens"],
+            )
         
         return JSONResponse(content=openai_response)
     except Exception as e:

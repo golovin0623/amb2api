@@ -237,6 +237,7 @@ async def get_performance_traces(
     page: int = 1,
     page_size: int = 20,
     model: Optional[str] = None,
+    key: Optional[str] = None,
     search: Optional[str] = None,
     start_time: Optional[float] = None,
     end_time: Optional[float] = None
@@ -262,6 +263,7 @@ async def get_performance_traces(
             page=page,
             page_size=page_size,
             model=model,
+            key=key,
             search=search,
             start_time=start_time,
             end_time=end_time
@@ -331,4 +333,3 @@ async def clear_performance_data():
     except Exception as e:
         log.error(f"Failed to clear performance data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
