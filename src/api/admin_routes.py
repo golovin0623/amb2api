@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -423,6 +423,37 @@ async def usage_aggregated(model: str = None, key: str = None, only: str = None,
     }
     
     return JSONResponse(content=agg)
+
+
+@router.get("/usage/request-traces")
+async def usage_request_traces(
+    page: int = 1,
+    page_size: int = 20,
+    model: Optional[str] = None,
+    key: Optional[str] = None,
+    search: Optional[str] = None,
+    start_time: Optional[float] = None,
+    end_time: Optional[float] = None,
+    token: str = Depends(authenticate),
+):
+    """分页查询请求级追踪明细（含 token 用量）"""
+    try:
+        safe_page_size = max(1, min(page_size, 500))
+        from ..stats.performance_tracker import get_performance_tracker
+
+        tracker = await get_performance_tracker()
+        return await tracker.get_traces_paginated(
+            page=page,
+            page_size=safe_page_size,
+            model=model,
+            key=key,
+            search=search,
+            start_time=start_time,
+            end_time=end_time,
+        )
+    except Exception as e:
+        log.error(f"Failed to get usage request traces: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/models/query")

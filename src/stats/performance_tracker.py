@@ -11,11 +11,36 @@
 import time
 import asyncio
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, field, asdict
-from datetime import datetime
-import json
+from dataclasses import dataclass, field
 
 from log import log
+
+
+def _to_non_negative_int(value: Any, default: int = 0) -> int:
+    try:
+        parsed = int(value)
+        return parsed if parsed >= 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _extract_usage_tokens(raw: Dict[str, Any]) -> Dict[str, int]:
+    prompt_tokens = _to_non_negative_int(raw.get("prompt_tokens", 0), 0)
+    completion_tokens = _to_non_negative_int(raw.get("completion_tokens", 0), 0)
+    cached_tokens = _to_non_negative_int(raw.get("cached_tokens", 0), 0)
+    total_tokens = _to_non_negative_int(
+        raw.get("total_tokens", prompt_tokens + completion_tokens),
+        prompt_tokens + completion_tokens,
+    )
+    min_total = prompt_tokens + completion_tokens
+    if total_tokens < min_total:
+        total_tokens = min_total
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "cached_tokens": cached_tokens,
+        "total_tokens": total_tokens,
+    }
 
 
 @dataclass
@@ -28,6 +53,8 @@ class RequestTrace:
     metadata: Dict[str, Any] = field(default_factory=dict)
     completion_tokens: int = 0
     prompt_tokens: int = 0
+    cached_tokens: int = 0
+    total_tokens: int = 0
     
     # Key and account tracking
     key_index: int = -1  # 使用的密钥索引，-1 表示未设置
@@ -103,6 +130,8 @@ class RequestTrace:
             "metadata": self.metadata,
             "completion_tokens": self.completion_tokens,
             "prompt_tokens": self.prompt_tokens,
+            "cached_tokens": self.cached_tokens,
+            "total_tokens": self.total_tokens,
             "key_index": self.key_index,
             "key_masked": self.key_masked,
             "account_email": self.account_email
@@ -118,8 +147,11 @@ class RequestTrace:
         )
         trace.timestamps = data.get("timestamps", {})
         trace.metadata = data.get("metadata", {})
-        trace.completion_tokens = data.get("completion_tokens", 0)
-        trace.prompt_tokens = data.get("prompt_tokens", 0)
+        usage = _extract_usage_tokens(data)
+        trace.prompt_tokens = usage["prompt_tokens"]
+        trace.completion_tokens = usage["completion_tokens"]
+        trace.cached_tokens = usage["cached_tokens"]
+        trace.total_tokens = usage["total_tokens"]
         trace.key_index = data.get("key_index", -1)
         trace.key_masked = data.get("key_masked", "")
         trace.account_email = data.get("account_email", "")
@@ -230,15 +262,29 @@ class PerformanceTracker:
         """获取活跃的追踪"""
         return self.active_traces.get(trace_id)
     
-    async def end_trace(self, trace_id: str, completion_tokens: int = 0, prompt_tokens: int = 0):
+    async def end_trace(
+        self,
+        trace_id: str,
+        completion_tokens: int = 0,
+        prompt_tokens: int = 0,
+        cached_tokens: int = 0,
+        total_tokens: Optional[int] = None,
+    ):
         """结束追踪并持久化"""
         if trace_id not in self.active_traces:
             log.warning(f"Trace {trace_id} not found in active traces")
             return
         
         trace = self.active_traces.pop(trace_id)
-        trace.completion_tokens = completion_tokens
-        trace.prompt_tokens = prompt_tokens
+        trace.prompt_tokens = _to_non_negative_int(prompt_tokens, 0)
+        trace.completion_tokens = _to_non_negative_int(completion_tokens, 0)
+        trace.cached_tokens = _to_non_negative_int(cached_tokens, 0)
+        fallback_total = trace.prompt_tokens + trace.completion_tokens
+        if total_tokens is None:
+            trace.total_tokens = fallback_total
+        else:
+            parsed_total = _to_non_negative_int(total_tokens, fallback_total)
+            trace.total_tokens = max(parsed_total, fallback_total)
         
         # 确保有结束时间
         if "response_complete" not in trace.timestamps:
@@ -296,6 +342,7 @@ class PerformanceTracker:
         page: int = 1,
         page_size: int = 20,
         model: Optional[str] = None,
+        key: Optional[str] = None,
         search: Optional[str] = None,
         start_time: Optional[float] = None,
         end_time: Optional[float] = None
@@ -332,6 +379,13 @@ class PerformanceTracker:
         # 过滤
         if model:
             all_traces = [t for t in all_traces if t.get("model") == model]
+
+        if key:
+            key_lower = key.lower()
+            all_traces = [
+                t for t in all_traces
+                if key_lower in str(t.get("key_masked", "")).lower()
+            ]
         
         if search:
             search_lower = search.lower()
@@ -359,8 +413,19 @@ class PerformanceTracker:
             trace_obj = RequestTrace.from_dict(t)
             metrics = trace_obj.get_metrics()
             durations = trace_obj.get_stage_durations()
+            usage = {
+                "prompt_tokens": trace_obj.prompt_tokens,
+                "completion_tokens": trace_obj.completion_tokens,
+                "cached_tokens": trace_obj.cached_tokens,
+                "total_tokens": trace_obj.total_tokens,
+            }
             page_traces.append({
                 **t,
+                "prompt_tokens": trace_obj.prompt_tokens,
+                "completion_tokens": trace_obj.completion_tokens,
+                "cached_tokens": trace_obj.cached_tokens,
+                "total_tokens": trace_obj.total_tokens,
+                "usage": usage,
                 "metrics": metrics,
                 "durations": durations
             })
@@ -386,8 +451,19 @@ class PerformanceTracker:
                     for t in shard_data:
                         if t.get("trace_id") == trace_id:
                             trace_obj = RequestTrace.from_dict(t)
+                            usage = {
+                                "prompt_tokens": trace_obj.prompt_tokens,
+                                "completion_tokens": trace_obj.completion_tokens,
+                                "cached_tokens": trace_obj.cached_tokens,
+                                "total_tokens": trace_obj.total_tokens,
+                            }
                             return {
                                 **t,
+                                "prompt_tokens": trace_obj.prompt_tokens,
+                                "completion_tokens": trace_obj.completion_tokens,
+                                "cached_tokens": trace_obj.cached_tokens,
+                                "total_tokens": trace_obj.total_tokens,
+                                "usage": usage,
                                 "metrics": trace_obj.get_metrics(),
                                 "durations": trace_obj.get_stage_durations()
                             }
@@ -432,13 +508,6 @@ class PerformanceTracker:
         if model:
             all_traces = [t for t in all_traces if t.get("model") == model]
         
-        def to_non_negative_int(value: Any, default: int = 0) -> int:
-            try:
-                parsed = int(value)
-                return parsed if parsed >= 0 else default
-            except (TypeError, ValueError):
-                return default
-
         def to_bool(value: Any) -> bool:
             if isinstance(value, bool):
                 return value
@@ -455,6 +524,17 @@ class PerformanceTracker:
                 "ttft": {"avg": 0, "p50": 0, "p95": 0, "p99": 0},
                 "latency": {"avg": 0, "p50": 0, "p95": 0, "p99": 0},
                 "tps": {"avg": 0, "p50": 0, "p95": 0},
+                "tokens": {
+                    "prompt_total": 0,
+                    "completion_total": 0,
+                    "cached_total": 0,
+                    "total": 0,
+                    "avg_prompt": 0,
+                    "avg_completion": 0,
+                    "avg_cached": 0,
+                    "avg_total": 0,
+                    "requests_with_usage": 0,
+                },
                 "stream": {
                     "total": 0,
                     "real": 0,
@@ -485,18 +565,40 @@ class PerformanceTracker:
         stream_bootstrap_retry_total = 0
         stream_bootstrap_retry_requests = 0
         stream_bootstrap_failure_count = 0
+        prompt_tokens_total = 0
+        completion_tokens_total = 0
+        cached_tokens_total = 0
+        total_tokens_total = 0
+        requests_with_usage = 0
         
         for t in all_traces:
             ts = t.get("timestamps", {})
-            tokens = t.get("completion_tokens", 0)
+            usage = _extract_usage_tokens(t)
+            prompt_tokens = usage["prompt_tokens"]
+            completion_tokens = usage["completion_tokens"]
+            cached_tokens = usage["cached_tokens"]
+            total_tokens = usage["total_tokens"]
+            has_usage = (
+                prompt_tokens > 0
+                or completion_tokens > 0
+                or cached_tokens > 0
+                or total_tokens > 0
+            )
             models_set.add(t.get("model", "unknown"))
             metadata = t.get("metadata") or {}
             stream_mode = str(metadata.get("stream_mode", "none")).lower()
 
+            prompt_tokens_total += prompt_tokens
+            completion_tokens_total += completion_tokens
+            cached_tokens_total += cached_tokens
+            total_tokens_total += total_tokens
+            if has_usage:
+                requests_with_usage += 1
+
             if stream_mode == "real":
                 stream_real_count += 1
-                keepalive_count = to_non_negative_int(metadata.get("stream_keepalive_count", 0), 0)
-                retries_used = to_non_negative_int(metadata.get("stream_bootstrap_retries_used", 0), 0)
+                keepalive_count = _to_non_negative_int(metadata.get("stream_keepalive_count", 0), 0)
+                retries_used = _to_non_negative_int(metadata.get("stream_bootstrap_retries_used", 0), 0)
                 stream_keepalive_total += keepalive_count
                 stream_bootstrap_retry_total += retries_used
                 if retries_used > 0:
@@ -526,8 +628,8 @@ class PerformanceTracker:
                 if lat >= 0:
                     latencies.append(lat)
                     # TPS
-                    if tokens > 0 and lat > 0:
-                        tps_list.append(tokens / (lat / 1000))
+                    if completion_tokens > 0 and lat > 0:
+                        tps_list.append(completion_tokens / (lat / 1000))
         
         def percentile(data: List[float], p: float) -> float:
             if not data:
@@ -566,6 +668,17 @@ class PerformanceTracker:
                 "avg": round(avg(tps_list), 1),
                 "p50": round(percentile(tps_list, 50), 1),
                 "p95": round(percentile(tps_list, 95), 1)
+            },
+            "tokens": {
+                "prompt_total": prompt_tokens_total,
+                "completion_total": completion_tokens_total,
+                "cached_total": cached_tokens_total,
+                "total": total_tokens_total,
+                "avg_prompt": round(prompt_tokens_total / len(all_traces), 2) if all_traces else 0,
+                "avg_completion": round(completion_tokens_total / len(all_traces), 2) if all_traces else 0,
+                "avg_cached": round(cached_tokens_total / len(all_traces), 2) if all_traces else 0,
+                "avg_total": round(total_tokens_total / len(all_traces), 2) if all_traces else 0,
+                "requests_with_usage": requests_with_usage,
             },
             "stream": {
                 "total": stream_real_count + stream_fake_count + stream_non_count,

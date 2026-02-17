@@ -34,6 +34,39 @@ _cache_ttl_seconds = 300
 _api_keys_fetch_task = None
 _api_keys_last_fetch_ts = 0.0
 
+
+def _truncate_log_value(value: Any, limit: int = 200) -> str:
+    text = "" if value is None else str(value)
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}... [truncated, len={len(text)}]"
+
+
+def _summarize_headers_for_log(headers: Any) -> Dict[str, Any]:
+    """仅记录关键响应头，避免日志噪音和敏感头泄露。"""
+    try:
+        header_map = {str(k).lower(): v for k, v in dict(headers).items()}
+    except Exception:
+        return {"header_count": 0}
+
+    keep_keys = [
+        "content-type",
+        "content-length",
+        "cache-control",
+        "x-matched-path",
+        "x-vercel-cache",
+        "x-ratelimit-limit",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+        "date",
+        "server",
+    ]
+    summary: Dict[str, Any] = {"header_count": len(header_map)}
+    for key in keep_keys:
+        if key in header_map:
+            summary[key] = _truncate_log_value(header_map.get(key), 240)
+    return summary
+
 def _cache_get(key: str) -> Optional[Dict[str, Any]]:
     entry = _cache_store.get(key)
     if not entry:
@@ -454,7 +487,7 @@ async def _make_dashboard_request(
                 raise ValueError(f"Unsupported method: {method}")
             
             log.debug(f"Dashboard API {method} {path}: {resp.status_code}")
-            log.debug(f"Dashboard API response headers: {dict(resp.headers)}")
+            log.debug(f"Dashboard API response headers: {_summarize_headers_for_log(resp.headers)}")
             
             if resp.status_code == 401:
                 # Session 失效，清除并提示重新登录

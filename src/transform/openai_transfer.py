@@ -380,14 +380,40 @@ def assembly_response_to_openai(
     # usage - 兼容多种格式
     usage_raw = assembly_response.get("usage", {})
     if usage_raw:
+        def _safe_non_negative_int(value: Any, default: int = 0) -> int:
+            try:
+                parsed = int(value)
+                return parsed if parsed >= 0 else default
+            except (TypeError, ValueError):
+                return default
+
         # 兼容 OpenAI 格式 (prompt_tokens/completion_tokens) 和 AssemblyAI 格式 (input_tokens/output_tokens)
-        prompt_tokens = usage_raw.get("prompt_tokens") or usage_raw.get("input_tokens", 0)
-        completion_tokens = usage_raw.get("completion_tokens") or usage_raw.get("output_tokens", 0)
-        total_tokens = usage_raw.get("total_tokens", prompt_tokens + completion_tokens)
+        prompt_tokens = _safe_non_negative_int(
+            usage_raw.get("prompt_tokens", usage_raw.get("input_tokens", 0)),
+            0,
+        )
+        completion_tokens = _safe_non_negative_int(
+            usage_raw.get("completion_tokens", usage_raw.get("output_tokens", 0)),
+            0,
+        )
+        cached_tokens = _safe_non_negative_int(
+            usage_raw.get("cached_tokens", usage_raw.get("input_cached_tokens", 0)),
+            0,
+        )
+        total_tokens = _safe_non_negative_int(
+            usage_raw.get("total_tokens", prompt_tokens + completion_tokens),
+            prompt_tokens + completion_tokens,
+        )
+        total_tokens = max(total_tokens, prompt_tokens + completion_tokens)
         usage = {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
+            "cached_tokens": cached_tokens,
             "total_tokens": total_tokens,
+        }
+        usage["prompt_tokens_details"] = {
+            "cached_tokens": cached_tokens,
+            "audio_tokens": 0,
         }
     else:
         usage = None

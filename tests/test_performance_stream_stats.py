@@ -22,6 +22,7 @@ def _trace(
     model: str,
     start_time: float,
     stream_meta: dict,
+    key_masked: str = "sk-ab...xy",
 ) -> dict:
     return {
         "trace_id": trace_id,
@@ -36,8 +37,10 @@ def _trace(
         "metadata": stream_meta,
         "completion_tokens": 90,
         "prompt_tokens": 30,
+        "cached_tokens": 8,
+        "total_tokens": 120,
         "key_index": 0,
-        "key_masked": "sk-ab...xy",
+        "key_masked": key_masked,
         "account_email": "test@example.com",
     }
 
@@ -88,6 +91,12 @@ async def test_get_stats_includes_stream_aggregation_fields():
     assert stream["bootstrap_retry_rate"] == 0.5
     assert stream["bootstrap_failure_count"] == 0
     assert stream["bootstrap_failure_rate"] == 0
+    tokens = stats["tokens"]
+    assert tokens["prompt_total"] == 120
+    assert tokens["completion_total"] == 360
+    assert tokens["cached_total"] == 32
+    assert tokens["total"] == 480
+    assert tokens["requests_with_usage"] == 4
 
 
 @pytest.mark.asyncio
@@ -124,3 +133,37 @@ async def test_get_stats_stream_metrics_respect_model_filter_and_type_coercion()
     assert stream["bootstrap_retry_rate"] == 1.0
     assert stream["bootstrap_failure_count"] == 1
     assert stream["bootstrap_failure_rate"] == 1.0
+    tokens = stats["tokens"]
+    assert tokens["prompt_total"] == 30
+    assert tokens["completion_total"] == 90
+    assert tokens["cached_total"] == 8
+    assert tokens["total"] == 120
+    assert tokens["requests_with_usage"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_traces_paginated_supports_key_filter_and_usage_fields():
+    traces = [
+        _trace("t1", "model-a", 1000.0, {"stream_mode": "real"}, key_masked="sk-aa...11"),
+        _trace("t2", "model-b", 1001.0, {"stream_mode": "fake"}, key_masked="sk-bb...22"),
+    ]
+    # 模拟旧数据缺失 total_tokens，验证 fallback 逻辑
+    traces[0].pop("total_tokens", None)
+    adapter = FakeAdapter({"perf_traces_0": traces})
+    tracker = PerformanceTracker()
+
+    with patch("src.storage.storage_adapter.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+        result = await tracker.get_traces_paginated(page=1, page_size=20, key="aa...11")
+
+    assert result["total"] == 1
+    assert len(result["traces"]) == 1
+    trace = result["traces"][0]
+    assert trace["key_masked"] == "sk-aa...11"
+    assert trace["prompt_tokens"] == 30
+    assert trace["completion_tokens"] == 90
+    assert trace["cached_tokens"] == 8
+    assert trace["total_tokens"] == 120
+    assert trace["usage"]["prompt_tokens"] == 30
+    assert trace["usage"]["completion_tokens"] == 90
+    assert trace["usage"]["cached_tokens"] == 8
+    assert trace["usage"]["total_tokens"] == 120
