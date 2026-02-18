@@ -2,6 +2,7 @@ import json
 import asyncio
 from typing import Dict, Any, Optional, List, Set
 import itertools
+import uuid
 
 from fastapi.responses import StreamingResponse, JSONResponse
 
@@ -120,6 +121,37 @@ def _sanitize_messages(messages) -> list:
     
     # 用于存储 tool_call_id 到 function name 的映射
     tool_call_id_to_name = {}
+
+    def _normalize_tool_input(tc_dict: Dict[str, Any], func_info: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        统一解析 tool 调用入参，保证返回 dict。
+
+        兼容来源：
+        - function.arguments (OpenAI 标准)
+        - function.input / tool_call.input (部分兼容客户端)
+        """
+        raw_args: Any = func_info.get("arguments")
+        if raw_args is None and "input" in func_info:
+            raw_args = func_info.get("input")
+        if raw_args is None and "input" in tc_dict:
+            raw_args = tc_dict.get("input")
+
+        if isinstance(raw_args, dict):
+            return raw_args
+        if isinstance(raw_args, str):
+            text = raw_args.strip()
+            if not text:
+                return {}
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, dict):
+                    return parsed
+                return {"value": parsed}
+            except Exception:
+                return {"raw": text}
+        if raw_args is None:
+            return {}
+        return {"value": raw_args}
     
     for m in messages:
         role = getattr(m, "role", None) or (m.get("role") if isinstance(m, dict) else "user")
@@ -163,9 +195,12 @@ def _sanitize_messages(messages) -> list:
                         continue
                     
                     tc_id = tc_dict.get("id", "")
+                    if not tc_id:
+                        tc_id = f"call_{uuid.uuid4().hex[:24]}"
                     func_info = tc_dict.get("function", {})
                     func_name = func_info.get("name", "")
-                    func_args = func_info.get("arguments", "{}")
+                    normalized_input = _normalize_tool_input(tc_dict, func_info)
+                    func_args = json.dumps(normalized_input, ensure_ascii=False)
                     
                     # 记录映射，用于后续处理 tool 消息
                     if tc_id:
@@ -176,7 +211,10 @@ def _sanitize_messages(messages) -> list:
                         "type": "function_call",
                         "tool_call_id": tc_id,
                         "name": func_name,
-                        "arguments": func_args
+                        # 保持旧字段兼容
+                        "arguments": func_args,
+                        # 显式提供结构化输入，避免上游转换丢失 tool_use.input
+                        "input": normalized_input,
                     }
                     sanitized.append(function_call_msg)
                     log.debug(f"Converted tool_call to function_call: {func_name} (id={tc_id})")
