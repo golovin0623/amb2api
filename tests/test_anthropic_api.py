@@ -136,3 +136,41 @@ def test_anthropic_messages_stream_outputs_anthropic_events():
     assert "event: message_start" in body
     assert "event: content_block_delta" in body
     assert "event: message_stop" in body
+
+
+def test_anthropic_messages_enforce_required_tool_choice_for_claude_cli_with_tools():
+    client = _build_app()
+    upstream_response = JSONResponse(
+        content={
+            "id": "resp_2",
+            "model": "claude-4.5-sonnet-20250929",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+        },
+        status_code=200,
+    )
+    body = _anthropic_body(stream=False)
+    body["tools"] = [
+        {
+            "name": "lookup",
+            "description": "lookup tool",
+            "input_schema": {"type": "object", "properties": {"q": {"type": "string"}}},
+        }
+    ]
+
+    send_mock = AsyncMock(return_value=upstream_response)
+    with patch("src.api.openai_router.get_performance_tracker", new=AsyncMock(return_value=_Tracker())):
+        with patch("src.api.openai_router.send_assembly_request", new=send_mock):
+            res = client.post(
+                "/v1/messages",
+                json=body,
+                headers={
+                    "x-api-key": "pwd",
+                    "user-agent": "claude-cli/2.1.45 (external, cli)",
+                },
+            )
+
+    assert res.status_code == 200
+    assert send_mock.await_count == 1
+    request_obj = send_mock.await_args.args[0]
+    assert getattr(request_obj, "tool_choice") == "required"

@@ -3,6 +3,7 @@ AssemblyAI Fake Stream Handler
 Handles fake streaming simulation for AssemblyAI responses.
 """
 import json
+import ast
 import time
 import uuid
 import asyncio
@@ -260,6 +261,78 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
             except (TypeError, ValueError):
                 return 0
 
+        def _normalize_tool_arguments_for_openai(raw_args: Any) -> str:
+            """Normalize tool arguments to OpenAI-compatible JSON string."""
+            if raw_args is None:
+                return "{}"
+
+            if isinstance(raw_args, dict):
+                return json.dumps(raw_args, ensure_ascii=False)
+
+            if isinstance(raw_args, str):
+                text = raw_args.strip()
+                if not text:
+                    return "{}"
+
+                if text.startswith("```") and text.endswith("```"):
+                    lines = text.splitlines()
+                    if len(lines) >= 3:
+                        text = "\n".join(lines[1:-1]).strip()
+
+                try:
+                    parsed = json.loads(text)
+                    if isinstance(parsed, dict):
+                        return json.dumps(parsed, ensure_ascii=False)
+                    return json.dumps({"value": parsed}, ensure_ascii=False)
+                except Exception:
+                    pass
+
+                try:
+                    parsed = ast.literal_eval(text)
+                    if isinstance(parsed, dict):
+                        return json.dumps(parsed, ensure_ascii=False)
+                    return json.dumps({"value": parsed}, ensure_ascii=False)
+                except Exception:
+                    return json.dumps({"raw": raw_args}, ensure_ascii=False)
+
+            return json.dumps({"value": raw_args}, ensure_ascii=False)
+
+        def _iter_message_tool_calls(msg: Any):
+            """Yield tool call candidates from both direct tool_calls and content.tool_use blocks."""
+            if not isinstance(msg, dict):
+                return
+
+            direct_tool_calls = msg.get("tool_calls")
+            if isinstance(direct_tool_calls, list):
+                for tc in direct_tool_calls:
+                    if isinstance(tc, dict):
+                        yield tc
+
+            content_blocks = msg.get("content")
+            if isinstance(content_blocks, list):
+                for block in content_blocks:
+                    if not isinstance(block, dict):
+                        continue
+                    block_type = block.get("type")
+                    nested_tool_use = block.get("tool_use")
+                    if block_type != "tool_use" and not isinstance(nested_tool_use, dict):
+                        continue
+
+                    nested = nested_tool_use if isinstance(nested_tool_use, dict) else {}
+                    tool_id = block.get("id") or nested.get("id") or f"call_{uuid.uuid4().hex[:24]}"
+                    tool_name = block.get("name") or nested.get("name") or "unknown_function"
+                    tool_input = block.get("input") if "input" in block else nested.get("input")
+                    if tool_input is None:
+                        tool_input = {}
+                    yield {
+                        "id": tool_id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,
+                            "input": tool_input,
+                        },
+                    }
+
         if trace:
             trace.metadata["stream_mode"] = "fake"
             trace.metadata["stream_keepalive_count"] = 0
@@ -405,6 +478,7 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                 all_content_parts = []
                 all_tool_calls = []
                 has_tool_use = False
+                seen_tool_signatures = set()
                 
                 if "choices" in response_data and response_data["choices"]:
                     for choice in response_data["choices"]:
@@ -412,10 +486,17 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                         content = msg.get("content")
                         if content and isinstance(content, str) and content.strip():
                             all_content_parts.append(content)
+                        elif isinstance(content, list):
+                            for part in content:
+                                if isinstance(part, dict):
+                                    t = part.get("type")
+                                    if t in ("text", "output_text") and part.get("text"):
+                                        all_content_parts.append(part["text"])
                         
                         # 收集并修复工具调用
-                        raw_tool_calls = msg.get("tool_calls") or []
-                        for tc in raw_tool_calls:
+                        extracted_count = 0
+                        for tc in _iter_message_tool_calls(msg):
+                            extracted_count += 1
                             fixed_tc = {
                                 "id": tc.get("id") or f"call_{uuid.uuid4().hex[:24]}",
                                 "type": tc.get("type", "function"),
@@ -423,7 +504,11 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                             }
                             func = tc.get("function", {})
                             fixed_tc["function"]["name"] = func.get("name", "")
-                            args = func.get("arguments", {})
+                            args = func.get("arguments")
+                            if args is None and "input" in func:
+                                args = func.get("input")
+                            if args is None and "input" in tc:
+                                args = tc.get("input")
                             
                             # [修复] 参数名映射: 模型生成的 XML 可能使用错误的参数名
                             # 例如 read_file: file_path -> path
@@ -439,13 +524,19 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                                     except json.JSONDecodeError:
                                         pass
                             
-                            if isinstance(args, dict):
-                                fixed_tc["function"]["arguments"] = json.dumps(args, ensure_ascii=False)
-                            elif isinstance(args, str):
-                                fixed_tc["function"]["arguments"] = args
-                            else:
-                                fixed_tc["function"]["arguments"] = "{}"
+                            fixed_tc["function"]["arguments"] = _normalize_tool_arguments_for_openai(args)
+                            signature = (
+                                fixed_tc["id"],
+                                fixed_tc["function"].get("name", ""),
+                                fixed_tc["function"].get("arguments", "{}"),
+                            )
+                            if signature in seen_tool_signatures:
+                                continue
+                            seen_tool_signatures.add(signature)
                             all_tool_calls.append(fixed_tc)
+
+                        if extracted_count > 0:
+                            has_tool_use = True
                         
                         # 检查 finish_reason
                         fr = choice.get("finish_reason", "")

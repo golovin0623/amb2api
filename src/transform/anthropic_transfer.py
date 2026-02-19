@@ -5,8 +5,10 @@ Handles conversion between Anthropic Messages API payloads and internal OpenAI-l
 from __future__ import annotations
 
 import json
+import ast
 import uuid
 from typing import Any, Dict, List, Optional
+from log import log
 
 
 def _normalize_content_blocks(content: Any) -> List[Dict[str, Any]]:
@@ -260,11 +262,22 @@ def _parse_openai_tool_arguments(arguments: Any) -> Dict[str, Any]:
     if isinstance(arguments, dict):
         return arguments
     if isinstance(arguments, str):
-        arguments = arguments.strip()
-        if not arguments:
+        text = arguments.strip()
+        if not text:
             return {}
+        if text.startswith("```") and text.endswith("```"):
+            lines = text.splitlines()
+            if len(lines) >= 3:
+                text = "\n".join(lines[1:-1]).strip()
         try:
-            parsed = json.loads(arguments)
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                return parsed
+            return {"value": parsed}
+        except Exception:
+            pass
+        try:
+            parsed = ast.literal_eval(text)
             if isinstance(parsed, dict):
                 return parsed
             return {"value": parsed}
@@ -273,6 +286,147 @@ def _parse_openai_tool_arguments(arguments: Any) -> Dict[str, Any]:
     if arguments is None:
         return {}
     return {"value": arguments}
+
+
+def _extract_openai_tool_arguments(tool_call: Dict[str, Any]) -> Any:
+    """Extract tool arguments from multiple OpenAI-compatible locations."""
+    function_info = tool_call.get("function")
+    if not isinstance(function_info, dict):
+        function_info = {}
+
+    arguments = function_info.get("arguments")
+    if arguments is None and "input" in function_info:
+        arguments = function_info.get("input")
+    if arguments is None and "input" in tool_call:
+        arguments = tool_call.get("input")
+    return arguments
+
+
+def _normalize_task_subagent_type(value: Any) -> str:
+    """Normalize Task tool subagent_type to known values."""
+    known = {
+        "bash": "Bash",
+        "general-purpose": "general-purpose",
+        "general_purpose": "general-purpose",
+        "general purpose": "general-purpose",
+        "statusline-setup": "statusline-setup",
+        "statusline_setup": "statusline-setup",
+        "statusline setup": "statusline-setup",
+        "explore": "Explore",
+        "plan": "Plan",
+        "claude-code-guide": "claude-code-guide",
+        "claude_code_guide": "claude-code-guide",
+        "guide": "claude-code-guide",
+    }
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            return known.get(text.lower(), text)
+    return "general-purpose"
+
+
+def _truncate_for_log(value: Any, max_len: int = 2000) -> str:
+    """Serialize and truncate diagnostic payload for logs."""
+    try:
+        text = json.dumps(value, ensure_ascii=False)
+    except Exception:
+        text = str(value)
+    if len(text) <= max_len:
+        return text
+    return text[:max_len] + "...(truncated)"
+
+
+def _log_tool_output(mode: str, tool_id: str, tool_name: str, tool_input: Dict[str, Any]) -> None:
+    """Emit non-sensitive tool output diagnostics for Anthropic responses."""
+    try:
+        log.info(
+            f"[ANTHROPIC_TOOL_OUTPUT] mode={mode} id={tool_id} name={tool_name} "
+            f"input={_truncate_for_log(tool_input)}"
+        )
+    except Exception:
+        # Keep conversion path robust even if logging fails unexpectedly.
+        pass
+
+
+def _coerce_bool(value: Any, default: bool = False) -> bool:
+    """Best-effort convert arbitrary value to bool."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"1", "true", "yes", "on"}:
+            return True
+        if text in {"0", "false", "no", "off"}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
+
+
+def _normalize_tool_input_for_anthropic(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
+    """Best-effort normalization for Anthropic tool_use.input compatibility."""
+    if tool_name != "Task":
+        return tool_input
+
+    normalized = dict(tool_input) if isinstance(tool_input, dict) else {}
+
+    # Common alias mapping observed in model outputs.
+    alias_map = {
+        "subagentType": "subagent_type",
+        "subagent": "subagent_type",
+        "agent_type": "subagent_type",
+        "agentType": "subagent_type",
+        "instruction": "prompt",
+        "task": "prompt",
+        "query": "prompt",
+        "details": "description",
+        "runInBackground": "run_in_background",
+        "runInBg": "run_in_background",
+        "resumeId": "resume",
+    }
+    for source_key, target_key in alias_map.items():
+        if target_key not in normalized and source_key in normalized:
+            normalized[target_key] = normalized.get(source_key)
+
+    description = normalized.get("description")
+    prompt = normalized.get("prompt")
+    raw = normalized.get("raw")
+
+    if (not isinstance(description, str) or not description.strip()) and isinstance(prompt, str) and prompt.strip():
+        normalized["description"] = prompt.strip().splitlines()[0][:120]
+
+    if (not isinstance(prompt, str) or not prompt.strip()) and isinstance(description, str) and description.strip():
+        normalized["prompt"] = description.strip()
+
+    # Last-resort fallback when parser can only keep a raw string.
+    if isinstance(raw, str) and raw.strip():
+        if not isinstance(normalized.get("description"), str) or not normalized["description"].strip():
+            normalized["description"] = raw.strip().splitlines()[0][:120]
+        if not isinstance(normalized.get("prompt"), str) or not normalized["prompt"].strip():
+            normalized["prompt"] = raw.strip()
+
+    # Strict whitelist to match Task tool schema and avoid "Invalid tool parameters".
+    strict: Dict[str, Any] = {}
+    strict["description"] = (
+        normalized["description"].strip()
+        if isinstance(normalized.get("description"), str) and normalized["description"].strip()
+        else "run delegated task"
+    )
+    strict["prompt"] = (
+        normalized["prompt"].strip()
+        if isinstance(normalized.get("prompt"), str) and normalized["prompt"].strip()
+        else strict["description"]
+    )
+    strict["subagent_type"] = _normalize_task_subagent_type(normalized.get("subagent_type"))
+
+    if "run_in_background" in normalized:
+        strict["run_in_background"] = _coerce_bool(normalized.get("run_in_background"))
+    if "resume" in normalized and normalized.get("resume") is not None:
+        resume_text = str(normalized.get("resume")).strip()
+        if resume_text:
+            strict["resume"] = resume_text
+
+    return strict
 
 
 def _map_openai_finish_reason_to_anthropic(finish_reason: Any) -> Optional[str]:
@@ -332,7 +486,9 @@ def openai_response_to_anthropic_message(
             tool_name = function_info.get("name")
             if not isinstance(tool_name, str) or not tool_name:
                 tool_name = "unknown_tool"
-            tool_input = _parse_openai_tool_arguments(function_info.get("arguments"))
+            tool_input = _parse_openai_tool_arguments(_extract_openai_tool_arguments(tool_call))
+            tool_input = _normalize_tool_input_for_anthropic(tool_name, tool_input)
+            _log_tool_output("non_stream", tool_id, tool_name, tool_input)
             content_blocks.append(
                 {
                     "type": "tool_use",
@@ -461,7 +617,9 @@ def openai_chunk_to_anthropic_events(
             tool_id = tool_call.get("id")
             if not isinstance(tool_id, str) or not tool_id:
                 tool_id = f"toolu_{uuid.uuid4().hex[:24]}"
-            tool_input = _parse_openai_tool_arguments(function_info.get("arguments"))
+            tool_input = _parse_openai_tool_arguments(_extract_openai_tool_arguments(tool_call))
+            tool_input = _normalize_tool_input_for_anthropic(tool_name, tool_input)
+            _log_tool_output("stream", tool_id, tool_name, tool_input)
 
             events.append(
                 {

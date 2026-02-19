@@ -171,6 +171,68 @@ def _extract_usage_metrics(usage: Any) -> Dict[str, int]:
     }
 
 
+def _extract_openai_response_diagnostics(openai_response: Any) -> Dict[str, Any]:
+    """Extract non-sensitive diagnostics from OpenAI-style response."""
+    finish_reason = "-"
+    tool_calls_count = 0
+
+    if isinstance(openai_response, dict):
+        choices = openai_response.get("choices")
+        if isinstance(choices, list) and choices:
+            first_choice = choices[0]
+            if isinstance(first_choice, dict):
+                fr = first_choice.get("finish_reason")
+                if fr is not None:
+                    finish_reason = str(fr)
+                message = first_choice.get("message")
+                if isinstance(message, dict):
+                    tool_calls = message.get("tool_calls")
+                    if isinstance(tool_calls, list):
+                        tool_calls_count = sum(1 for tc in tool_calls if isinstance(tc, dict))
+
+    return {
+        "finish_reason": finish_reason,
+        "tool_calls_count": tool_calls_count,
+    }
+
+
+def _update_stream_diagnostics_from_payload(payload_text: str, diag: Dict[str, Any]) -> None:
+    """Update streaming diagnostics from one OpenAI SSE payload text."""
+    payload = payload_text.strip()
+    if not payload or payload == "[DONE]":
+        return
+
+    try:
+        parsed = json.loads(payload)
+    except Exception:
+        return
+
+    if not isinstance(parsed, dict):
+        return
+
+    choices = parsed.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return
+
+    first_choice = choices[0]
+    if not isinstance(first_choice, dict):
+        return
+
+    diag["chunk_count"] = int(diag.get("chunk_count", 0)) + 1
+
+    delta = first_choice.get("delta")
+    if isinstance(delta, dict):
+        tool_calls = delta.get("tool_calls")
+        if isinstance(tool_calls, list):
+            diag["tool_calls_count"] = int(diag.get("tool_calls_count", 0)) + sum(
+                1 for tc in tool_calls if isinstance(tc, dict)
+            )
+
+    finish_reason = first_choice.get("finish_reason")
+    if finish_reason is not None:
+        diag["finish_reason"] = str(finish_reason)
+
+
 async def _convert_openai_stream_to_anthropic(
     openai_stream_response: StreamingResponse, model: str
 ) -> StreamingResponse:
@@ -178,6 +240,11 @@ async def _convert_openai_stream_to_anthropic(
 
     async def anthropic_stream_generator():
         state: Dict[str, Any] = {"model": model}
+        stream_diag: Dict[str, Any] = {
+            "chunk_count": 0,
+            "tool_calls_count": 0,
+            "finish_reason": "-",
+        }
         buf = ""
         async for chunk in openai_stream_response.body_iterator:
             if isinstance(chunk, bytes):
@@ -199,6 +266,7 @@ async def _convert_openai_stream_to_anthropic(
                     if not single_line.startswith("data:"):
                         continue
                     payload = single_line[5:].strip()
+                    _update_stream_diagnostics_from_payload(payload, stream_diag)
                     events = convert_openai_sse_payload_to_anthropic_events(
                         payload, state=state, default_model=model
                     )
@@ -209,6 +277,7 @@ async def _convert_openai_stream_to_anthropic(
             line = buf.strip()
             if line.startswith("data:"):
                 payload = line[5:].strip()
+                _update_stream_diagnostics_from_payload(payload, stream_diag)
                 events = convert_openai_sse_payload_to_anthropic_events(
                     payload, state=state, default_model=model
                 )
@@ -221,6 +290,11 @@ async def _convert_openai_stream_to_anthropic(
         )
         if events:
             yield anthropic_events_to_sse_bytes(events)
+
+        log.info(
+            f"[ANTHROPIC_DIAG] stream=1 model={model} finish_reason={stream_diag.get('finish_reason', '-')} "
+            f"tool_calls_count={stream_diag.get('tool_calls_count', 0)} chunk_count={stream_diag.get('chunk_count', 0)}"
+        )
 
     return StreamingResponse(anthropic_stream_generator(), media_type="text/event-stream")
 
@@ -285,6 +359,28 @@ async def anthropic_messages(
     model = request_data.model
     is_streaming = bool(getattr(request_data, "stream", False))
     use_fake_streaming = is_fake_streaming_model(model)
+    tools_obj = getattr(request_data, "tools", None)
+    tool_count = len(tools_obj) if isinstance(tools_obj, list) else 0
+    tool_choice = getattr(request_data, "tool_choice", None)
+
+    # Claude CLI occasionally sends tools without explicit tool_choice.
+    # Enforce required tool choice to prevent "announce-only then stop" behavior.
+    user_agent = request.headers.get("user-agent", "")
+    if (
+        tool_count > 0
+        and tool_choice is None
+        and isinstance(model, str)
+        and "claude" in model.lower()
+        and "claude-cli" in user_agent.lower()
+    ):
+        request_data.tool_choice = "required"
+        tool_choice = "required"
+        log.info("[ANTHROPIC_REQ_DIAG] enforced_tool_choice=required reason=claude_cli_with_tools")
+
+    log.info(
+        f"[ANTHROPIC_REQ_DIAG] stream={1 if is_streaming else 0} model={model} "
+        f"tools={tool_count} tool_choice={tool_choice}"
+    )
 
     if use_fake_streaming and is_streaming:
         request_data.stream = False
@@ -347,6 +443,13 @@ async def anthropic_messages(
         openai_response = assembly_response_to_openai(parsed, model)
     else:
         openai_response = _build_openai_fallback_text_response(model, text)
+
+    non_stream_diag = _extract_openai_response_diagnostics(openai_response)
+    log.info(
+        f"[ANTHROPIC_DIAG] stream=0 model={model} finish_reason={non_stream_diag['finish_reason']} "
+        f"tool_calls_count={non_stream_diag['tool_calls_count']}"
+    )
+
     anthropic_response = openai_response_to_anthropic_message(openai_response, fallback_model=model)
 
     usage_metrics = _extract_usage_metrics(openai_response.get("usage", {}) if isinstance(openai_response, dict) else {})

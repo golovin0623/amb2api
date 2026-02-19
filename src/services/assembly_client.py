@@ -199,6 +199,8 @@ def _sanitize_messages(messages) -> list:
                         tc_id = f"call_{uuid.uuid4().hex[:24]}"
                     func_info = tc_dict.get("function", {})
                     func_name = func_info.get("name", "")
+                    if not isinstance(func_name, str) or not func_name:
+                        func_name = "unknown_function"
                     normalized_input = _normalize_tool_input(tc_dict, func_info)
                     func_args = json.dumps(normalized_input, ensure_ascii=False)
                     
@@ -207,6 +209,11 @@ def _sanitize_messages(messages) -> list:
                         tool_call_id_to_name[tc_id] = func_name
                     
                     # 创建 AssemblyAI function_call 格式
+                    tool_use_payload = {
+                        "id": tc_id,
+                        "name": func_name,
+                        "input": normalized_input,
+                    }
                     function_call_msg = {
                         "type": "function_call",
                         "tool_call_id": tc_id,
@@ -215,6 +222,17 @@ def _sanitize_messages(messages) -> list:
                         "arguments": func_args,
                         # 显式提供结构化输入，避免上游转换丢失 tool_use.input
                         "input": normalized_input,
+                        # 兼容需要从 messages[*].content[*].tool_use.input 校验的上游
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": tc_id,
+                                "name": func_name,
+                                "input": normalized_input,
+                                # 兼容部分上游 schema: content[*].tool_use.input
+                                "tool_use": tool_use_payload,
+                            }
+                        ],
                     }
                     sanitized.append(function_call_msg)
                     log.debug(f"Converted tool_call to function_call: {func_name} (id={tc_id})")
@@ -229,11 +247,26 @@ def _sanitize_messages(messages) -> list:
                 func_name = getattr(m, "name", None) if hasattr(m, "name") else (m.get("name") if isinstance(m, dict) else "")
             
             # 创建 AssemblyAI function_call_output 格式
+            output_text = content if isinstance(content, str) and content else "{}"
+            tool_result_payload = {
+                "tool_use_id": tool_call_id,
+                "content": output_text,
+            }
             function_output_msg = {
                 "type": "function_call_output",
                 "tool_call_id": tool_call_id,
                 "name": func_name or "unknown_function",
-                "output": content if content else "{}"
+                "output": output_text,
+                # 与 tool_use content 对齐，兼容上游对 content 块的校验
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_call_id,
+                        "content": output_text,
+                        # 兼容部分上游 schema: content[*].tool_result.*
+                        "tool_result": tool_result_payload,
+                    }
+                ],
             }
             sanitized.append(function_output_msg)
             log.debug(f"Converted tool message to function_call_output: {func_name} (id={tool_call_id})")
@@ -244,6 +277,288 @@ def _sanitize_messages(messages) -> list:
             sanitized.append(message)
     
     return sanitized
+
+
+def _extract_response_error_message(resp: Any) -> str:
+    """Best-effort extract upstream error message from response body."""
+    body: Any = None
+    try:
+        body = resp.json() if hasattr(resp, "json") else None
+    except Exception:
+        body = None
+
+    if not isinstance(body, dict):
+        text = ""
+        try:
+            text = resp.text if hasattr(resp, "text") else ""
+        except Exception:
+            text = ""
+        if text:
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, dict):
+                    body = parsed
+            except Exception:
+                return text
+
+    if isinstance(body, dict):
+        if isinstance(body.get("error"), dict):
+            msg = body["error"].get("message")
+            if isinstance(msg, str):
+                return msg
+        msg = body.get("message")
+        if isinstance(msg, str):
+            return msg
+    return ""
+
+
+def _is_tool_use_input_validation_error(resp: Any) -> bool:
+    """Detect known Anthropic validation error for missing tool_use.input."""
+    if getattr(resp, "status_code", 0) != 400:
+        return False
+    msg = _extract_response_error_message(resp).lower()
+    return "tool_use.input" in msg and "field required" in msg
+
+
+def _is_assistant_prefill_error(resp: Any) -> bool:
+    """Detect Anthropic prefill restriction error."""
+    if getattr(resp, "status_code", 0) != 400:
+        return False
+    msg = _extract_response_error_message(resp).lower()
+    return "assistant message prefill" in msg and "must end with a user message" in msg
+
+
+def _build_claude_tool_fallback_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Convert function_call/function_call_output messages to role/content blocks.
+
+    Some upstream validators require path:
+    messages[*].content[*].tool_use.input
+    """
+    converted: List[Dict[str, Any]] = []
+
+    def _append_block_to_role_message(role: str, block: Dict[str, Any]) -> None:
+        """Append tool block to last same-role message, creating message when needed."""
+        if converted and isinstance(converted[-1], dict) and converted[-1].get("role") == role:
+            last = converted[-1]
+            last_content = last.get("content")
+            if isinstance(last_content, str):
+                text = last_content
+                content_list: List[Dict[str, Any]] = []
+                if text:
+                    content_list.append({"type": "text", "text": text})
+                content_list.append(block)
+                last["content"] = content_list
+                return
+            if isinstance(last_content, list):
+                last_content.append(block)
+                last["content"] = last_content
+                return
+            last["content"] = [block]
+            return
+        converted.append({"role": role, "content": [block]})
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+
+        msg_type = msg.get("type")
+        if msg_type == "function_call":
+            tool_call_id = msg.get("tool_call_id")
+            if not isinstance(tool_call_id, str) or not tool_call_id:
+                tool_call_id = f"call_{uuid.uuid4().hex[:24]}"
+
+            tool_name = msg.get("name")
+            if not isinstance(tool_name, str) or not tool_name:
+                tool_name = "unknown_function"
+
+            tool_input = msg.get("input")
+            if not isinstance(tool_input, dict):
+                tool_input = {}
+
+            tool_use_payload = {
+                "id": tool_call_id,
+                "name": tool_name,
+                "input": tool_input,
+            }
+            _append_block_to_role_message(
+                "assistant",
+                {
+                    "type": "tool_use",
+                    "id": tool_call_id,
+                    "name": tool_name,
+                    "input": tool_input,
+                    "tool_use": tool_use_payload,
+                },
+            )
+            continue
+
+        if msg_type == "function_call_output":
+            tool_call_id = msg.get("tool_call_id")
+            if not isinstance(tool_call_id, str) or not tool_call_id:
+                tool_call_id = f"call_{uuid.uuid4().hex[:24]}"
+
+            output_text = msg.get("output")
+            if isinstance(output_text, str):
+                normalized_output = output_text
+            elif output_text is None:
+                normalized_output = "{}"
+            else:
+                normalized_output = json.dumps(output_text, ensure_ascii=False)
+
+            tool_result_payload = {
+                "tool_use_id": tool_call_id,
+                "content": normalized_output,
+            }
+            _append_block_to_role_message(
+                "user",
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_call_id,
+                    "content": normalized_output,
+                    "tool_result": tool_result_payload,
+                },
+            )
+            continue
+
+        converted.append(msg)
+
+    return converted
+
+
+def _messages_end_with_user(messages: List[Dict[str, Any]]) -> bool:
+    """Return True when last message role is user."""
+    if not messages:
+        return False
+    last = messages[-1]
+    return isinstance(last, dict) and last.get("role") == "user"
+
+
+def _normalize_tool_input_value(raw_input: Any) -> Dict[str, Any]:
+    """Normalize arbitrary tool input to dict."""
+    if isinstance(raw_input, dict):
+        return raw_input
+    if raw_input is None:
+        return {}
+    if isinstance(raw_input, str):
+        text = raw_input.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                return parsed
+            return {"value": parsed}
+        except Exception:
+            return {"raw": raw_input}
+    return {"value": raw_input}
+
+
+def _ensure_tool_block_required_fields(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Ensure Anthropic-style tool blocks always carry required fields.
+
+    Critical path:
+    - messages[*].content[*].tool_use.input
+    """
+    fixed_messages: List[Dict[str, Any]] = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+
+        fixed_msg = dict(msg)
+        content = fixed_msg.get("content")
+        if not isinstance(content, list):
+            fixed_messages.append(fixed_msg)
+            continue
+
+        fixed_blocks: List[Any] = []
+        for block in content:
+            if not isinstance(block, dict):
+                fixed_blocks.append(block)
+                continue
+
+            fixed_block = dict(block)
+            block_type = fixed_block.get("type")
+
+            if block_type == "tool_use" or "tool_use" in fixed_block:
+                nested_tool_use = fixed_block.get("tool_use")
+                if not isinstance(nested_tool_use, dict):
+                    nested_tool_use = {}
+
+                tool_id = fixed_block.get("id") or nested_tool_use.get("id") or f"call_{uuid.uuid4().hex[:24]}"
+                tool_name = fixed_block.get("name") or nested_tool_use.get("name") or "unknown_function"
+                tool_input = _normalize_tool_input_value(
+                    fixed_block.get("input") if "input" in fixed_block else nested_tool_use.get("input")
+                )
+
+                fixed_block["id"] = tool_id
+                fixed_block["name"] = tool_name
+                fixed_block["input"] = tool_input
+                fixed_block["tool_use"] = {
+                    "id": tool_id,
+                    "name": tool_name,
+                    "input": tool_input,
+                }
+
+            elif block_type == "tool_result" or "tool_result" in fixed_block:
+                nested_tool_result = fixed_block.get("tool_result")
+                if not isinstance(nested_tool_result, dict):
+                    nested_tool_result = {}
+
+                tool_use_id = (
+                    fixed_block.get("tool_use_id")
+                    or nested_tool_result.get("tool_use_id")
+                    or f"call_{uuid.uuid4().hex[:24]}"
+                )
+                tool_content = fixed_block.get("content")
+                if tool_content is None:
+                    tool_content = nested_tool_result.get("content", "{}")
+                if not isinstance(tool_content, str):
+                    tool_content = json.dumps(tool_content, ensure_ascii=False)
+
+                fixed_block["tool_use_id"] = tool_use_id
+                fixed_block["content"] = tool_content
+                fixed_block["tool_result"] = {
+                    "tool_use_id": tool_use_id,
+                    "content": tool_content,
+                }
+
+            fixed_blocks.append(fixed_block)
+
+        fixed_msg["content"] = fixed_blocks
+        fixed_messages.append(fixed_msg)
+
+    return fixed_messages
+
+
+def _summarize_message_shapes(messages: List[Dict[str, Any]]) -> str:
+    """Return compact, non-sensitive shape summary for debugging message schema issues."""
+    parts: List[str] = []
+    for idx, msg in enumerate(messages):
+        if not isinstance(msg, dict):
+            parts.append(f"{idx}:<non-dict>")
+            continue
+
+        role = msg.get("role", "-")
+        msg_type = msg.get("type", "-")
+        content = msg.get("content")
+        if isinstance(content, list) and content:
+            b0 = content[0] if isinstance(content[0], dict) else {}
+            b0_type = b0.get("type", "-") if isinstance(b0, dict) else "-"
+            has_tool_use = isinstance(b0.get("tool_use"), dict) if isinstance(b0, dict) else False
+            has_tool_use_input = (
+                isinstance(b0.get("tool_use"), dict)
+                and "input" in b0.get("tool_use", {})
+            ) if isinstance(b0, dict) else False
+            top_input_type = type(b0.get("input")).__name__ if isinstance(b0, dict) and "input" in b0 else "-"
+            parts.append(
+                f"{idx}:role={role},type={msg_type},content=list,b0.type={b0_type},"
+                f"b0.tool_use={has_tool_use},b0.tool_use.input={has_tool_use_input},b0.input={top_input_type}"
+            )
+        else:
+            ctype = type(content).__name__ if content is not None else "None"
+            parts.append(f"{idx}:role={role},type={msg_type},content={ctype}")
+    return " | ".join(parts)
 
 
 _rr_counter = itertools.count()
@@ -791,6 +1106,7 @@ async def send_assembly_request(
     """
     # 构造请求体
     sanitized_messages = _sanitize_messages(openai_request.messages)
+    sanitized_messages = _ensure_tool_block_required_fields(sanitized_messages)
     
     # 详细日志：显示消息结构
     log.debug(f"Message structure before sending to AssemblyAI:")
@@ -801,17 +1117,48 @@ async def send_assembly_request(
         has_tool_call_id = "tool_call_id" in msg
         log.debug(f"  [{i}] role={role}, content={content_preview}..., tool_calls={has_tool_calls}, tool_call_id={has_tool_call_id}")
     
-    payload: Dict[str, Any] = {
-        "model": openai_request.model,
-        "messages": sanitized_messages,
-    }
-    
     # 检测模型类型
     model_lower = openai_request.model.lower()
     is_claude = "claude" in model_lower
     is_gemini = "gemini" in model_lower
     # Claude 4.5 系列模型对参数更严格
     is_claude_45 = is_claude and ("4-5" in model_lower or "4.5" in model_lower or "45" in model_lower)
+
+    has_function_call_messages = any(
+        isinstance(m, dict) and m.get("type") in {"function_call", "function_call_output"}
+        for m in sanitized_messages
+    )
+    native_tool_messages: List[Dict[str, Any]] = []
+    if is_claude and has_function_call_messages:
+        native_tool_messages = _build_claude_tool_fallback_messages(sanitized_messages)
+
+    # 默认策略：Claude + 工具历史时，优先走原生 role/content tool 块；
+    # 但若末条不是 user，会触发 assistant prefill 限制，改用 function_call 主路径。
+    native_messages_end_with_user = _messages_end_with_user(native_tool_messages)
+    use_claude_tool_native_messages = (
+        is_claude and has_function_call_messages and native_messages_end_with_user
+    )
+    request_messages = (
+        native_tool_messages
+        if use_claude_tool_native_messages
+        else sanitized_messages
+    )
+    request_messages = _ensure_tool_block_required_fields(request_messages)
+    if use_claude_tool_native_messages:
+        log.warning(
+            "[CLAUDE_TOOL_NATIVE] Using role/content tool blocks as primary payload for Claude tool history"
+        )
+        log.warning(f"[CLAUDE_TOOL_NATIVE] Shape: {_summarize_message_shapes(request_messages)}")
+    elif is_claude and has_function_call_messages and native_tool_messages:
+        log.warning(
+            "[CLAUDE_TOOL_NATIVE] Skipped primary native tool blocks because conversation does not end with user"
+        )
+        log.warning(f"[CLAUDE_TOOL_NATIVE] Shape: {_summarize_message_shapes(sanitized_messages)}")
+
+    payload: Dict[str, Any] = {
+        "model": openai_request.model,
+        "messages": request_messages,
+    }
     
     # 透传常用参数
     for key in [
@@ -895,6 +1242,8 @@ async def send_assembly_request(
     # 对于 Claude 4.5，记录完整的请求以便调试
     if is_claude_45:
         log.debug(f"Claude 4.5 request payload: {_truncate_for_log(post_data, 1200)}")
+
+    claude_tool_fallback_used = False
 
     for attempt in range(max_retries + 1):
         idx = -1
@@ -1080,6 +1429,42 @@ async def send_assembly_request(
             # 非流式请求保持原行为
             async with http_client.get_client(timeout=None) as client:
                 resp = await client.post(endpoint, content=post_data, headers=headers)
+
+                # Claude 工具调用历史兼容兜底：命中 tool_use.input 校验错误时，切换另一种编码重发一次
+                if (
+                    is_claude
+                    and has_function_call_messages
+                    and not claude_tool_fallback_used
+                    and (
+                        _is_tool_use_input_validation_error(resp)
+                        or _is_assistant_prefill_error(resp)
+                    )
+                ):
+                    claude_tool_fallback_used = True
+                    fallback_payload = dict(payload)
+                    if use_claude_tool_native_messages:
+                        fallback_payload["messages"] = _ensure_tool_block_required_fields(sanitized_messages)
+                        fallback_label = "function_call"
+                    else:
+                        fallback_payload["messages"] = _ensure_tool_block_required_fields(
+                            native_tool_messages
+                            if native_tool_messages
+                            else _build_claude_tool_fallback_messages(sanitized_messages)
+                        )
+                        fallback_label = "role/content tool blocks"
+                    fallback_post_data = json.dumps(fallback_payload)
+                    log.warning(
+                        f"[CLAUDE_TOOL_FALLBACK] Retrying once with {fallback_label} "
+                        "after Claude tool format validation error"
+                    )
+                    log.warning(
+                        f"[CLAUDE_TOOL_FALLBACK] Shape: {_summarize_message_shapes(fallback_payload['messages'])}"
+                    )
+                    if tool_debug_enabled:
+                        log.debug(
+                            f"[CLAUDE_TOOL_FALLBACK] REQ Payload: {_truncate_for_log(fallback_post_data, 4000)}"
+                        )
+                    resp = await client.post(endpoint, content=fallback_post_data, headers=headers)
 
             # 更新速率限制信息
             await _update_rate_limit_info(idx, api_key, resp.headers)

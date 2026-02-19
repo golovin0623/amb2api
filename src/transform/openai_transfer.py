@@ -287,7 +287,85 @@ def assembly_response_to_openai(
     3. arguments 可能是对象而非字符串，需要转换
     4. finish_reason 可能是 "tool_use" 而非 "tool_calls"
     """
+    import ast
     import json
+
+    def _iter_message_tool_calls(msg: Dict[str, Any]):
+        """Yield tool call candidates from both OpenAI and Anthropic-style message shapes."""
+        # OpenAI-style direct tool_calls
+        direct_tool_calls = msg.get("tool_calls")
+        if isinstance(direct_tool_calls, list):
+            for tc in direct_tool_calls:
+                if isinstance(tc, dict):
+                    yield tc
+
+        # Anthropic-style content blocks with tool_use
+        content_blocks = msg.get("content")
+        if isinstance(content_blocks, list):
+            for block in content_blocks:
+                if not isinstance(block, dict):
+                    continue
+                block_type = block.get("type")
+                nested_tool_use = block.get("tool_use")
+                if block_type != "tool_use" and not isinstance(nested_tool_use, dict):
+                    continue
+
+                nested = nested_tool_use if isinstance(nested_tool_use, dict) else {}
+                tool_id = block.get("id") or nested.get("id") or f"call_{uuid.uuid4().hex[:24]}"
+                tool_name = block.get("name") or nested.get("name") or "unknown_function"
+                tool_input = block.get("input") if "input" in block else nested.get("input")
+                if tool_input is None:
+                    tool_input = {}
+                yield {
+                    "id": tool_id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "input": tool_input,
+                    },
+                }
+
+    def _normalize_tool_arguments_for_openai(raw_args: Any) -> str:
+        """
+        Normalize tool arguments to OpenAI-required JSON string.
+        Supports fallback fields and non-strict JSON-like strings.
+        """
+        if raw_args is None:
+            return "{}"
+
+        if isinstance(raw_args, dict):
+            return json.dumps(raw_args, ensure_ascii=False)
+
+        if isinstance(raw_args, str):
+            text = raw_args.strip()
+            if not text:
+                return "{}"
+
+            # strip markdown code fences
+            if text.startswith("```") and text.endswith("```"):
+                lines = text.splitlines()
+                if len(lines) >= 3:
+                    text = "\n".join(lines[1:-1]).strip()
+
+            # strict JSON first
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, dict):
+                    return json.dumps(parsed, ensure_ascii=False)
+                return json.dumps({"value": parsed}, ensure_ascii=False)
+            except Exception:
+                pass
+
+            # python-literal fallback
+            try:
+                parsed = ast.literal_eval(text)
+                if isinstance(parsed, dict):
+                    return json.dumps(parsed, ensure_ascii=False)
+                return json.dumps({"value": parsed}, ensure_ascii=False)
+            except Exception:
+                return json.dumps({"raw": raw_args}, ensure_ascii=False)
+
+        return json.dumps({"value": raw_args}, ensure_ascii=False)
     
     _choices_raw = assembly_response.get("choices")
     if not isinstance(_choices_raw, list):
@@ -297,6 +375,7 @@ def assembly_response_to_openai(
     all_content_parts = []
     all_tool_calls = []
     final_finish_reason = "stop"
+    seen_tool_signatures = set()
     
     for choice in _choices_raw:
         msg = choice.get("message", {})
@@ -312,10 +391,9 @@ def assembly_response_to_openai(
                         t = part.get("type")
                         if t in ("text", "output_text") and part.get("text"):
                             all_content_parts.append(part["text"])
-        
+
         # 收集工具调用
-        tool_calls = msg.get("tool_calls") or []
-        for tc in tool_calls:
+        for tc in _iter_message_tool_calls(msg):
             # 修复 tool_call 格式
             fixed_tc = {
                 "id": tc.get("id") or f"call_{uuid.uuid4().hex[:24]}",  # 生成缺失的 id
@@ -327,7 +405,11 @@ def assembly_response_to_openai(
             fixed_tc["function"]["name"] = func.get("name", "")
             
             # 将 arguments 对象转换为 JSON 字符串
-            args = func.get("arguments", {})
+            args = func.get("arguments")
+            if args is None and "input" in func:
+                args = func.get("input")
+            if args is None and "input" in tc:
+                args = tc.get("input")
             
             # [修复] 参数名映射: 模型生成的 XML 可能使用错误的参数名
             # 例如 read_file: file_path -> path
@@ -343,13 +425,16 @@ def assembly_response_to_openai(
                     except json.JSONDecodeError:
                         pass
 
-            if isinstance(args, dict):
-                fixed_tc["function"]["arguments"] = json.dumps(args, ensure_ascii=False)
-            elif isinstance(args, str):
-                fixed_tc["function"]["arguments"] = args
-            else:
-                fixed_tc["function"]["arguments"] = json.dumps(args, ensure_ascii=False) if args else "{}"
+            fixed_tc["function"]["arguments"] = _normalize_tool_arguments_for_openai(args)
             
+            signature = (
+                fixed_tc["id"],
+                fixed_tc["function"].get("name", ""),
+                fixed_tc["function"].get("arguments", "{}"),
+            )
+            if signature in seen_tool_signatures:
+                continue
+            seen_tool_signatures.add(signature)
             all_tool_calls.append(fixed_tc)
         
         # 获取 finish_reason
@@ -358,6 +443,10 @@ def assembly_response_to_openai(
             final_finish_reason = "tool_calls"  # 标准化为 OpenAI 格式
         elif fr == "stop" and final_finish_reason != "tool_calls":
             final_finish_reason = "stop"
+
+    # 某些上游在 finish_reason=stop 时仍通过 content.tool_use 传递工具调用
+    if all_tool_calls and final_finish_reason != "tool_calls":
+        final_finish_reason = "tool_calls"
     
     # 合并内容
     combined_content = " ".join(all_content_parts) if all_content_parts else ""
