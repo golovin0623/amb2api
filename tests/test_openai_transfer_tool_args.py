@@ -113,3 +113,42 @@ def test_assembly_response_to_openai_extracts_nested_tool_use_block():
     assert tool_call["id"] == "toolu_2"
     assert tool_call["function"]["name"] == "Task"
     assert json.loads(tool_call["function"]["arguments"]) == {"description": "scan repo"}
+
+
+def test_assembly_response_to_openai_reads_choice_level_tool_calls():
+    response = {
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": None},
+                "tool_calls": [
+                    {
+                        "id": "call_choice_1",
+                        "type": "function",
+                        "function": {"name": "Task", "arguments": "{\"description\":\"scan repo\"}"},
+                    }
+                ],
+                "finish_reason": "tool_calls",
+            }
+        ]
+    }
+
+    openai = assembly_response_to_openai(response, model="claude-opus-4-6")
+    assert openai["choices"][0]["finish_reason"] == "tool_calls"
+    tool_call = openai["choices"][0]["message"]["tool_calls"][0]
+    assert tool_call["id"] == "call_choice_1"
+    assert tool_call["function"]["name"] == "Task"
+    assert json.loads(tool_call["function"]["arguments"]) == {"description": "scan repo"}
+
+
+def test_assembly_response_to_openai_maps_max_tokens_to_length():
+    response = {
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": "partial answer"},
+                "finish_reason": "max_tokens",
+            }
+        ]
+    }
+
+    openai = assembly_response_to_openai(response, model="claude-opus-4-6")
+    assert openai["choices"][0]["finish_reason"] == "length"

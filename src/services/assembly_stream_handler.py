@@ -24,6 +24,75 @@ from config import (
     get_tool_debug_logs_enabled,
 )
 
+
+def _summarize_upstream_response_shape(response_data: Any) -> dict:
+    """Summarize non-sensitive upstream response shape for tool-call diagnostics."""
+    summary: dict = {
+        "response_type": type(response_data).__name__,
+        "choices_count": 0,
+        "choice_shapes": [],
+    }
+
+    if not isinstance(response_data, dict):
+        return summary
+
+    choices = response_data.get("choices")
+    if not isinstance(choices, list):
+        return summary
+
+    summary["choices_count"] = len(choices)
+    choice_shapes = []
+    for idx, choice in enumerate(choices[:3]):
+        if not isinstance(choice, dict):
+            choice_shapes.append({"index": idx, "choice_type": type(choice).__name__})
+            continue
+
+        msg = choice.get("message")
+        msg_role = msg.get("role") if isinstance(msg, dict) else None
+        msg_content = msg.get("content") if isinstance(msg, dict) else None
+        msg_content_kind = type(msg_content).__name__
+        content_block_types = []
+        if isinstance(msg_content, list):
+            for block in msg_content[:5]:
+                if isinstance(block, dict):
+                    block_type = block.get("type")
+                    content_block_types.append(str(block_type) if block_type is not None else "-")
+                else:
+                    content_block_types.append(type(block).__name__)
+
+        choice_tool_calls = choice.get("tool_calls")
+        choice_tool_calls_count = (
+            sum(1 for tc in choice_tool_calls if isinstance(tc, dict))
+            if isinstance(choice_tool_calls, list)
+            else 0
+        )
+
+        message_tool_calls = msg.get("tool_calls") if isinstance(msg, dict) else None
+        message_tool_calls_count = (
+            sum(1 for tc in message_tool_calls if isinstance(tc, dict))
+            if isinstance(message_tool_calls, list)
+            else 0
+        )
+
+        has_xml_function_calls = isinstance(msg_content, str) and "<function_calls>" in msg_content
+
+        choice_shapes.append(
+            {
+                "index": idx,
+                "finish_reason": choice.get("finish_reason"),
+                "message_role": msg_role,
+                "message_content_kind": msg_content_kind,
+                "content_block_types": content_block_types,
+                "choice_tool_calls_count": choice_tool_calls_count,
+                "message_tool_calls_count": message_tool_calls_count,
+                "has_xml_function_calls": has_xml_function_calls,
+            }
+        )
+
+    summary["choice_shapes"] = choice_shapes
+    return summary
+
+
 async def convert_streaming_response(
     gemini_response,
     model: str,
@@ -297,14 +366,20 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
 
             return json.dumps({"value": raw_args}, ensure_ascii=False)
 
-        def _iter_message_tool_calls(msg: Any):
-            """Yield tool call candidates from both direct tool_calls and content.tool_use blocks."""
-            if not isinstance(msg, dict):
+        def _iter_choice_tool_calls(choice: Any, msg: Any):
+            """Yield tool call candidates from choice/message tool_calls and content.tool_use blocks."""
+            if not isinstance(choice, dict) or not isinstance(msg, dict):
                 return
 
-            direct_tool_calls = msg.get("tool_calls")
-            if isinstance(direct_tool_calls, list):
-                for tc in direct_tool_calls:
+            direct_choice_tool_calls = choice.get("tool_calls")
+            if isinstance(direct_choice_tool_calls, list):
+                for tc in direct_choice_tool_calls:
+                    if isinstance(tc, dict):
+                        yield tc
+
+            direct_message_tool_calls = msg.get("tool_calls")
+            if isinstance(direct_message_tool_calls, list):
+                for tc in direct_message_tool_calls:
                     if isinstance(tc, dict):
                         yield tc
 
@@ -423,6 +498,12 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
             try:
                 response_data = json.loads(body_str)
                 log.debug(f"Parsed response data: {json.dumps(response_data, ensure_ascii=False)[:500]}...")
+                upstream_shape = _summarize_upstream_response_shape(response_data)
+                log.info(
+                    f"[ANTHROPIC_UPSTREAM_SHAPE] stream=fake model={openai_request.model} "
+                    f"choices={upstream_shape.get('choices_count', 0)} "
+                    f"shape={json.dumps(upstream_shape.get('choice_shapes', []), ensure_ascii=False)}"
+                )
 
                 # 检查是否是错误响应（支持多种错误格式）
                 error_message = None
@@ -495,7 +576,7 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                         
                         # 收集并修复工具调用
                         extracted_count = 0
-                        for tc in _iter_message_tool_calls(msg):
+                        for tc in _iter_choice_tool_calls(choice, msg):
                             extracted_count += 1
                             fixed_tc = {
                                 "id": tc.get("id") or f"call_{uuid.uuid4().hex[:24]}",

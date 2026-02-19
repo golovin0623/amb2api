@@ -290,12 +290,18 @@ def assembly_response_to_openai(
     import ast
     import json
 
-    def _iter_message_tool_calls(msg: Dict[str, Any]):
-        """Yield tool call candidates from both OpenAI and Anthropic-style message shapes."""
-        # OpenAI-style direct tool_calls
-        direct_tool_calls = msg.get("tool_calls")
-        if isinstance(direct_tool_calls, list):
-            for tc in direct_tool_calls:
+    def _iter_choice_tool_calls(choice: Dict[str, Any], msg: Dict[str, Any]):
+        """Yield tool call candidates from choice/message and Anthropic-style content blocks."""
+        # OpenAI-style direct tool_calls may appear either on choice or message.
+        direct_choice_tool_calls = choice.get("tool_calls")
+        if isinstance(direct_choice_tool_calls, list):
+            for tc in direct_choice_tool_calls:
+                if isinstance(tc, dict):
+                    yield tc
+
+        direct_message_tool_calls = msg.get("tool_calls")
+        if isinstance(direct_message_tool_calls, list):
+            for tc in direct_message_tool_calls:
                 if isinstance(tc, dict):
                     yield tc
 
@@ -393,7 +399,7 @@ def assembly_response_to_openai(
                             all_content_parts.append(part["text"])
 
         # 收集工具调用
-        for tc in _iter_message_tool_calls(msg):
+        for tc in _iter_choice_tool_calls(choice, msg):
             # 修复 tool_call 格式
             fixed_tc = {
                 "id": tc.get("id") or f"call_{uuid.uuid4().hex[:24]}",  # 生成缺失的 id
@@ -441,7 +447,10 @@ def assembly_response_to_openai(
         fr = choice.get("finish_reason", "")
         if fr in ("tool_use", "tool_calls"):
             final_finish_reason = "tool_calls"  # 标准化为 OpenAI 格式
-        elif fr == "stop" and final_finish_reason != "tool_calls":
+        elif fr in ("max_tokens", "length"):
+            if final_finish_reason != "tool_calls":
+                final_finish_reason = "length"
+        elif fr == "stop" and final_finish_reason not in ("tool_calls", "length"):
             final_finish_reason = "stop"
 
     # 某些上游在 finish_reason=stop 时仍通过 content.tool_use 传递工具调用

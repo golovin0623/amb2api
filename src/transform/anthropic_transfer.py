@@ -65,12 +65,14 @@ def _map_anthropic_tool_choice_to_openai(tool_choice: Any) -> Any:
     if choice_type == "auto":
         return "auto"
     if choice_type == "any":
-        return "required"
+        # AssemblyAI LLM Gateway documents "none" / "auto" / specific function object.
+        # Use "auto" for "any" to keep compatibility.
+        return "auto"
     if choice_type == "tool":
         name = tool_choice.get("name")
         if isinstance(name, str) and name:
             return {"type": "function", "function": {"name": name}}
-        return "required"
+        return "auto"
     return tool_choice
 
 

@@ -1,9 +1,12 @@
 import json
 
 from src.services.assembly_client import (
+    _build_claude_tool_recovery_payload,
+    _extract_openai_response_diagnostics,
     _build_claude_tool_fallback_messages,
     _ensure_tool_block_required_fields,
     _is_assistant_prefill_error,
+    _should_trigger_claude_tool_recovery,
     _is_tool_use_input_validation_error,
     _messages_end_with_user,
     _sanitize_messages,
@@ -219,6 +222,69 @@ def test_is_assistant_prefill_error_detects_known_shape():
             }
 
     assert _is_assistant_prefill_error(DummyResp()) is True
+
+
+def test_extract_openai_response_diagnostics_reads_tool_calls_and_finish_reason():
+    openai_response = {
+        "choices": [
+            {
+                "finish_reason": "length",
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {"id": "call_a", "type": "function", "function": {"name": "Task", "arguments": "{}"}},
+                        {"id": "call_b", "type": "function", "function": {"name": "Task", "arguments": "{}"}},
+                    ],
+                },
+            }
+        ]
+    }
+
+    diag = _extract_openai_response_diagnostics(openai_response)
+    assert diag["finish_reason"] == "length"
+    assert diag["tool_calls_count"] == 2
+
+
+def test_should_trigger_claude_tool_recovery_only_for_length_without_tool_calls():
+    assert _should_trigger_claude_tool_recovery({"finish_reason": "length", "tool_calls_count": 0}) is True
+    assert _should_trigger_claude_tool_recovery({"finish_reason": "max_tokens", "tool_calls_count": 0}) is True
+    assert _should_trigger_claude_tool_recovery({"finish_reason": "tool_calls", "tool_calls_count": 1}) is False
+    assert _should_trigger_claude_tool_recovery({"finish_reason": "stop", "tool_calls_count": 0}) is False
+
+
+def test_build_claude_tool_recovery_payload_compresses_and_forces_auto():
+    payload = {
+        "model": "claude-4.5-sonnet-20250929",
+        "messages": [{"role": "system", "content": "sys"}] + [
+            {"role": "user" if i % 2 == 0 else "assistant", "content": f"turn-{i}"}
+            for i in range(30)
+        ],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "Task",
+                    "parameters": {"type": "object", "properties": {"prompt": {"type": "string"}}},
+                },
+            }
+        ],
+        "tool_choice": {"type": "function", "function": {"name": "Task"}},
+        "max_tokens": 8192,
+    }
+
+    recovered, stats = _build_claude_tool_recovery_payload(
+        payload,
+        keep_recent_messages=8,
+        recovery_max_tokens=2048,
+    )
+
+    assert recovered["tool_choice"] == "auto"
+    assert recovered["max_tokens"] == 2048
+    assert stats["dropped_count"] > 0
+    assert stats["tool_choice_overridden"] is True
+    assert stats["max_tokens_adjusted"] is True
+    assert len(recovered["messages"]) <= 10  # system + summary + recent window
 
 
 def test_messages_end_with_user_checks_last_role():

@@ -545,20 +545,285 @@ def _summarize_message_shapes(messages: List[Dict[str, Any]]) -> str:
         if isinstance(content, list) and content:
             b0 = content[0] if isinstance(content[0], dict) else {}
             b0_type = b0.get("type", "-") if isinstance(b0, dict) else "-"
-            has_tool_use = isinstance(b0.get("tool_use"), dict) if isinstance(b0, dict) else False
-            has_tool_use_input = (
-                isinstance(b0.get("tool_use"), dict)
-                and "input" in b0.get("tool_use", {})
-            ) if isinstance(b0, dict) else False
-            top_input_type = type(b0.get("input")).__name__ if isinstance(b0, dict) and "input" in b0 else "-"
+            block_types = []
+            for block in content[:5]:
+                if isinstance(block, dict):
+                    block_types.append(str(block.get("type", "-")))
+                else:
+                    block_types.append(type(block).__name__)
+            has_any_tool_use = any(
+                isinstance(block, dict)
+                and (
+                    block.get("type") == "tool_use"
+                    or isinstance(block.get("tool_use"), dict)
+                )
+                for block in content
+            )
+            has_any_tool_result = any(
+                isinstance(block, dict)
+                and (
+                    block.get("type") == "tool_result"
+                    or isinstance(block.get("tool_result"), dict)
+                )
+                for block in content
+            )
+            has_tool_use_input = any(
+                isinstance(block, dict)
+                and (
+                    isinstance(block.get("input"), dict)
+                    or (
+                        isinstance(block.get("tool_use"), dict)
+                        and "input" in block.get("tool_use", {})
+                    )
+                )
+                for block in content
+            )
             parts.append(
                 f"{idx}:role={role},type={msg_type},content=list,b0.type={b0_type},"
-                f"b0.tool_use={has_tool_use},b0.tool_use.input={has_tool_use_input},b0.input={top_input_type}"
+                f"block_types={','.join(block_types)},any.tool_use={has_any_tool_use},"
+                f"any.tool_result={has_any_tool_result},any.tool_use.input={has_tool_use_input}"
             )
         else:
             ctype = type(content).__name__ if content is not None else "None"
             parts.append(f"{idx}:role={role},type={msg_type},content={ctype}")
     return " | ".join(parts)
+
+
+def _extract_response_json_body(resp: Any) -> Any:
+    """Best-effort parse response body as JSON object."""
+    try:
+        if hasattr(resp, "json"):
+            parsed = resp.json()
+            if isinstance(parsed, dict):
+                return parsed
+    except Exception:
+        pass
+
+    text = ""
+    try:
+        if hasattr(resp, "text") and isinstance(resp.text, str):
+            text = resp.text
+        elif hasattr(resp, "content"):
+            content = resp.content
+            text = content.decode("utf-8", errors="replace") if isinstance(content, bytes) else str(content)
+    except Exception:
+        text = ""
+
+    if not text:
+        return None
+
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        return None
+    return None
+
+
+def _extract_openai_response_diagnostics(openai_response: Any) -> Dict[str, Any]:
+    """Extract finish_reason/tool_calls_count from OpenAI-style response."""
+    finish_reason = "-"
+    tool_calls_count = 0
+
+    if isinstance(openai_response, dict):
+        choices = openai_response.get("choices")
+        if isinstance(choices, list) and choices:
+            first_choice = choices[0]
+            if isinstance(first_choice, dict):
+                fr = first_choice.get("finish_reason")
+                if fr is not None:
+                    finish_reason = str(fr)
+                message = first_choice.get("message")
+                if isinstance(message, dict):
+                    tool_calls = message.get("tool_calls")
+                    if isinstance(tool_calls, list):
+                        tool_calls_count = sum(1 for tc in tool_calls if isinstance(tc, dict))
+
+    return {
+        "finish_reason": finish_reason,
+        "tool_calls_count": tool_calls_count,
+    }
+
+
+def _extract_tool_recovery_diag_from_response(resp: Any, model: str) -> Dict[str, Any]:
+    """Extract recovery diagnostics from AssemblyAI response."""
+    parsed = _extract_response_json_body(resp)
+    if not isinstance(parsed, dict):
+        return {"finish_reason": "-", "tool_calls_count": 0}
+
+    try:
+        from ..transform.openai_transfer import assembly_response_to_openai
+
+        openai_response = assembly_response_to_openai(parsed, model)
+    except Exception:
+        openai_response = parsed
+
+    return _extract_openai_response_diagnostics(openai_response)
+
+
+def _should_trigger_claude_tool_recovery(diag: Dict[str, Any]) -> bool:
+    """Trigger recovery when response is length-truncated and emitted no tool calls."""
+    finish_reason = str(diag.get("finish_reason", "")).strip().lower()
+    try:
+        tool_calls_count = int(diag.get("tool_calls_count", 0))
+    except (TypeError, ValueError):
+        tool_calls_count = 0
+    return finish_reason in {"length", "max_tokens"} and tool_calls_count == 0
+
+
+def _extract_message_text_for_recovery_summary(message: Dict[str, Any]) -> str:
+    """Extract concise text from one payload message."""
+    if not isinstance(message, dict):
+        return ""
+
+    content = message.get("content")
+    if isinstance(content, str):
+        return content.strip()
+
+    if isinstance(content, list):
+        parts: List[str] = []
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            item_type = item.get("type")
+            if item_type in {"text", "output_text"}:
+                text = item.get("text")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+            elif item_type == "tool_result":
+                tool_result = item.get("tool_result")
+                if isinstance(tool_result, dict):
+                    result_text = tool_result.get("content")
+                    if isinstance(result_text, str) and result_text.strip():
+                        parts.append(result_text.strip())
+        return " ".join(parts).strip()
+
+    return ""
+
+
+def _compress_claude_tool_payload_messages(
+    messages: List[Dict[str, Any]],
+    keep_recent_messages: int = 20,
+    summary_max_chars: int = 1600,
+) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Compress long tool conversations while preserving recent turns.
+
+    Output layout:
+    - first system message (if exists)
+    - generated summary system message for dropped turns
+    - most recent messages
+    """
+    stats: Dict[str, Any] = {
+        "dropped_count": 0,
+        "summary_chars": 0,
+        "kept_count": len(messages) if isinstance(messages, list) else 0,
+    }
+    if not isinstance(messages, list) or keep_recent_messages <= 0:
+        return messages, stats
+
+    total = len(messages)
+    if total <= keep_recent_messages + 1:
+        return messages, stats
+
+    prefix: List[Dict[str, Any]] = []
+    start_idx = 0
+    if (
+        total > 0
+        and isinstance(messages[0], dict)
+        and isinstance(messages[0].get("role"), str)
+        and messages[0].get("role") == "system"
+    ):
+        prefix.append(messages[0])
+        start_idx = 1
+
+    body = messages[start_idx:]
+    if len(body) <= keep_recent_messages:
+        return messages, stats
+
+    dropped = body[:-keep_recent_messages]
+    recent = body[-keep_recent_messages:]
+
+    summary_lines = ["[Tool Recovery Summary] Earlier turns were compressed for stable tool calling."]
+    for message in dropped[-40:]:
+        if not isinstance(message, dict):
+            continue
+
+        msg_type = message.get("type")
+        if msg_type == "function_call":
+            tool_name = message.get("name") or "unknown_function"
+            summary_lines.append(f"- assistant called tool: {tool_name}")
+            continue
+        if msg_type == "function_call_output":
+            tool_call_id = message.get("tool_call_id") or "unknown"
+            summary_lines.append(f"- tool returned result for call id {tool_call_id}")
+            continue
+
+        role = message.get("role")
+        role_text = role if isinstance(role, str) and role else "unknown"
+        text = _extract_message_text_for_recovery_summary(message)
+        if text:
+            if len(text) > 180:
+                text = text[:177] + "..."
+            summary_lines.append(f"- {role_text}: {text}")
+
+    summary_text = "\n".join(summary_lines).strip()
+    if len(summary_text) > summary_max_chars:
+        summary_text = summary_text[: summary_max_chars - 3] + "..."
+
+    summary_message = {"role": "system", "content": summary_text}
+    compressed = prefix + [summary_message] + recent
+
+    stats["dropped_count"] = len(dropped)
+    stats["summary_chars"] = len(summary_text)
+    stats["kept_count"] = len(compressed)
+    return compressed, stats
+
+
+def _build_claude_tool_recovery_payload(
+    payload: Dict[str, Any],
+    keep_recent_messages: int = 20,
+    recovery_max_tokens: int = 2048,
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    """Build one-shot recovery payload for Claude tool drift."""
+    recovery_payload: Dict[str, Any] = dict(payload)
+    stats: Dict[str, Any] = {
+        "dropped_count": 0,
+        "summary_chars": 0,
+        "kept_count": 0,
+        "tool_choice_overridden": False,
+        "max_tokens_adjusted": False,
+        "max_tokens_from": recovery_payload.get("max_tokens"),
+        "max_tokens_to": recovery_payload.get("max_tokens"),
+    }
+
+    messages = recovery_payload.get("messages")
+    if isinstance(messages, list):
+        compressed, compress_stats = _compress_claude_tool_payload_messages(
+            messages,
+            keep_recent_messages=keep_recent_messages,
+        )
+        recovery_payload["messages"] = compressed
+        stats.update(compress_stats)
+
+    if isinstance(recovery_payload.get("tools"), list) and recovery_payload.get("tools"):
+        if recovery_payload.get("tool_choice") != "auto":
+            stats["tool_choice_overridden"] = True
+        recovery_payload["tool_choice"] = "auto"
+
+    original_max_tokens = recovery_payload.get("max_tokens")
+    should_adjust_max_tokens = (
+        not isinstance(original_max_tokens, int)
+        or original_max_tokens <= 0
+        or original_max_tokens > recovery_max_tokens
+    )
+    if should_adjust_max_tokens:
+        recovery_payload["max_tokens"] = recovery_max_tokens
+        stats["max_tokens_adjusted"] = True
+    stats["max_tokens_to"] = recovery_payload.get("max_tokens")
+
+    return recovery_payload, stats
 
 
 _rr_counter = itertools.count()
@@ -1132,8 +1397,8 @@ async def send_assembly_request(
     if is_claude and has_function_call_messages:
         native_tool_messages = _build_claude_tool_fallback_messages(sanitized_messages)
 
-    # 默认策略：Claude + 工具历史时，优先走原生 role/content tool 块；
-    # 但若末条不是 user，会触发 assistant prefill 限制，改用 function_call 主路径。
+    # 默认策略：Claude + 工具历史时，优先走 role/content tool 块。
+    # 当会话末尾不是 user（容易触发 assistant prefill 限制）时，回退到 function_call 主路径。
     native_messages_end_with_user = _messages_end_with_user(native_tool_messages)
     use_claude_tool_native_messages = (
         is_claude and has_function_call_messages and native_messages_end_with_user
@@ -1244,6 +1509,7 @@ async def send_assembly_request(
         log.debug(f"Claude 4.5 request payload: {_truncate_for_log(post_data, 1200)}")
 
     claude_tool_fallback_used = False
+    claude_tool_recovery_attempted = False
 
     for attempt in range(max_retries + 1):
         idx = -1
@@ -1429,6 +1695,7 @@ async def send_assembly_request(
             # 非流式请求保持原行为
             async with http_client.get_client(timeout=None) as client:
                 resp = await client.post(endpoint, content=post_data, headers=headers)
+                effective_payload_for_recovery = payload
 
                 # Claude 工具调用历史兼容兜底：命中 tool_use.input 校验错误时，切换另一种编码重发一次
                 if (
@@ -1465,6 +1732,73 @@ async def send_assembly_request(
                             f"[CLAUDE_TOOL_FALLBACK] REQ Payload: {_truncate_for_log(fallback_post_data, 4000)}"
                         )
                     resp = await client.post(endpoint, content=fallback_post_data, headers=headers)
+                    effective_payload_for_recovery = fallback_payload
+
+                # Claude 工具会话漂移修复：
+                # 首次返回 length/max_tokens 且未发出 tool_calls 时，压缩历史并强制 tool_choice=auto 重试一次。
+                if (
+                    is_claude
+                    and isinstance(effective_payload_for_recovery.get("tools"), list)
+                    and effective_payload_for_recovery.get("tools")
+                    and not claude_tool_recovery_attempted
+                    and 200 <= resp.status_code < 400
+                ):
+                    first_diag = _extract_tool_recovery_diag_from_response(resp, openai_request.model)
+                    if _should_trigger_claude_tool_recovery(first_diag):
+                        claude_tool_recovery_attempted = True
+                        recovery_payload, recovery_stats = _build_claude_tool_recovery_payload(
+                            effective_payload_for_recovery
+                        )
+                        recovery_post_data = json.dumps(recovery_payload)
+                        log.warning(
+                            "[CLAUDE_TOOL_RECOVERY] Retrying once after length/no-tool response "
+                            f"finish_reason={first_diag.get('finish_reason')} "
+                            f"tool_calls_count={first_diag.get('tool_calls_count', 0)} "
+                            f"dropped={recovery_stats.get('dropped_count', 0)} "
+                            f"tool_choice={recovery_payload.get('tool_choice')} "
+                            f"max_tokens={recovery_payload.get('max_tokens')}"
+                        )
+                        if tool_debug_enabled:
+                            log.debug(
+                                f"[CLAUDE_TOOL_RECOVERY] REQ Payload: {_truncate_for_log(recovery_post_data, 4000)}"
+                            )
+
+                        recovery_resp = await client.post(
+                            endpoint,
+                            content=recovery_post_data,
+                            headers=headers,
+                        )
+                        if 200 <= recovery_resp.status_code < 400:
+                            recovery_diag = _extract_tool_recovery_diag_from_response(
+                                recovery_resp,
+                                openai_request.model,
+                            )
+                            improved = (
+                                int(recovery_diag.get("tool_calls_count", 0))
+                                > int(first_diag.get("tool_calls_count", 0))
+                            ) or (
+                                str(first_diag.get("finish_reason", "")).strip().lower() in {"length", "max_tokens"}
+                                and str(recovery_diag.get("finish_reason", "")).strip().lower() not in {"length", "max_tokens"}
+                            )
+                            if improved:
+                                resp = recovery_resp
+                                post_data = recovery_post_data
+                                log.warning(
+                                    "[CLAUDE_TOOL_RECOVERY] accepted retry response "
+                                    f"finish_reason={recovery_diag.get('finish_reason')} "
+                                    f"tool_calls_count={recovery_diag.get('tool_calls_count', 0)}"
+                                )
+                            else:
+                                log.warning(
+                                    "[CLAUDE_TOOL_RECOVERY] retry did not improve response, keeping original "
+                                    f"retry_finish_reason={recovery_diag.get('finish_reason')} "
+                                    f"retry_tool_calls_count={recovery_diag.get('tool_calls_count', 0)}"
+                                )
+                        else:
+                            log.warning(
+                                "[CLAUDE_TOOL_RECOVERY] retry failed, keeping original "
+                                f"status={recovery_resp.status_code}"
+                            )
 
             # 更新速率限制信息
             await _update_rate_limit_info(idx, api_key, resp.headers)

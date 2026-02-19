@@ -40,7 +40,7 @@ def test_anthropic_request_to_openai_payload_maps_core_fields():
     assert validated.model == "claude-4.5-sonnet-20250929"
     assert validated.stream is True
     assert payload["stop"] == ["STOP"]
-    assert payload["tool_choice"] == "required"
+    assert payload["tool_choice"] == "auto"
     assert payload["tools"][0]["function"]["name"] == "lookup"
     assert payload["messages"][0]["role"] == "system"
     assert payload["messages"][1]["role"] == "user"

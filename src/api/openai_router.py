@@ -196,6 +196,74 @@ def _extract_openai_response_diagnostics(openai_response: Any) -> Dict[str, Any]
     }
 
 
+def _summarize_upstream_response_shape(response_data: Any) -> Dict[str, Any]:
+    """Summarize non-sensitive upstream response shape for tool-call diagnostics."""
+    summary: Dict[str, Any] = {
+        "response_type": type(response_data).__name__,
+        "choices_count": 0,
+        "choice_shapes": [],
+    }
+
+    if not isinstance(response_data, dict):
+        return summary
+
+    choices = response_data.get("choices")
+    if not isinstance(choices, list):
+        return summary
+
+    summary["choices_count"] = len(choices)
+    choice_shapes = []
+    for idx, choice in enumerate(choices[:3]):
+        if not isinstance(choice, dict):
+            choice_shapes.append({"index": idx, "choice_type": type(choice).__name__})
+            continue
+
+        msg = choice.get("message")
+        msg_role = msg.get("role") if isinstance(msg, dict) else None
+        msg_content = msg.get("content") if isinstance(msg, dict) else None
+        msg_content_kind = type(msg_content).__name__
+        content_block_types = []
+        if isinstance(msg_content, list):
+            for block in msg_content[:5]:
+                if isinstance(block, dict):
+                    block_type = block.get("type")
+                    content_block_types.append(str(block_type) if block_type is not None else "-")
+                else:
+                    content_block_types.append(type(block).__name__)
+
+        choice_tool_calls = choice.get("tool_calls")
+        choice_tool_calls_count = (
+            sum(1 for tc in choice_tool_calls if isinstance(tc, dict))
+            if isinstance(choice_tool_calls, list)
+            else 0
+        )
+
+        message_tool_calls = msg.get("tool_calls") if isinstance(msg, dict) else None
+        message_tool_calls_count = (
+            sum(1 for tc in message_tool_calls if isinstance(tc, dict))
+            if isinstance(message_tool_calls, list)
+            else 0
+        )
+
+        has_xml_function_calls = isinstance(msg_content, str) and "<function_calls>" in msg_content
+
+        choice_shapes.append(
+            {
+                "index": idx,
+                "finish_reason": choice.get("finish_reason"),
+                "message_role": msg_role,
+                "message_content_kind": msg_content_kind,
+                "content_block_types": content_block_types,
+                "choice_tool_calls_count": choice_tool_calls_count,
+                "message_tool_calls_count": message_tool_calls_count,
+                "has_xml_function_calls": has_xml_function_calls,
+            }
+        )
+
+    summary["choice_shapes"] = choice_shapes
+    return summary
+
+
 def _update_stream_diagnostics_from_payload(payload_text: str, diag: Dict[str, Any]) -> None:
     """Update streaming diagnostics from one OpenAI SSE payload text."""
     payload = payload_text.strip()
@@ -231,6 +299,194 @@ def _update_stream_diagnostics_from_payload(payload_text: str, diag: Dict[str, A
     finish_reason = first_choice.get("finish_reason")
     if finish_reason is not None:
         diag["finish_reason"] = str(finish_reason)
+
+
+def _get_message_role(message: Any) -> str:
+    """Read role from either dict or model-like message objects."""
+    if isinstance(message, dict):
+        role = message.get("role")
+    else:
+        role = getattr(message, "role", None)
+    return role if isinstance(role, str) else ""
+
+
+def _trim_claude_cli_tool_messages(messages: Any, max_recent_messages: int = 24) -> tuple[Any, int]:
+    """
+    Trim long Claude CLI tool conversations to a bounded recent window.
+
+    Keep leading system message (if any), then keep the most recent window
+    and prefer aligning the window start to a user turn.
+    """
+    if not isinstance(messages, list) or max_recent_messages <= 0:
+        return messages, 0
+
+    total = len(messages)
+    if total <= max_recent_messages + 1:
+        return messages, 0
+
+    prefix = []
+    start_idx = 0
+    if total > 0 and _get_message_role(messages[0]) == "system":
+        prefix.append(messages[0])
+        start_idx = 1
+
+    tail = messages[start_idx:]
+    if len(tail) <= max_recent_messages:
+        return messages, 0
+    tail = tail[-max_recent_messages:]
+
+    user_start = None
+    for idx, msg in enumerate(tail):
+        if _get_message_role(msg) == "user":
+            user_start = idx
+            break
+    if isinstance(user_start, int) and user_start > 0:
+        tail = tail[user_start:]
+
+    trimmed = prefix + tail
+    dropped = total - len(trimmed)
+    if dropped < 0:
+        dropped = 0
+    return trimmed, dropped
+
+
+def _get_message_attr(message: Any, key: str, default: Any = None) -> Any:
+    if isinstance(message, dict):
+        return message.get(key, default)
+    return getattr(message, key, default)
+
+
+def _extract_message_text(message: Any) -> str:
+    content = _get_message_attr(message, "content", None)
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            part_type = part.get("type")
+            if part_type in ("text", "output_text"):
+                text = part.get("text")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+        return " ".join(parts).strip()
+    return ""
+
+
+def _collect_unfinished_tool_call_ids(messages: Any) -> list[str]:
+    called_ids: set[str] = set()
+    resolved_ids: set[str] = set()
+    if not isinstance(messages, list):
+        return []
+
+    for message in messages:
+        tool_calls = _get_message_attr(message, "tool_calls", None)
+        if isinstance(tool_calls, list):
+            for tool_call in tool_calls:
+                if not isinstance(tool_call, dict):
+                    continue
+                tool_id = tool_call.get("id")
+                if isinstance(tool_id, str) and tool_id:
+                    called_ids.add(tool_id)
+
+        role = _get_message_attr(message, "role", "")
+        if role == "tool":
+            tool_call_id = _get_message_attr(message, "tool_call_id", None)
+            if isinstance(tool_call_id, str) and tool_call_id:
+                resolved_ids.add(tool_call_id)
+
+    unresolved = [tool_id for tool_id in called_ids if tool_id not in resolved_ids]
+    unresolved.sort()
+    return unresolved
+
+
+def _compress_claude_cli_tool_messages(
+    messages: Any,
+    keep_recent_messages: int = 24,
+    summary_max_chars: int = 2400,
+) -> tuple[Any, Dict[str, Any]]:
+    """
+    Compress long Claude CLI tool conversations.
+
+    Layout after compression:
+    - leading system message (if present)
+    - auto-generated system summary for dropped turns
+    - recent K turns
+    """
+    stats: Dict[str, Any] = {
+        "dropped_count": 0,
+        "summary_chars": 0,
+        "kept_count": len(messages) if isinstance(messages, list) else 0,
+        "unfinished_tool_calls": 0,
+    }
+    if not isinstance(messages, list) or keep_recent_messages <= 0:
+        return messages, stats
+
+    total = len(messages)
+    if total <= keep_recent_messages + 1:
+        return messages, stats
+
+    preserved_prefix = []
+    start_idx = 0
+    if total > 0 and _get_message_role(messages[0]) == "system":
+        preserved_prefix.append(messages[0])
+        start_idx = 1
+
+    body = messages[start_idx:]
+    if len(body) <= keep_recent_messages:
+        return messages, stats
+
+    dropped = body[:-keep_recent_messages]
+    recent = body[-keep_recent_messages:]
+    unresolved_ids = _collect_unfinished_tool_call_ids(recent)
+
+    summary_lines = ["[Auto Session Summary] Earlier turns were compressed for tool reliability."]
+    for message in dropped[-40:]:
+        role = _get_message_role(message) or "unknown"
+        tool_calls = _get_message_attr(message, "tool_calls", None)
+        if isinstance(tool_calls, list) and tool_calls:
+            names = []
+            for tool_call in tool_calls[:4]:
+                if isinstance(tool_call, dict):
+                    function_info = tool_call.get("function")
+                    if isinstance(function_info, dict):
+                        name = function_info.get("name")
+                        if isinstance(name, str) and name:
+                            names.append(name)
+            if names:
+                summary_lines.append(f"- assistant called tools: {', '.join(names)}")
+                continue
+
+        if role == "tool":
+            tool_call_id = _get_message_attr(message, "tool_call_id", "unknown")
+            summary_lines.append(f"- tool returned result for call id {tool_call_id}")
+            continue
+
+        text = _extract_message_text(message)
+        if text:
+            text = text.replace("\n", " ").strip()
+            if len(text) > 180:
+                text = text[:177] + "..."
+            summary_lines.append(f"- {role}: {text}")
+
+    if unresolved_ids:
+        summary_lines.append(
+            "- unfinished tool calls in recent context: " + ", ".join(unresolved_ids[:8])
+        )
+
+    summary_text = "\n".join(summary_lines).strip()
+    if len(summary_text) > summary_max_chars:
+        summary_text = summary_text[: summary_max_chars - 3] + "..."
+
+    summary_message = {"role": "system", "content": summary_text}
+    compressed = preserved_prefix + [summary_message] + recent
+
+    stats["dropped_count"] = len(dropped)
+    stats["summary_chars"] = len(summary_text)
+    stats["kept_count"] = len(compressed)
+    stats["unfinished_tool_calls"] = len(unresolved_ids)
+    return compressed, stats
 
 
 async def _convert_openai_stream_to_anthropic(
@@ -362,25 +618,84 @@ async def anthropic_messages(
     tools_obj = getattr(request_data, "tools", None)
     tool_count = len(tools_obj) if isinstance(tools_obj, list) else 0
     tool_choice = getattr(request_data, "tool_choice", None)
+    task_tool_available = False
+    if isinstance(tools_obj, list):
+        for tool in tools_obj:
+            if not isinstance(tool, dict):
+                continue
+            function_obj = tool.get("function")
+            if isinstance(function_obj, dict) and function_obj.get("name") == "Task":
+                task_tool_available = True
+                break
 
-    # Claude CLI occasionally sends tools without explicit tool_choice.
-    # Enforce required tool choice to prevent "announce-only then stop" behavior.
-    user_agent = request.headers.get("user-agent", "")
-    if (
+    is_claude_cli_with_tools = (
         tool_count > 0
-        and tool_choice is None
         and isinstance(model, str)
         and "claude" in model.lower()
-        and "claude-cli" in user_agent.lower()
-    ):
-        request_data.tool_choice = "required"
-        tool_choice = "required"
-        log.info("[ANTHROPIC_REQ_DIAG] enforced_tool_choice=required reason=claude_cli_with_tools")
+        and "claude-cli" in request.headers.get("user-agent", "").lower()
+    )
 
+    # Claude CLI occasionally sends tools without explicit tool_choice.
+    # For large toolsets, prefer "auto" to avoid over-constraining first tool turn.
+    user_agent = request.headers.get("user-agent", "")
+    if (
+        is_claude_cli_with_tools
+        and tool_choice is None
+    ):
+        if task_tool_available and tool_count == 1:
+            request_data.tool_choice = {"type": "function", "function": {"name": "Task"}}
+            tool_choice = request_data.tool_choice
+            log.info("[ANTHROPIC_REQ_DIAG] enforced_tool_choice=function:Task reason=claude_cli_single_task_tool")
+        else:
+            request_data.tool_choice = "auto"
+            tool_choice = "auto"
+            log.info("[ANTHROPIC_REQ_DIAG] enforced_tool_choice=auto reason=claude_cli_multi_toolset")
+
+    # Claude CLI tool workflows are sensitive to both too-low and too-high max_tokens.
+    # Keep within a conservative range to reduce truncation and oversized text dumps.
+    if is_claude_cli_with_tools:
+        original_max_tokens = getattr(request_data, "max_tokens", None)
+        min_tool_session_max_tokens = 4096
+        max_tool_session_max_tokens = 8192
+        if not isinstance(original_max_tokens, int) or original_max_tokens < min_tool_session_max_tokens:
+            request_data.max_tokens = min_tool_session_max_tokens
+            log.info(
+                "[ANTHROPIC_REQ_DIAG] elevated_max_tokens="
+                f"{min_tool_session_max_tokens} original={original_max_tokens} "
+                "reason=claude_cli_tools_avoid_length"
+            )
+        elif original_max_tokens > max_tool_session_max_tokens:
+            request_data.max_tokens = max_tool_session_max_tokens
+            log.info(
+                "[ANTHROPIC_REQ_DIAG] capped_max_tokens="
+                f"{max_tool_session_max_tokens} original={original_max_tokens} "
+                "reason=claude_cli_tools_avoid_oversized_output"
+            )
+
+    message_count = len(getattr(request_data, "messages", []) or [])
+    if is_claude_cli_with_tools and message_count > 30:
+        trimmed_messages, dropped_count = _trim_claude_cli_tool_messages(
+            getattr(request_data, "messages", []),
+            max_recent_messages=24,
+        )
+        if dropped_count > 0:
+            request_data.messages = trimmed_messages
+            message_count = len(trimmed_messages)
+            log.info(
+                f"[ANTHROPIC_REQ_DIAG] trimmed_history dropped={dropped_count} "
+                f"kept={message_count} reason=claude_cli_tools_window"
+            )
+
+    max_tokens = getattr(request_data, "max_tokens", None)
     log.info(
         f"[ANTHROPIC_REQ_DIAG] stream={1 if is_streaming else 0} model={model} "
-        f"tools={tool_count} tool_choice={tool_choice}"
+        f"tools={tool_count} tool_choice={tool_choice} max_tokens={max_tokens} messages={message_count}"
     )
+    if message_count >= 30:
+        log.info(
+            f"[ANTHROPIC_REQ_DIAG] long_history_detected messages={message_count} "
+            "reason=large_conversation_may_reduce_tool_use"
+        )
 
     if use_fake_streaming and is_streaming:
         request_data.stream = False
@@ -388,6 +703,14 @@ async def anthropic_messages(
         return await _convert_openai_stream_to_anthropic(openai_stream, model)
 
     if is_streaming:
+        force_fake_streaming_for_claude_tools = (
+            is_claude_cli_with_tools
+        )
+        if force_fake_streaming_for_claude_tools:
+            log.info("[ANTHROPIC_REQ_DIAG] forced_fake_streaming=1 reason=claude_cli_tools_streaming_compat")
+            openai_stream = await fake_stream_response_for_assembly(request_data, trace=trace)
+            return await _convert_openai_stream_to_anthropic(openai_stream, model)
+
         from config import get_enable_real_streaming
 
         enable_real_streaming = await get_enable_real_streaming()
@@ -440,6 +763,12 @@ async def anthropic_messages(
     text = _extract_response_text(upstream_response)
     parsed = _parse_response_json(text, upstream_response)
     if isinstance(parsed, dict):
+        upstream_shape = _summarize_upstream_response_shape(parsed)
+        log.info(
+            f"[ANTHROPIC_UPSTREAM_SHAPE] stream=0 model={model} "
+            f"choices={upstream_shape.get('choices_count', 0)} "
+            f"shape={json.dumps(upstream_shape.get('choice_shapes', []), ensure_ascii=False)}"
+        )
         openai_response = assembly_response_to_openai(parsed, model)
     else:
         openai_response = _build_openai_fallback_text_response(model, text)
