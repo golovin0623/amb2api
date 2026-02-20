@@ -14,6 +14,7 @@ from log import log
 _FINISH_REASON_MAP = {
     "stop": "end_turn",
     "length": "max_tokens",
+    "max_tokens": "max_tokens",
     "tool_calls": "tool_use",
     "function_call": "tool_use",
     "content_filter": "refusal",
@@ -217,7 +218,7 @@ def _process_tool_call_delta(
 
     # accumulate arguments and send incremental partial_json
     args_chunk = func.get("arguments")
-    if args_chunk and tc["started"]:
+    if args_chunk and tc["started"] and tc["claude_index"] is not None:
         tc["args_buf"] += args_chunk
         events.append({
             "type": "content_block_delta",

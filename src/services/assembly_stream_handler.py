@@ -559,6 +559,7 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                 all_content_parts = []
                 all_tool_calls = []
                 has_tool_use = False
+                upstream_finish_reason = None
                 seen_tool_signatures = set()
                 
                 if "choices" in response_data and response_data["choices"]:
@@ -623,6 +624,8 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                         fr = choice.get("finish_reason", "")
                         if fr in ("tool_use", "tool_calls"):
                             has_tool_use = True
+                        if fr and not upstream_finish_reason:
+                            upstream_finish_reason = fr
                 
                 content = " ".join(all_content_parts) if all_content_parts else ""
                 
@@ -690,8 +693,13 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                         }
                     } if usage_raw else None
                     
-                    # 确定 finish_reason
-                    finish_reason = "tool_calls" if has_tool_use else "stop"
+                    # 确定 finish_reason（保留上游的 length/max_tokens）
+                    if has_tool_use:
+                        finish_reason = "tool_calls"
+                    elif upstream_finish_reason in ("length", "max_tokens"):
+                        finish_reason = upstream_finish_reason
+                    else:
+                        finish_reason = "stop"
                     
                     # 检查是否启用全局假流式渐进输出
                     try:
@@ -778,8 +786,10 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                         if reasoning_content:
                             delta["reasoning_content"] = reasoning_content
                         
-                        # 添加 tool_calls（如果有）
+                        # 添加 tool_calls（如果有），确保每个 tool_call 带 index
                         if tool_calls:
+                            for i, tc in enumerate(tool_calls):
+                                tc["index"] = i
                             delta["tool_calls"] = tool_calls
 
                         # 发送内容 chunk（finish_reason 为 null）
