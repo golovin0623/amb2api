@@ -2,6 +2,7 @@ import json
 
 from src.transform.anthropic_transfer import (
     anthropic_request_to_openai_payload,
+    convert_openai_sse_payload_to_anthropic_events,
     openai_response_to_anthropic_message,
 )
 from src.models.models import ChatCompletionRequest
@@ -39,7 +40,7 @@ def test_anthropic_request_to_openai_payload_maps_core_fields():
     assert validated.model == "claude-4.5-sonnet-20250929"
     assert validated.stream is True
     assert payload["stop"] == ["STOP"]
-    assert payload["tool_choice"] == "required"
+    assert payload["tool_choice"] == "auto"
     assert payload["tools"][0]["function"]["name"] == "lookup"
     assert payload["messages"][0]["role"] == "system"
     assert payload["messages"][1]["role"] == "user"
@@ -129,3 +130,173 @@ def test_openai_response_to_anthropic_message_maps_tool_calls_to_tool_use():
     assert message["content"][0]["id"] == "call_1"
     assert message["content"][0]["name"] == "lookup"
     assert message["content"][0]["input"] == {"q": "abc"}
+
+
+def test_openai_response_to_anthropic_message_parses_python_literal_tool_args():
+    message = openai_response_to_anthropic_message(
+        {
+            "model": "claude-4.5-sonnet-20250929",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_2",
+                                "type": "function",
+                                "function": {"name": "Task", "arguments": "{'description': 'scan repo'}"},
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+        },
+        fallback_model="claude-4.5-sonnet-20250929",
+    )
+
+    assert message["content"][0]["type"] == "tool_use"
+    assert message["content"][0]["name"] == "Task"
+    assert message["content"][0]["input"]["description"] == "scan repo"
+    assert message["content"][0]["input"]["prompt"] == "scan repo"
+    assert message["content"][0]["input"]["subagent_type"] == "general-purpose"
+
+
+def test_openai_response_to_anthropic_message_reads_function_input_when_arguments_missing():
+    message = openai_response_to_anthropic_message(
+        {
+            "model": "claude-4.5-sonnet-20250929",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_3",
+                                "type": "function",
+                                "function": {"name": "Task", "input": {"description": "scan repo"}},
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+        },
+        fallback_model="claude-4.5-sonnet-20250929",
+    )
+
+    assert message["content"][0]["type"] == "tool_use"
+    assert message["content"][0]["name"] == "Task"
+    assert message["content"][0]["input"]["description"] == "scan repo"
+    assert message["content"][0]["input"]["prompt"] == "scan repo"
+    assert message["content"][0]["input"]["subagent_type"] == "general-purpose"
+
+
+def test_openai_response_to_anthropic_message_normalizes_task_input_aliases():
+    message = openai_response_to_anthropic_message(
+        {
+            "model": "claude-4.5-sonnet-20250929",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_4",
+                                "type": "function",
+                                "function": {
+                                    "name": "Task",
+                                    "arguments": "{\"task\":\"scan repo\", \"subagentType\":\"explore\"}",
+                                },
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+        },
+        fallback_model="claude-4.5-sonnet-20250929",
+    )
+
+    tool_input = message["content"][0]["input"]
+    assert tool_input["prompt"] == "scan repo"
+    assert tool_input["description"] == "scan repo"
+    assert tool_input["subagent_type"] == "Explore"
+    assert "task" not in tool_input
+    assert "subagentType" not in tool_input
+
+
+def test_convert_openai_sse_payload_to_anthropic_events_normalizes_task_tool_delta():
+    state = {"model": "claude-4.5-sonnet-20250929"}
+    payload = json.dumps(
+        {
+            "id": "chatcmpl_x",
+            "model": "claude-4.5-sonnet-20250929",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "id": "call_5",
+                                "type": "function",
+                                "function": {
+                                    "name": "Task",
+                                    "input": {"description": "scan repo"},
+                                },
+                            }
+                        ]
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+    events = convert_openai_sse_payload_to_anthropic_events(payload, state=state, default_model="claude-4.5-sonnet-20250929")
+    tool_event = next(
+        event for event in events if event.get("type") == "content_block_start" and event.get("content_block", {}).get("type") == "tool_use"
+    )
+    tool_input = tool_event["content_block"]["input"]
+    assert tool_input["description"] == "scan repo"
+    assert tool_input["prompt"] == "scan repo"
+    assert tool_input["subagent_type"] == "general-purpose"
+
+
+def test_openai_response_to_anthropic_message_strips_task_raw_key_and_keeps_required_fields():
+    message = openai_response_to_anthropic_message(
+        {
+            "model": "claude-4.5-sonnet-20250929",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_6",
+                                "type": "function",
+                                "function": {"name": "Task", "arguments": "not-a-json-argument"},
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+        },
+        fallback_model="claude-4.5-sonnet-20250929",
+    )
+
+    tool_input = message["content"][0]["input"]
+    assert set(tool_input.keys()).issubset({"description", "prompt", "subagent_type", "run_in_background", "resume"})
+    assert isinstance(tool_input["description"], str) and tool_input["description"]
+    assert isinstance(tool_input["prompt"], str) and tool_input["prompt"]
+    assert tool_input["subagent_type"] == "general-purpose"

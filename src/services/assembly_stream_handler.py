@@ -3,6 +3,7 @@ AssemblyAI Fake Stream Handler
 Handles fake streaming simulation for AssemblyAI responses.
 """
 import json
+import ast
 import time
 import uuid
 import asyncio
@@ -22,6 +23,75 @@ from config import (
     get_stream_bootstrap_retries,
     get_tool_debug_logs_enabled,
 )
+
+
+def _summarize_upstream_response_shape(response_data: Any) -> dict:
+    """Summarize non-sensitive upstream response shape for tool-call diagnostics."""
+    summary: dict = {
+        "response_type": type(response_data).__name__,
+        "choices_count": 0,
+        "choice_shapes": [],
+    }
+
+    if not isinstance(response_data, dict):
+        return summary
+
+    choices = response_data.get("choices")
+    if not isinstance(choices, list):
+        return summary
+
+    summary["choices_count"] = len(choices)
+    choice_shapes = []
+    for idx, choice in enumerate(choices[:3]):
+        if not isinstance(choice, dict):
+            choice_shapes.append({"index": idx, "choice_type": type(choice).__name__})
+            continue
+
+        msg = choice.get("message")
+        msg_role = msg.get("role") if isinstance(msg, dict) else None
+        msg_content = msg.get("content") if isinstance(msg, dict) else None
+        msg_content_kind = type(msg_content).__name__
+        content_block_types = []
+        if isinstance(msg_content, list):
+            for block in msg_content[:5]:
+                if isinstance(block, dict):
+                    block_type = block.get("type")
+                    content_block_types.append(str(block_type) if block_type is not None else "-")
+                else:
+                    content_block_types.append(type(block).__name__)
+
+        choice_tool_calls = choice.get("tool_calls")
+        choice_tool_calls_count = (
+            sum(1 for tc in choice_tool_calls if isinstance(tc, dict))
+            if isinstance(choice_tool_calls, list)
+            else 0
+        )
+
+        message_tool_calls = msg.get("tool_calls") if isinstance(msg, dict) else None
+        message_tool_calls_count = (
+            sum(1 for tc in message_tool_calls if isinstance(tc, dict))
+            if isinstance(message_tool_calls, list)
+            else 0
+        )
+
+        has_xml_function_calls = isinstance(msg_content, str) and "<function_calls>" in msg_content
+
+        choice_shapes.append(
+            {
+                "index": idx,
+                "finish_reason": choice.get("finish_reason"),
+                "message_role": msg_role,
+                "message_content_kind": msg_content_kind,
+                "content_block_types": content_block_types,
+                "choice_tool_calls_count": choice_tool_calls_count,
+                "message_tool_calls_count": message_tool_calls_count,
+                "has_xml_function_calls": has_xml_function_calls,
+            }
+        )
+
+    summary["choice_shapes"] = choice_shapes
+    return summary
+
 
 async def convert_streaming_response(
     gemini_response,
@@ -260,6 +330,84 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
             except (TypeError, ValueError):
                 return 0
 
+        def _normalize_tool_arguments_for_openai(raw_args: Any) -> str:
+            """Normalize tool arguments to OpenAI-compatible JSON string."""
+            if raw_args is None:
+                return "{}"
+
+            if isinstance(raw_args, dict):
+                return json.dumps(raw_args, ensure_ascii=False)
+
+            if isinstance(raw_args, str):
+                text = raw_args.strip()
+                if not text:
+                    return "{}"
+
+                if text.startswith("```") and text.endswith("```"):
+                    lines = text.splitlines()
+                    if len(lines) >= 3:
+                        text = "\n".join(lines[1:-1]).strip()
+
+                try:
+                    parsed = json.loads(text)
+                    if isinstance(parsed, dict):
+                        return json.dumps(parsed, ensure_ascii=False)
+                    return json.dumps({"value": parsed}, ensure_ascii=False)
+                except Exception:
+                    pass
+
+                try:
+                    parsed = ast.literal_eval(text)
+                    if isinstance(parsed, dict):
+                        return json.dumps(parsed, ensure_ascii=False)
+                    return json.dumps({"value": parsed}, ensure_ascii=False)
+                except Exception:
+                    return json.dumps({"raw": raw_args}, ensure_ascii=False)
+
+            return json.dumps({"value": raw_args}, ensure_ascii=False)
+
+        def _iter_choice_tool_calls(choice: Any, msg: Any):
+            """Yield tool call candidates from choice/message tool_calls and content.tool_use blocks."""
+            if not isinstance(choice, dict) or not isinstance(msg, dict):
+                return
+
+            direct_choice_tool_calls = choice.get("tool_calls")
+            if isinstance(direct_choice_tool_calls, list):
+                for tc in direct_choice_tool_calls:
+                    if isinstance(tc, dict):
+                        yield tc
+
+            direct_message_tool_calls = msg.get("tool_calls")
+            if isinstance(direct_message_tool_calls, list):
+                for tc in direct_message_tool_calls:
+                    if isinstance(tc, dict):
+                        yield tc
+
+            content_blocks = msg.get("content")
+            if isinstance(content_blocks, list):
+                for block in content_blocks:
+                    if not isinstance(block, dict):
+                        continue
+                    block_type = block.get("type")
+                    nested_tool_use = block.get("tool_use")
+                    if block_type != "tool_use" and not isinstance(nested_tool_use, dict):
+                        continue
+
+                    nested = nested_tool_use if isinstance(nested_tool_use, dict) else {}
+                    tool_id = block.get("id") or nested.get("id") or f"call_{uuid.uuid4().hex[:24]}"
+                    tool_name = block.get("name") or nested.get("name") or "unknown_function"
+                    tool_input = block.get("input") if "input" in block else nested.get("input")
+                    if tool_input is None:
+                        tool_input = {}
+                    yield {
+                        "id": tool_id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,
+                            "input": tool_input,
+                        },
+                    }
+
         if trace:
             trace.metadata["stream_mode"] = "fake"
             trace.metadata["stream_keepalive_count"] = 0
@@ -350,6 +498,12 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
             try:
                 response_data = json.loads(body_str)
                 log.debug(f"Parsed response data: {json.dumps(response_data, ensure_ascii=False)[:500]}...")
+                upstream_shape = _summarize_upstream_response_shape(response_data)
+                log.info(
+                    f"[ANTHROPIC_UPSTREAM_SHAPE] stream=fake model={openai_request.model} "
+                    f"choices={upstream_shape.get('choices_count', 0)} "
+                    f"shape={json.dumps(upstream_shape.get('choice_shapes', []), ensure_ascii=False)}"
+                )
 
                 # 检查是否是错误响应（支持多种错误格式）
                 error_message = None
@@ -405,6 +559,7 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                 all_content_parts = []
                 all_tool_calls = []
                 has_tool_use = False
+                seen_tool_signatures = set()
                 
                 if "choices" in response_data and response_data["choices"]:
                     for choice in response_data["choices"]:
@@ -412,10 +567,17 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                         content = msg.get("content")
                         if content and isinstance(content, str) and content.strip():
                             all_content_parts.append(content)
+                        elif isinstance(content, list):
+                            for part in content:
+                                if isinstance(part, dict):
+                                    t = part.get("type")
+                                    if t in ("text", "output_text") and part.get("text"):
+                                        all_content_parts.append(part["text"])
                         
                         # 收集并修复工具调用
-                        raw_tool_calls = msg.get("tool_calls") or []
-                        for tc in raw_tool_calls:
+                        extracted_count = 0
+                        for tc in _iter_choice_tool_calls(choice, msg):
+                            extracted_count += 1
                             fixed_tc = {
                                 "id": tc.get("id") or f"call_{uuid.uuid4().hex[:24]}",
                                 "type": tc.get("type", "function"),
@@ -423,7 +585,11 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                             }
                             func = tc.get("function", {})
                             fixed_tc["function"]["name"] = func.get("name", "")
-                            args = func.get("arguments", {})
+                            args = func.get("arguments")
+                            if args is None and "input" in func:
+                                args = func.get("input")
+                            if args is None and "input" in tc:
+                                args = tc.get("input")
                             
                             # [修复] 参数名映射: 模型生成的 XML 可能使用错误的参数名
                             # 例如 read_file: file_path -> path
@@ -439,13 +605,19 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                                     except json.JSONDecodeError:
                                         pass
                             
-                            if isinstance(args, dict):
-                                fixed_tc["function"]["arguments"] = json.dumps(args, ensure_ascii=False)
-                            elif isinstance(args, str):
-                                fixed_tc["function"]["arguments"] = args
-                            else:
-                                fixed_tc["function"]["arguments"] = "{}"
+                            fixed_tc["function"]["arguments"] = _normalize_tool_arguments_for_openai(args)
+                            signature = (
+                                fixed_tc["id"],
+                                fixed_tc["function"].get("name", ""),
+                                fixed_tc["function"].get("arguments", "{}"),
+                            )
+                            if signature in seen_tool_signatures:
+                                continue
+                            seen_tool_signatures.add(signature)
                             all_tool_calls.append(fixed_tc)
+
+                        if extracted_count > 0:
+                            has_tool_use = True
                         
                         # 检查 finish_reason
                         fr = choice.get("finish_reason", "")
