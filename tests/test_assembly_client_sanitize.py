@@ -280,10 +280,10 @@ def test_build_claude_tool_recovery_payload_compresses_and_forces_auto():
     )
 
     assert recovered["tool_choice"] == "auto"
-    assert recovered["max_tokens"] == 2048
+    assert recovered["max_tokens"] == 8192  # valid max_tokens preserved
     assert stats["dropped_count"] > 0
     assert stats["tool_choice_overridden"] is True
-    assert stats["max_tokens_adjusted"] is True
+    assert stats["max_tokens_adjusted"] is False
     assert len(recovered["messages"]) <= 10  # system + summary + recent window
 
 
