@@ -650,6 +650,15 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                 
                 if tool_debug_logs_enabled:
                     log.debug(f"[TOOL_DEBUG] Extracted content length: {len(content)}, tool_calls count: {len(all_tool_calls)}")
+
+                # 日志：上游 usage 和 finish_reason
+                _usage_raw = response_data.get("usage") or {}
+                log.info(
+                    f"[FAKE_STREAM_DIAG] finish_reason={upstream_finish_reason} "
+                    f"content_chars={len(content)} "
+                    f"completion_tokens={_usage_raw.get('completion_tokens', _usage_raw.get('output_tokens', '?'))} "
+                    f"prompt_tokens={_usage_raw.get('prompt_tokens', _usage_raw.get('input_tokens', '?'))}"
+                )
                 
                 # 性能追踪：格式转换完成
                 if trace:
