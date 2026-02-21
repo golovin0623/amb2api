@@ -640,9 +640,19 @@ def _extract_openai_response_diagnostics(openai_response: Any) -> Dict[str, Any]
                     if isinstance(tool_calls, list):
                         tool_calls_count = sum(1 for tc in tool_calls if isinstance(tc, dict))
 
+    content_length = 0
+    if isinstance(openai_response, dict):
+        choices = openai_response.get("choices")
+        if isinstance(choices, list) and choices:
+            msg = choices[0].get("message", {}) if isinstance(choices[0], dict) else {}
+            c = msg.get("content", "") if isinstance(msg, dict) else ""
+            if isinstance(c, str):
+                content_length = len(c)
+
     return {
         "finish_reason": finish_reason,
         "tool_calls_count": tool_calls_count,
+        "content_length": content_length,
     }
 
 
@@ -663,13 +673,24 @@ def _extract_tool_recovery_diag_from_response(resp: Any, model: str) -> Dict[str
 
 
 def _should_trigger_claude_tool_recovery(diag: Dict[str, Any]) -> bool:
-    """Trigger recovery when response is length-truncated and emitted no tool calls."""
+    """Trigger recovery when response is length-truncated and emitted no tool calls.
+    Skip if the model already generated substantial content (not tool drift)."""
     finish_reason = str(diag.get("finish_reason", "")).strip().lower()
     try:
         tool_calls_count = int(diag.get("tool_calls_count", 0))
     except (TypeError, ValueError):
         tool_calls_count = 0
-    return finish_reason in {"length", "max_tokens"} and tool_calls_count == 0
+    content_length = diag.get("content_length", 0)
+    if finish_reason in {"length", "max_tokens"} and tool_calls_count == 0:
+        # If model produced substantial content (>500 chars), it's a legitimate
+        # long response, not tool drift — skip recovery to avoid wasting time
+        if content_length > 500:
+            log.info(
+                f"[CLAUDE_TOOL_RECOVERY] Skipped: substantial content ({content_length} chars)"
+            )
+            return False
+        return True
+    return False
 
 
 def _extract_message_text_for_recovery_summary(message: Dict[str, Any]) -> str:
@@ -813,12 +834,7 @@ def _build_claude_tool_recovery_payload(
         recovery_payload["tool_choice"] = "auto"
 
     original_max_tokens = recovery_payload.get("max_tokens")
-    should_adjust_max_tokens = (
-        not isinstance(original_max_tokens, int)
-        or original_max_tokens <= 0
-        or original_max_tokens > recovery_max_tokens
-    )
-    if should_adjust_max_tokens:
+    if not isinstance(original_max_tokens, int) or original_max_tokens <= 0:
         recovery_payload["max_tokens"] = recovery_max_tokens
         stats["max_tokens_adjusted"] = True
     stats["max_tokens_to"] = recovery_payload.get("max_tokens")
