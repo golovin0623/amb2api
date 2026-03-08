@@ -169,6 +169,10 @@ def _sanitize_messages(messages) -> list:
         if content is None:
             content = ""
         
+        # 获取 reasoning_content 和 thought_signature（Gemini thinking模型需要）
+        reasoning_content = getattr(m, "reasoning_content", None) if hasattr(m, "reasoning_content") else (m.get("reasoning_content") if isinstance(m, dict) else None)
+        thought_signature = getattr(m, "thought_signature", None) if hasattr(m, "thought_signature") else (m.get("thought_signature") if isinstance(m, dict) else None)
+        
         # 获取 tool_calls（如果存在）
         tool_calls = getattr(m, "tool_calls", None) if hasattr(m, "tool_calls") else (m.get("tool_calls") if isinstance(m, dict) else None)
         
@@ -177,9 +181,14 @@ def _sanitize_messages(messages) -> list:
         
         # 情况1: assistant 消息带有 tool_calls -> 转换为 function_call 格式
         if role == "assistant" and tool_calls:
-            # 先添加 assistant 的文本内容（如果有）
-            if content and content.strip():
-                sanitized.append({"role": "assistant", "content": content})
+            # 先添加 assistant 的文本内容（如果有，或者有 reasoning_content/thought_signature）
+            if (content and content.strip()) or reasoning_content or thought_signature:
+                assistant_msg = {"role": "assistant", "content": content}
+                if reasoning_content:
+                    assistant_msg["reasoning_content"] = reasoning_content
+                if thought_signature:
+                    assistant_msg["thought_signature"] = thought_signature
+                sanitized.append(assistant_msg)
             
             # 将每个 tool_call 转换为 function_call 格式
             if isinstance(tool_calls, list):
@@ -274,6 +283,11 @@ def _sanitize_messages(messages) -> list:
         # 情况3: 普通消息（user、assistant、system）
         else:
             message = {"role": role, "content": content}
+            # 保留 reasoning_content 和 thought_signature（Gemini thinking模型需要）
+            if reasoning_content:
+                message["reasoning_content"] = reasoning_content
+            if thought_signature:
+                message["thought_signature"] = thought_signature
             sanitized.append(message)
     
     return sanitized

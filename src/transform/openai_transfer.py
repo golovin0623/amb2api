@@ -95,12 +95,32 @@ async def openai_request_to_gemini_payload(
                             )
                         except ValueError:
                             continue
+            # 在列表内容前添加 reasoning_content（thinking部分）
+            if getattr(message, "reasoning_content", None):
+                thought_part = {"text": message.reasoning_content, "thought": True}
+                if getattr(message, "thought_signature", None):
+                    thought_part["thoughtSignature"] = message.thought_signature
+                parts.insert(0, thought_part)
             contents.append({"role": role, "parts": parts})
             # log.debug(f"Added message to contents: role={role}, parts={parts}")
         elif message.content:
             # 简单文本内容
-            contents.append({"role": role, "parts": [{"text": message.content}]})
+            parts = []
+            # 如果有 reasoning_content，先添加 thinking 部分
+            if getattr(message, "reasoning_content", None):
+                thought_part = {"text": message.reasoning_content, "thought": True}
+                if getattr(message, "thought_signature", None):
+                    thought_part["thoughtSignature"] = message.thought_signature
+                parts.append(thought_part)
+            parts.append({"text": message.content})
+            contents.append({"role": role, "parts": parts})
             # log.debug(f"Added message to contents: role={role}, content={message.content}")
+        elif getattr(message, "reasoning_content", None):
+            # 只有 reasoning_content 没有 content（如 thinking + tool_calls 的情况）
+            thought_part = {"text": message.reasoning_content, "thought": True}
+            if getattr(message, "thought_signature", None):
+                thought_part["thoughtSignature"] = message.thought_signature
+            contents.append({"role": role, "parts": [thought_part]})
 
     # 将OpenAI生成参数映射到Gemini格式
     generation_config = {}
@@ -169,9 +189,10 @@ async def openai_request_to_gemini_payload(
 
 
 def _extract_content_and_reasoning(parts: list) -> tuple:
-    """从Gemini响应部件中提取内容和推理内容"""
+    """从Gemini响应部件中提取内容、推理内容和thought签名"""
     content = ""
     reasoning_content = ""
+    thought_signature = None
 
     for part in parts:
         # 处理文本内容
@@ -179,10 +200,13 @@ def _extract_content_and_reasoning(parts: list) -> tuple:
             # 检查这个部件是否包含thinking tokens
             if part.get("thought", False):
                 reasoning_content += part.get("text", "")
+                sig = part.get("thoughtSignature")
+                if sig:
+                    thought_signature = sig
             else:
                 content += part.get("text", "")
 
-    return content, reasoning_content
+    return content, reasoning_content, thought_signature
 
 
 def _convert_usage_metadata(usage_metadata: Dict[str, Any]) -> Dict[str, int]:
@@ -206,7 +230,7 @@ def _convert_usage_metadata(usage_metadata: Dict[str, Any]) -> Dict[str, int]:
 
 
 def _build_message_with_reasoning(
-    role: str, content: str, reasoning_content: str
+    role: str, content: str, reasoning_content: str, thought_signature: str = None
 ) -> dict:
     """构建包含可选推理内容的消息对象"""
     message = {"role": role, "content": content}
@@ -214,6 +238,10 @@ def _build_message_with_reasoning(
     # 如果有thinking tokens，添加reasoning_content
     if reasoning_content:
         message["reasoning_content"] = reasoning_content
+
+    # 如果有thought签名，添加thought_signature
+    if thought_signature:
+        message["thought_signature"] = thought_signature
 
     return message
 
@@ -244,10 +272,10 @@ def gemini_response_to_openai(
 
         # 提取并分离thinking tokens和常规内容
         parts = candidate.get("content", {}).get("parts", [])
-        content, reasoning_content = _extract_content_and_reasoning(parts)
+        content, reasoning_content, thought_signature = _extract_content_and_reasoning(parts)
 
         # 构建消息对象
-        message = _build_message_with_reasoning(role, content, reasoning_content)
+        message = _build_message_with_reasoning(role, content, reasoning_content, thought_signature)
 
         choices.append(
             {
@@ -382,10 +410,20 @@ def assembly_response_to_openai(
     all_tool_calls = []
     final_finish_reason = "stop"
     seen_tool_signatures = set()
+    collected_reasoning_content = ""
+    collected_thought_signature = None
     
     for choice in _choices_raw:
         msg = choice.get("message", {})
         content = msg.get("content")
+        
+        # 提取 reasoning_content 和 thought_signature（上游可能透传）
+        rc = msg.get("reasoning_content")
+        if isinstance(rc, str) and rc:
+            collected_reasoning_content += rc
+        ts = msg.get("thought_signature") or msg.get("thoughtSignature")
+        if ts:
+            collected_thought_signature = ts
         
         # 收集内容
         if content:
@@ -462,6 +500,12 @@ def assembly_response_to_openai(
     
     # 构建单一的 OpenAI 格式 choice
     message = {"role": "assistant", "content": combined_content if combined_content else None}
+    
+    # 添加 reasoning_content 和 thought_signature（如果上游透传了）
+    if collected_reasoning_content:
+        message["reasoning_content"] = collected_reasoning_content
+    if collected_thought_signature:
+        message["thought_signature"] = collected_thought_signature
     
     if all_tool_calls:
         message["tool_calls"] = all_tool_calls
@@ -558,7 +602,7 @@ def gemini_stream_chunk_to_openai(
 
         # 提取并分离thinking tokens和常规内容
         parts = candidate.get("content", {}).get("parts", [])
-        content, reasoning_content = _extract_content_and_reasoning(parts)
+        content, reasoning_content, thought_signature = _extract_content_and_reasoning(parts)
 
         # 构建delta对象
         delta = {}
@@ -566,6 +610,8 @@ def gemini_stream_chunk_to_openai(
             delta["content"] = content
         if reasoning_content:
             delta["reasoning_content"] = reasoning_content
+        if thought_signature:
+            delta["thought_signature"] = thought_signature
 
         finish_reason = _map_finish_reason(candidate.get("finishReason"))
 

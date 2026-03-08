@@ -18,6 +18,7 @@ class OpenAIChatMessage(BaseModel):
     role: str
     content: Union[str, List[Dict[str, Any]], None] = None
     reasoning_content: Optional[str] = None
+    thought_signature: Optional[str] = None
     name: Optional[str] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None
     tool_call_id: Optional[str] = None
@@ -84,6 +85,7 @@ class GeminiPart(BaseModel):
     inlineData: Optional[Dict[str, Any]] = None
     fileData: Optional[Dict[str, Any]] = None
     thought: Optional[bool] = False
+    thoughtSignature: Optional[str] = None
 
 class GeminiContent(BaseModel):
     role: str
