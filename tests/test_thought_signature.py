@@ -230,6 +230,10 @@ def test_sanitize_messages_preserves_thought_signature_on_assistant_with_tool_ca
     assert assistant_msg["thought_signature"] == "sig_abc"
     fc_msg = sanitized[1]
     assert fc_msg["type"] == "function_call"
+    # thought_signature must propagate to function_call message and its content blocks
+    assert fc_msg["thought_signature"] == "sig_abc"
+    assert fc_msg["content"][0]["thoughtSignature"] == "sig_abc"
+    assert fc_msg["content"][0]["tool_use"]["thoughtSignature"] == "sig_abc"
 
 
 def test_sanitize_messages_preserves_thought_signature_on_regular_assistant():
@@ -273,8 +277,10 @@ def test_sanitize_messages_emits_assistant_msg_when_only_reasoning_and_tool_call
     assert sanitized[0]["role"] == "assistant"
     assert sanitized[0]["reasoning_content"] == "I need to call the function"
     assert sanitized[0]["thought_signature"] == "empty_content_sig"
-    # Second is the function_call
+    # Second is the function_call with thought_signature propagated
     assert sanitized[1]["type"] == "function_call"
+    assert sanitized[1]["thought_signature"] == "empty_content_sig"
+    assert sanitized[1]["content"][0]["thoughtSignature"] == "empty_content_sig"
 
 
 def test_sanitize_messages_no_extra_fields_when_no_reasoning():
@@ -289,6 +295,59 @@ def test_sanitize_messages_no_extra_fields_when_no_reasoning():
     assert "thought_signature" not in sanitized[0]
     assert "reasoning_content" not in sanitized[1]
     assert "thought_signature" not in sanitized[1]
+
+
+def test_sanitize_messages_function_call_no_thought_signature_when_absent():
+    """function_call content blocks should NOT have thoughtSignature when absent."""
+    messages = [
+        {
+            "role": "assistant",
+            "content": "calling tool",
+            "tool_calls": [
+                {
+                    "id": "call_x",
+                    "type": "function",
+                    "function": {"name": "do_thing", "arguments": "{}"},
+                }
+            ],
+        }
+    ]
+    sanitized = _sanitize_messages(messages)
+    fc_msg = [m for m in sanitized if m.get("type") == "function_call"][0]
+    assert "thought_signature" not in fc_msg
+    assert "thoughtSignature" not in fc_msg["content"][0]
+    assert "thoughtSignature" not in fc_msg["content"][0]["tool_use"]
+
+
+def test_sanitize_messages_multiple_tool_calls_all_get_thought_signature():
+    """All function_call messages from one assistant should get thought_signature."""
+    messages = [
+        {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "planning two calls",
+            "thought_signature": "multi_sig",
+            "tool_calls": [
+                {
+                    "id": "call_a",
+                    "type": "function",
+                    "function": {"name": "search", "arguments": "{}"},
+                },
+                {
+                    "id": "call_b",
+                    "type": "function",
+                    "function": {"name": "browse", "arguments": "{}"},
+                },
+            ],
+        }
+    ]
+    sanitized = _sanitize_messages(messages)
+    fc_msgs = [m for m in sanitized if m.get("type") == "function_call"]
+    assert len(fc_msgs) == 2
+    for fc in fc_msgs:
+        assert fc["thought_signature"] == "multi_sig"
+        assert fc["content"][0]["thoughtSignature"] == "multi_sig"
+        assert fc["content"][0]["tool_use"]["thoughtSignature"] == "multi_sig"
 
 
 # ---------------------------------------------------------------------------
