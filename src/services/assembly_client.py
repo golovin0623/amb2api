@@ -223,6 +223,19 @@ def _sanitize_messages(messages) -> list:
                         "name": func_name,
                         "input": normalized_input,
                     }
+                    # Gemini thinking模型要求 function_call 内容块携带 thoughtSignature
+                    if thought_signature:
+                        tool_use_payload["thoughtSignature"] = thought_signature
+                    tool_use_block = {
+                        "type": "tool_use",
+                        "id": tc_id,
+                        "name": func_name,
+                        "input": normalized_input,
+                        # 兼容部分上游 schema: content[*].tool_use.input
+                        "tool_use": tool_use_payload,
+                    }
+                    if thought_signature:
+                        tool_use_block["thoughtSignature"] = thought_signature
                     function_call_msg = {
                         "type": "function_call",
                         "tool_call_id": tc_id,
@@ -232,17 +245,10 @@ def _sanitize_messages(messages) -> list:
                         # 显式提供结构化输入，避免上游转换丢失 tool_use.input
                         "input": normalized_input,
                         # 兼容需要从 messages[*].content[*].tool_use.input 校验的上游
-                        "content": [
-                            {
-                                "type": "tool_use",
-                                "id": tc_id,
-                                "name": func_name,
-                                "input": normalized_input,
-                                # 兼容部分上游 schema: content[*].tool_use.input
-                                "tool_use": tool_use_payload,
-                            }
-                        ],
+                        "content": [tool_use_block],
                     }
+                    if thought_signature:
+                        function_call_msg["thought_signature"] = thought_signature
                     sanitized.append(function_call_msg)
                     log.debug(f"Converted tool_call to function_call: {func_name} (id={tc_id})")
         
