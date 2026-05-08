@@ -538,8 +538,18 @@ def assembly_response_to_openai(
             usage_raw.get("completion_tokens", usage_raw.get("output_tokens", 0)),
             0,
         )
+        # 上游可能将 cached_tokens 放在 prompt_tokens_details 里
+        prompt_tokens_details_raw = usage_raw.get("prompt_tokens_details")
+        if not isinstance(prompt_tokens_details_raw, dict):
+            prompt_tokens_details_raw = {}
         cached_tokens = _safe_non_negative_int(
-            usage_raw.get("cached_tokens", usage_raw.get("input_cached_tokens", 0)),
+            usage_raw.get(
+                "cached_tokens",
+                usage_raw.get(
+                    "input_cached_tokens",
+                    prompt_tokens_details_raw.get("cached_tokens", 0),
+                ),
+            ),
             0,
         )
         total_tokens = _safe_non_negative_int(
@@ -553,10 +563,15 @@ def assembly_response_to_openai(
             "cached_tokens": cached_tokens,
             "total_tokens": total_tokens,
         }
-        usage["prompt_tokens_details"] = {
+        prompt_tokens_details: Dict[str, Any] = {
             "cached_tokens": cached_tokens,
             "audio_tokens": 0,
         }
+        # 透传 Gateway 的 cache_creation.{ephemeral_5m_input_tokens, ephemeral_1h_input_tokens}
+        cache_creation = prompt_tokens_details_raw.get("cache_creation")
+        if isinstance(cache_creation, dict) and cache_creation:
+            prompt_tokens_details["cache_creation"] = cache_creation
+        usage["prompt_tokens_details"] = prompt_tokens_details
     else:
         usage = None
 

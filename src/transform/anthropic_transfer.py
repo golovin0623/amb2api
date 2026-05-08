@@ -150,7 +150,24 @@ def anthropic_request_to_openai_payload(request: Dict[str, Any]) -> Dict[str, An
     if tc is not None:
         payload["tool_choice"] = tc
 
+    # Prompt caching pass-through (AssemblyAI Gateway-level fields).
+    for key in ("cache_control", "prompt_cache_retention", "prompt_cache_key"):
+        val = request.get(key)
+        if val is not None:
+            payload[key] = val
+
     return payload
+
+
+def _last_block_cache_control(blocks: Any) -> Optional[Dict[str, Any]]:
+    """Return cache_control from the last block that declares it."""
+    if not isinstance(blocks, list):
+        return None
+    last = None
+    for block in blocks:
+        if isinstance(block, dict) and isinstance(block.get("cache_control"), dict):
+            last = block["cache_control"]
+    return last
 
 
 def _convert_messages(
@@ -158,9 +175,9 @@ def _convert_messages(
 ) -> List[Dict[str, Any]]:
     result: List[Dict[str, Any]] = []
 
-    sys_text = _extract_system_text(system)
-    if sys_text:
-        result.append({"role": "system", "content": sys_text})
+    sys_msg = _build_system_message(system)
+    if sys_msg is not None:
+        result.append(sys_msg)
 
     for msg in messages:
         role = msg.get("role", "")
@@ -175,20 +192,39 @@ def _convert_messages(
     return result
 
 
-def _extract_system_text(system: Any) -> str:
+def _build_system_message(system: Any) -> Optional[Dict[str, Any]]:
+    """Build a system message and lift cache_control from the last block if present."""
     if not system:
-        return ""
+        return None
     if isinstance(system, str):
-        return system.strip()
+        text = system.strip()
+        return {"role": "system", "content": text} if text else None
     if isinstance(system, list):
-        parts = []
+        parts: List[str] = []
         for block in system:
             if isinstance(block, dict) and block.get("type") == "text":
                 parts.append(block.get("text", ""))
             elif isinstance(block, str):
                 parts.append(block)
-        return "\n\n".join(parts).strip()
-    return str(system).strip()
+        text = "\n\n".join(parts).strip()
+        if not text:
+            return None
+        msg: Dict[str, Any] = {"role": "system", "content": text}
+        cc = _last_block_cache_control(system)
+        if cc is not None:
+            msg["cache_control"] = cc
+        return msg
+    text = str(system).strip()
+    return {"role": "system", "content": text} if text else None
+
+
+def _extract_system_text(system: Any) -> str:
+    """Compat shim — keep for any external callers."""
+    msg = _build_system_message(system)
+    if msg is None:
+        return ""
+    content = msg.get("content")
+    return content if isinstance(content, str) else ""
 
 
 def _convert_user_message(msg: Dict[str, Any]) -> Dict[str, Any]:
@@ -196,7 +232,11 @@ def _convert_user_message(msg: Dict[str, Any]) -> Dict[str, Any]:
     if content is None:
         return {"role": "user", "content": ""}
     if isinstance(content, str):
-        return {"role": "user", "content": content}
+        out = {"role": "user", "content": content}
+        cc = msg.get("cache_control")
+        if isinstance(cc, dict):
+            out["cache_control"] = cc
+        return out
     parts: List[Dict[str, Any]] = []
     for block in content:
         if not isinstance(block, dict):
@@ -205,8 +245,13 @@ def _convert_user_message(msg: Dict[str, Any]) -> Dict[str, Any]:
         if btype == "text":
             parts.append({"type": "text", "text": block.get("text", "")})
     if len(parts) == 1 and parts[0].get("type") == "text":
-        return {"role": "user", "content": parts[0]["text"]}
-    return {"role": "user", "content": parts or ""}
+        out = {"role": "user", "content": parts[0]["text"]}
+    else:
+        out = {"role": "user", "content": parts or ""}
+    cache_control = msg.get("cache_control") or _last_block_cache_control(content)
+    if isinstance(cache_control, dict):
+        out["cache_control"] = cache_control
+    return out
 
 
 def _convert_assistant_message(msg: Dict[str, Any]) -> Dict[str, Any]:
@@ -214,7 +259,11 @@ def _convert_assistant_message(msg: Dict[str, Any]) -> Dict[str, Any]:
     if content is None:
         return {"role": "assistant", "content": None}
     if isinstance(content, str):
-        return {"role": "assistant", "content": content}
+        out = {"role": "assistant", "content": content}
+        cc = msg.get("cache_control")
+        if isinstance(cc, dict):
+            out["cache_control"] = cc
+        return out
     text_parts: List[str] = []
     tool_calls: List[Dict[str, Any]] = []
     for block in content:
@@ -236,6 +285,9 @@ def _convert_assistant_message(msg: Dict[str, Any]) -> Dict[str, Any]:
     result["content"] = "".join(text_parts) if text_parts else None
     if tool_calls:
         result["tool_calls"] = tool_calls
+    cache_control = msg.get("cache_control") or _last_block_cache_control(content)
+    if isinstance(cache_control, dict):
+        result["cache_control"] = cache_control
     return result
 
 
@@ -259,11 +311,15 @@ def _convert_tool_results(msg: Dict[str, Any]) -> List[Dict[str, Any]]:
     for block in content:
         if not isinstance(block, dict) or block.get("type") != "tool_result":
             continue
-        results.append({
+        item = {
             "role": "tool",
             "tool_call_id": block.get("tool_use_id", ""),
             "content": _flatten_content(block.get("content")),
-        })
+        }
+        cc = block.get("cache_control")
+        if isinstance(cc, dict):
+            item["cache_control"] = cc
+        results.append(item)
     return results
 
 
@@ -345,11 +401,52 @@ def openai_response_to_anthropic_message(
         "content": content_blocks,
         "stop_reason": _map_finish_reason(first.get("finish_reason")),
         "stop_sequence": None,
-        "usage": {
-            "input_tokens": int(usage.get("prompt_tokens", 0)),
-            "output_tokens": int(usage.get("completion_tokens", 0)),
-        },
+        "usage": _build_anthropic_usage(usage),
     }
+
+
+def _build_anthropic_usage(usage: Any) -> Dict[str, Any]:
+    """Build Anthropic-shape usage, surfacing cache_read/cache_creation fields."""
+    if not isinstance(usage, dict):
+        usage = {}
+
+    def _safe_int(value: Any) -> int:
+        try:
+            parsed = int(value)
+            return parsed if parsed >= 0 else 0
+        except (TypeError, ValueError):
+            return 0
+
+    input_tokens = _safe_int(usage.get("prompt_tokens", usage.get("input_tokens", 0)))
+    output_tokens = _safe_int(usage.get("completion_tokens", usage.get("output_tokens", 0)))
+
+    prompt_details = usage.get("prompt_tokens_details")
+    if not isinstance(prompt_details, dict):
+        prompt_details = {}
+    cached_tokens = _safe_int(
+        usage.get("cached_tokens", prompt_details.get("cached_tokens", 0))
+    )
+
+    cache_creation = prompt_details.get("cache_creation")
+    if not isinstance(cache_creation, dict):
+        cache_creation = {}
+    creation_5m = _safe_int(cache_creation.get("ephemeral_5m_input_tokens", 0))
+    creation_1h = _safe_int(cache_creation.get("ephemeral_1h_input_tokens", 0))
+    creation_total = creation_5m + creation_1h
+
+    out: Dict[str, Any] = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+    }
+    if cached_tokens:
+        out["cache_read_input_tokens"] = cached_tokens
+    if creation_total:
+        out["cache_creation_input_tokens"] = creation_total
+        out["cache_creation"] = {
+            "ephemeral_5m_input_tokens": creation_5m,
+            "ephemeral_1h_input_tokens": creation_1h,
+        }
+    return out
 
 
 def _build_content_blocks(message: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -557,8 +654,8 @@ def _build_finish_events(
         if tc.get("started") and tc.get("claude_index") is not None:
             events.append({"type": "content_block_stop", "index": tc["claude_index"]})
 
-    usage = chunk.get("usage") or {}
-    out_tokens = int(usage.get("completion_tokens", 0))
+    delta_usage = _build_anthropic_usage(chunk.get("usage"))
+    delta_usage.pop("input_tokens", None)
 
     events.append({
         "type": "message_delta",
@@ -566,7 +663,7 @@ def _build_finish_events(
             "stop_reason": _map_finish_reason(finish_reason),
             "stop_sequence": None,
         },
-        "usage": {"output_tokens": out_tokens},
+        "usage": delta_usage,
     })
     events.append({"type": "message_stop"})
     state["message_stopped"] = True

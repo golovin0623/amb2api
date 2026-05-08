@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 # 加载环境变量
 load_dotenv()
 
+import os
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -105,7 +106,11 @@ app.include_router(
 # Gemini原生路由 - 处理Gemini格式请求
 # 仅保留 OpenAI 兼容路由
 
-# 静态文件路由移除
+# 控制面板静态资源（CSS / JS / SVG 图标）
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_ASSETS_DIR = os.path.join(_BASE_DIR, "front", "assets")
+if os.path.isdir(_ASSETS_DIR):
+    app.mount("/static", StaticFiles(directory=_ASSETS_DIR), name="static")
 
 # 保活接口（仅响应 HEAD）
 @app.head("/keepalive")

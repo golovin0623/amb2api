@@ -199,7 +199,7 @@ async def get_available_models_async(router_type: str = "openai"):
     cached = await get_config_value("available_models")
     if isinstance(cached, list) and cached:
         return [str(m) for m in cached]
-    # 默认模型列表
+    # 默认模型列表（Gateway 已支持的常用模型；面板可通过"刷新模型"接口同步真实列表）
     return [
         "gpt-5",
         "gpt-5-nano",
@@ -210,7 +210,11 @@ async def get_available_models_async(router_type: str = "openai"):
         "claude-3.5-haiku-20241022",
         "gemini-2.5-pro",
         "gemini-2.5-flash",
-        "gemini-2.5-flash-lite"
+        "gemini-2.5-flash-lite",
+        # 2026-04 Gateway relaunch 新增模型
+        "qwen3-coder",
+        "qwen3-235b",
+        "kimi-k2.5",
     ]
 
 def is_fake_streaming_model(model_name: str) -> bool:
@@ -430,18 +434,19 @@ async def get_assembly_api_keys() -> list:
 async def get_enable_real_streaming() -> bool:
     """
     Get real streaming enabled setting.
-    
-    启用真实流式模式。默认为 False，使用假流式模式。
-    当 AssemblyAI 修复流式响应问题后，可以设置为 True 启用真实流式。
-    
+
+    启用真实流式模式。AssemblyAI LLM Gateway 已经原生支持原生流式（含 tool calling
+    与 prompt caching usage），默认为 True；如遇个别上游模型异常，可临时改回 False
+    使用假流式兜底。
+
     Environment variable: ENABLE_REAL_STREAMING
     TOML config key: enable_real_streaming
-    Default: False (use fake streaming)
+    Default: True (use native streaming)
     """
     env_value = os.getenv("ENABLE_REAL_STREAMING")
     if env_value:
         return env_value.lower() in ("true", "1", "yes", "on")
-    return bool(await get_config_value("enable_real_streaming", False))
+    return bool(await get_config_value("enable_real_streaming", True))
 
 
 async def get_tool_debug_logs_enabled() -> bool:

@@ -127,6 +127,8 @@ async def convert_streaming_response(
         prompt_tokens = 0
         completion_tokens = 0
         cached_tokens = 0
+        cache_creation_5m_tokens = 0
+        cache_creation_1h_tokens = 0
         total_tokens = 0
 
         def _safe_non_negative_int(value: Any, default: int = 0) -> int:
@@ -147,6 +149,7 @@ async def convert_streaming_response(
         async def _convert_chunk(chunk) -> Optional[bytes]:
             """将上游 chunk 转换为 OpenAI SSE chunk。"""
             nonlocal prompt_tokens, completion_tokens, cached_tokens, total_tokens
+            nonlocal cache_creation_5m_tokens, cache_creation_1h_tokens
             if not chunk:
                 return None
 
@@ -180,10 +183,33 @@ async def convert_streaming_response(
                     usage_raw.get("completion_tokens", usage_raw.get("output_tokens", completion_tokens)),
                     completion_tokens,
                 )
+                prompt_details = usage_raw.get("prompt_tokens_details")
+                if not isinstance(prompt_details, dict):
+                    prompt_details = {}
                 cached_tokens = _safe_non_negative_int(
-                    usage_raw.get("cached_tokens", usage_raw.get("input_cached_tokens", cached_tokens)),
+                    usage_raw.get(
+                        "cached_tokens",
+                        usage_raw.get(
+                            "input_cached_tokens",
+                            prompt_details.get("cached_tokens", cached_tokens),
+                        ),
+                    ),
                     cached_tokens,
                 )
+                cache_creation = prompt_details.get("cache_creation")
+                if isinstance(cache_creation, dict):
+                    cache_creation_5m_tokens = _safe_non_negative_int(
+                        cache_creation.get(
+                            "ephemeral_5m_input_tokens", cache_creation_5m_tokens
+                        ),
+                        cache_creation_5m_tokens,
+                    )
+                    cache_creation_1h_tokens = _safe_non_negative_int(
+                        cache_creation.get(
+                            "ephemeral_1h_input_tokens", cache_creation_1h_tokens
+                        ),
+                        cache_creation_1h_tokens,
+                    )
                 candidate_total = _safe_non_negative_int(
                     usage_raw.get("total_tokens", prompt_tokens + completion_tokens),
                     prompt_tokens + completion_tokens,
@@ -308,6 +334,8 @@ async def convert_streaming_response(
                     completion_tokens=completion_tokens,
                     prompt_tokens=prompt_tokens,
                     cached_tokens=cached_tokens,
+                    cache_creation_5m_tokens=cache_creation_5m_tokens,
+                    cache_creation_1h_tokens=cache_creation_1h_tokens,
                     total_tokens=total_tokens,
                 )
 
@@ -320,6 +348,8 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
         completion_tokens = 0
         prompt_tokens = 0
         cached_tokens = 0
+        cache_creation_5m_tokens = 0
+        cache_creation_1h_tokens = 0
         total_tokens = 0
         tool_debug_logs_enabled = await get_tool_debug_logs_enabled()
 
@@ -676,24 +706,48 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                     completion_tokens = _safe_non_negative_int(
                         usage_raw.get("completion_tokens", usage_raw.get("output_tokens", 0))
                     )
+                    prompt_details_raw = usage_raw.get("prompt_tokens_details")
+                    if not isinstance(prompt_details_raw, dict):
+                        prompt_details_raw = {}
                     cached_tokens = _safe_non_negative_int(
-                        usage_raw.get("cached_tokens", usage_raw.get("input_cached_tokens", 0))
+                        usage_raw.get(
+                            "cached_tokens",
+                            usage_raw.get(
+                                "input_cached_tokens",
+                                prompt_details_raw.get("cached_tokens", 0),
+                            ),
+                        )
+                    )
+                    cache_creation_raw = prompt_details_raw.get("cache_creation")
+                    if not isinstance(cache_creation_raw, dict):
+                        cache_creation_raw = {}
+                    cache_creation_5m_tokens = _safe_non_negative_int(
+                        cache_creation_raw.get("ephemeral_5m_input_tokens", 0)
+                    )
+                    cache_creation_1h_tokens = _safe_non_negative_int(
+                        cache_creation_raw.get("ephemeral_1h_input_tokens", 0)
                     )
                     total_tokens = _safe_non_negative_int(
                         usage_raw.get("total_tokens", prompt_tokens + completion_tokens)
                     )
                     total_tokens = max(total_tokens, prompt_tokens + completion_tokens)
-                    
+
+                    prompt_details_out = {
+                        "cached_tokens": cached_tokens,
+                        "audio_tokens": 0,
+                    }
+                    if cache_creation_5m_tokens or cache_creation_1h_tokens:
+                        prompt_details_out["cache_creation"] = {
+                            "ephemeral_5m_input_tokens": cache_creation_5m_tokens,
+                            "ephemeral_1h_input_tokens": cache_creation_1h_tokens,
+                        }
                     usage = {
                         "prompt_tokens": prompt_tokens,
                         "completion_tokens": completion_tokens,
                         "cached_tokens": cached_tokens,
                         "total_tokens": total_tokens,
                         # 添加详细的 token 信息以支持 LobeChat 等客户端显示
-                        "prompt_tokens_details": {
-                            "cached_tokens": cached_tokens,
-                            "audio_tokens": 0
-                        },
+                        "prompt_tokens_details": prompt_details_out,
                         "completion_tokens_details": {
                             "reasoning_tokens": 0,
                             "audio_tokens": 0,
@@ -891,6 +945,8 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                     completion_tokens=completion_tokens,
                     prompt_tokens=prompt_tokens,
                     cached_tokens=cached_tokens,
+                    cache_creation_5m_tokens=cache_creation_5m_tokens,
+                    cache_creation_1h_tokens=cache_creation_1h_tokens,
                     total_tokens=total_tokens,
                 )
 

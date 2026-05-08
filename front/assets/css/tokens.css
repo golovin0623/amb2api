@@ -1,0 +1,336 @@
+/* ============================================================
+ * AMB2API · Aether Codex 设计令牌（v2 重写版）
+ * 严格对照 https://golovin.cn/design 的设计语言：
+ * · OKLCH 极光弧（不是渐变，是单弧 4 阶）
+ * · 编辑体字体（Display + Editorial + Sans + Mono）
+ * · 4 层 Surface（leaf / raised / overlay / luminous）
+ * · 4 条命名缓动（emphasis / standard / enter / exit）
+ * · 9 阶 Perfect Fourth 字号
+ * ============================================================ */
+
+:root {
+  /* ============================================================
+   * 1. 字体栈
+   *    Display (Fraunces) - 标题
+   *    Editorial (Instrument Serif + Noto Serif SC) - 正文
+   *    UI Sans (Geist + Inter) - 控件文字
+   *    Mono (Geist Mono) - 代码 / 数字
+   * ============================================================ */
+  --font-display:   'Fraunces', 'Source Serif Pro', 'Noto Serif SC', Georgia, serif;
+  --font-editorial: 'Instrument Serif', 'Source Serif Pro', 'Noto Serif SC', 'Times New Roman', serif;
+  --font-sans:      'Geist', 'Inter', system-ui, -apple-system, BlinkMacSystemFont,
+                    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono:      'Geist Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  /* ============================================================
+   * 2. 字号 - Perfect Fourth (9 阶, 不允许越级)
+   * ============================================================ */
+  --fs-micro:    0.6875rem;  /* 11px - 时间戳 (mono) */
+  --fs-caption:  0.8125rem;  /* 13px - 边注 (sans) */
+  --fs-body:     1rem;       /* 16px - UI 默认 (sans) */
+  --fs-reading:  1.125rem;   /* 18px - 文章正文 (serif) */
+  --fs-lede:     1.25rem;    /* 20px - 导语 (serif italic) */
+  --fs-h4:       1.5rem;     /* 24px - 小节标题 (display) */
+  --fs-h3:       1.875rem;   /* 30px - 章节副题 (display) */
+  --fs-h2:       2.5rem;     /* 40px - 章节标记 (display) */
+  --fs-h1:       3.5rem;     /* 56px - 文章标题 (display) */
+
+  /* 行高 */
+  --lh-tight:    1.08;
+  --lh-snug:     1.25;
+  --lh-normal:   1.55;
+  --lh-relaxed:  1.75;
+
+  /* 字重 */
+  --fw-regular:  400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+
+  /* 字距 */
+  --tracking-tight:  -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide:   0.02em;
+  --tracking-wider:  0.06em;
+  --tracking-widest: 0.16em;
+
+  /* ============================================================
+   * 3. 极光弧 - OKLCH 单光源（h:270→330 · c:0.150→0.102 · L:0.72→0.80）
+   *    设计原则：同色系邻近保持「一片光」；不允许渐变滥用
+   *    亮色模式默认极光略低明度，暗色模式提亮
+   * ============================================================ */
+  --aurora-1: oklch(0.62 0.180 268);  /* anchor - 主品牌 */
+  --aurora-2: oklch(0.65 0.160 286);
+  --aurora-3: oklch(0.70 0.135 304);
+  --aurora-4: oklch(0.76 0.108 326);
+  /* 仅签名时刻使用渐变 */
+  --aurora-text: linear-gradient(
+    100deg,
+    oklch(0.62 0.180 268) 0%,
+    oklch(0.66 0.160 290) 35%,
+    oklch(0.74 0.130 312) 70%,
+    oklch(0.80 0.105 330) 100%
+  );
+
+  /* ============================================================
+   * 4. 墨色（Ink）- 文本与边框，单一光源策略
+   *    亮色模式：纯墨黑作主色，金色作签名细节
+   * ============================================================ */
+  --ink-pure:     oklch(0.16 0.005 270);  /* 接近纯黑但带极淡蓝紫 */
+  --ink-primary:  oklch(0.20 0.008 270);
+  --ink-secondary:oklch(0.42 0.010 270);
+  --ink-muted:    oklch(0.58 0.010 270);
+  --ink-subtle:   oklch(0.78 0.008 270);
+  --ink-hairline: oklch(0.92 0.005 270);  /* 极淡边线 */
+  --ink-inverse:  oklch(0.98 0.003 270);  /* 反向白 */
+  --gold-hairline: oklch(0.78 0.110 80);  /* 印金细线 */
+
+  /* ============================================================
+   * 5. 表面（Surface）4 层 - 严格决策树
+   *    leaf       : 文档流卡片（95% 场景）
+   *    raised     : sticky header / floating panel
+   *    overlay    : modal / 命令面板 / 极光边框
+   *    luminous   : 签名稀有卡片（一页最多一个）
+   * ============================================================ */
+  --bg-page:      oklch(0.97 0.005 85);   /* 暖白纸张 - 略带米黄 */
+  --bg-leaf:      oklch(0.998 0.002 85);  /* 卡片白纸 */
+  --bg-raised:    oklch(1.00 0 0);
+  --bg-overlay:   oklch(0.955 0.005 85);  /* 嵌入背景 / 略沉 */
+  --bg-luminous:  oklch(0.99 0.008 270);  /* 微泛极光底 */
+  --bg-sunken:    oklch(0.94 0.005 85);   /* 用于 mono code 块 */
+
+  /* ============================================================
+   * 6. 边线（Hairline）- 仅一种主线宽，由透明度区分层级
+   * ============================================================ */
+  --line-soft:   oklch(0.20 0.008 270 / 0.06);
+  --line-default:oklch(0.20 0.008 270 / 0.10);
+  --line-strong: oklch(0.20 0.008 270 / 0.18);
+  --line-aurora: oklch(0.62 0.180 268 / 0.30);
+  --line-focus:  oklch(0.62 0.180 268);
+
+  /* ============================================================
+   * 7. 信号色（Signal）- 必须配图标的状态色
+   *    遵循红绿色盲三维拉开（L/C/H）原则
+   * ============================================================ */
+  --sig-success: oklch(0.62 0.165 145);
+  --sig-success-soft: oklch(0.62 0.165 145 / 0.10);
+  --sig-warning: oklch(0.72 0.155 70);
+  --sig-warning-soft: oklch(0.72 0.155 70 / 0.10);
+  --sig-danger:  oklch(0.58 0.215 25);
+  --sig-danger-soft: oklch(0.58 0.215 25 / 0.10);
+  --sig-info:    oklch(0.62 0.150 240);
+  --sig-info-soft:    oklch(0.62 0.150 240 / 0.10);
+
+  /* ============================================================
+   * 8. 阴影 - 单一光源 (光源在右上 30°)，仅一种基础形状
+   * ============================================================ */
+  --elev-1: 0 1px 2px oklch(0.20 0.008 270 / 0.06);
+  --elev-2: 0 2px 4px oklch(0.20 0.008 270 / 0.05),
+            0 1px 2px oklch(0.20 0.008 270 / 0.04);
+  --elev-3: 0 6px 16px oklch(0.20 0.008 270 / 0.08),
+            0 2px 4px oklch(0.20 0.008 270 / 0.04);
+  --elev-4: 0 16px 40px oklch(0.20 0.008 270 / 0.12),
+            0 4px 8px oklch(0.20 0.008 270 / 0.05);
+  --elev-aurora: 0 6px 24px oklch(0.62 0.180 268 / 0.28);
+  --elev-focus:  0 0 0 3px oklch(0.62 0.180 268 / 0.20);
+
+  /* ============================================================
+   * 9. 间距 - 严格 8px 基线
+   * ============================================================ */
+  --s-0: 0;
+  --s-1: 0.25rem;  /* 4 */
+  --s-2: 0.5rem;   /* 8 */
+  --s-3: 0.75rem;  /* 12 */
+  --s-4: 1rem;     /* 16 */
+  --s-5: 1.5rem;   /* 24 */
+  --s-6: 2rem;     /* 32 */
+  --s-7: 3rem;     /* 48 */
+  --s-8: 4rem;     /* 64 */
+  --s-9: 6rem;     /* 96 */
+  --s-10: 8rem;    /* 128 */
+
+  /* ============================================================
+   * 10. 圆角 - 编辑体审美：克制小圆角
+   * ============================================================ */
+  --r-1: 4px;       /* 微圆角 - chip / kbd */
+  --r-2: 6px;       /* 默认按钮 */
+  --r-3: 8px;       /* 输入框 */
+  --r-4: 12px;      /* 卡片 */
+  --r-5: 16px;      /* 大卡片 / luminous */
+  --r-6: 24px;      /* hero */
+  --r-full: 9999px;
+
+  /* ============================================================
+   * 11. 动效 - 4 条命名缓动
+   * ============================================================ */
+  --ease-emphasis: cubic-bezier(0.16, 1, 0.3, 1);    /* Expo Out · 签名时刻 */
+  --ease-standard: cubic-bezier(0.32, 0.72, 0, 1);   /* Apple Material · UI 默认 */
+  --ease-enter:    cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-exit:     cubic-bezier(0.40, 0, 0.68, 0.06);
+
+  --dur-emphasis: 800ms;
+  --dur-standard: 520ms;
+  --dur-enter:    560ms;
+  --dur-exit:     260ms;
+  --dur-fast:     180ms;
+  --dur-instant:  120ms;
+
+  /* ============================================================
+   * 12. Z-index 层级
+   * ============================================================ */
+  --z-base:    1;
+  --z-sticky:  10;
+  --z-fixed:   100;
+  --z-overlay: 1000;
+  --z-modal:   1100;
+  --z-popover: 1200;
+  --z-tooltip: 1250;
+  --z-toast:   1300;
+
+  /* ============================================================
+   * 13. 布局尺寸
+   * ============================================================ */
+  --sidebar-w:        264px;
+  --sidebar-w-mini:    72px;
+  --appbar-h:          56px;
+  --content-max:     1320px;
+
+  /* ============================================================
+   * 14. 旧 → 新 映射（必须保留，业务 inline style 还在引用）
+   * ============================================================ */
+  --bg-color:        var(--bg-page);
+  --container-bg:    var(--bg-leaf);
+  --text-color:      var(--ink-primary);
+  --text-secondary:  var(--ink-secondary);
+  --text-muted:      var(--ink-muted);
+  --border-color:    var(--line-default);
+  --input-bg:        var(--bg-leaf);
+  --input-border:    var(--line-default);
+  --card-bg:         var(--bg-overlay);
+  --hover-bg:        var(--bg-overlay);
+  --shadow-color:    oklch(0.20 0.008 270 / 0.08);
+  --tab-bg:          var(--bg-overlay);
+  --tab-active-bg:   var(--bg-leaf);
+  --table-stripe:    var(--bg-overlay);
+  --table-hover:     var(--bg-overlay);
+  --code-bg:         var(--bg-sunken);
+  --modal-overlay:   oklch(0.16 0.005 270 / 0.55);
+
+  /* 旧名兼容 */
+  --bg-void:      var(--bg-page);
+  --bg-substrate: var(--bg-overlay);
+  --aurora-grad:  var(--aurora-text);
+  --color-success: var(--sig-success);
+  --color-warning: var(--sig-warning);
+  --color-danger:  var(--sig-danger);
+  --color-info:    var(--sig-info);
+  --color-success-bg: var(--sig-success-soft);
+  --color-warning-bg: var(--sig-warning-soft);
+  --color-danger-bg:  var(--sig-danger-soft);
+  --color-info-bg:    var(--sig-info-soft);
+  --shadow-xs: var(--elev-1);
+  --shadow-sm: var(--elev-1);
+  --shadow-md: var(--elev-2);
+  --shadow-lg: var(--elev-3);
+  --shadow-xl: var(--elev-4);
+  --shadow-2xl: var(--elev-4);
+  --shadow-aurora: var(--elev-aurora);
+  --shadow-focus:  var(--elev-focus);
+  --border-default: var(--line-default);
+  --border-strong:  var(--line-strong);
+  --border-hover:   var(--line-aurora);
+  --border-focus:   var(--line-focus);
+  --radius-sm: var(--r-2);
+  --radius-md: var(--r-3);
+  --radius-lg: var(--r-4);
+  --radius-xl: var(--r-5);
+  --radius-full: var(--r-full);
+  --space-1: var(--s-1); --space-2: var(--s-2); --space-3: var(--s-3);
+  --space-4: var(--s-4); --space-5: var(--s-5); --space-6: var(--s-6);
+  --space-7: var(--s-7); --space-8: var(--s-8); --space-9: var(--s-9);
+  --space-10: var(--s-10);
+  --ease-out: var(--ease-standard);
+  --ease-in:  var(--ease-exit);
+  --ease-soft: var(--ease-standard);
+  --ease-spring: var(--ease-emphasis);
+  --dur-quick: var(--dur-exit);
+  --dur-flow: var(--dur-standard);
+  --dur-ambient: var(--dur-emphasis);
+  --bg-leaf: var(--bg-leaf);
+}
+
+/* ============================================================
+ * 暗色模式 - 典籍气质，高对比度
+ * ============================================================ */
+[data-theme="dark"] {
+  --aurora-1: oklch(0.74 0.150 268);
+  --aurora-2: oklch(0.76 0.135 286);
+  --aurora-3: oklch(0.80 0.115 304);
+  --aurora-4: oklch(0.86 0.090 326);
+  --aurora-text: linear-gradient(
+    100deg,
+    oklch(0.74 0.150 268) 0%,
+    oklch(0.78 0.130 290) 35%,
+    oklch(0.84 0.105 312) 70%,
+    oklch(0.90 0.080 330) 100%
+  );
+
+  --ink-pure:     oklch(0.99 0.003 270);
+  --ink-primary:  oklch(0.96 0.005 270);
+  --ink-secondary:oklch(0.78 0.010 270);
+  --ink-muted:    oklch(0.55 0.010 270);
+  --ink-subtle:   oklch(0.32 0.010 270);
+  --ink-hairline: oklch(0.32 0.010 270);
+  --ink-inverse:  oklch(0.10 0.005 270);
+  --gold-hairline:oklch(0.74 0.135 80);
+
+  --bg-page:      oklch(0.10 0.008 270);
+  --bg-leaf:      oklch(0.14 0.008 270);
+  --bg-raised:    oklch(0.18 0.008 270);
+  --bg-overlay:   oklch(0.16 0.008 270);
+  --bg-luminous:  oklch(0.18 0.012 270);
+  --bg-sunken:    oklch(0.08 0.006 270);
+
+  --line-soft:   oklch(0.96 0.005 270 / 0.04);
+  --line-default:oklch(0.96 0.005 270 / 0.08);
+  --line-strong: oklch(0.96 0.005 270 / 0.16);
+  --line-aurora: oklch(0.74 0.150 268 / 0.40);
+  --line-focus:  oklch(0.74 0.150 268);
+
+  --sig-success: oklch(0.74 0.155 145);
+  --sig-success-soft: oklch(0.74 0.155 145 / 0.16);
+  --sig-warning: oklch(0.82 0.150 75);
+  --sig-warning-soft: oklch(0.82 0.150 75 / 0.16);
+  --sig-danger:  oklch(0.70 0.205 25);
+  --sig-danger-soft: oklch(0.70 0.205 25 / 0.16);
+  --sig-info:    oklch(0.72 0.155 240);
+  --sig-info-soft: oklch(0.72 0.155 240 / 0.16);
+
+  --elev-1: 0 1px 2px oklch(0 0 0 / 0.40);
+  --elev-2: 0 2px 4px oklch(0 0 0 / 0.45),
+            0 1px 2px oklch(0 0 0 / 0.30);
+  --elev-3: 0 8px 24px oklch(0 0 0 / 0.50),
+            0 2px 4px oklch(0 0 0 / 0.30);
+  --elev-4: 0 16px 48px oklch(0 0 0 / 0.65),
+            0 4px 8px oklch(0 0 0 / 0.35);
+  --elev-aurora: 0 6px 24px oklch(0.74 0.150 268 / 0.32);
+  --elev-focus:  0 0 0 3px oklch(0.74 0.150 268 / 0.28);
+}
+
+/* ============================================================
+ * Reduced motion
+ * ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-emphasis: 0.001s;
+    --dur-standard: 0.001s;
+    --dur-enter:    0.001s;
+    --dur-exit:     0.001s;
+    --dur-fast:     0.001s;
+    --dur-instant:  0.001s;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.001s !important;
+    transition-duration: 0.001s !important;
+  }
+}

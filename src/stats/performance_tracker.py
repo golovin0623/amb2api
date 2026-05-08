@@ -28,6 +28,22 @@ def _extract_usage_tokens(raw: Dict[str, Any]) -> Dict[str, int]:
     prompt_tokens = _to_non_negative_int(raw.get("prompt_tokens", 0), 0)
     completion_tokens = _to_non_negative_int(raw.get("completion_tokens", 0), 0)
     cached_tokens = _to_non_negative_int(raw.get("cached_tokens", 0), 0)
+    # Gateway prompt-caching token-creation buckets (ephemeral 5m / 1h).
+    cache_creation_5m = _to_non_negative_int(raw.get("cache_creation_5m_tokens", 0), 0)
+    cache_creation_1h = _to_non_negative_int(raw.get("cache_creation_1h_tokens", 0), 0)
+    details = raw.get("prompt_tokens_details")
+    if isinstance(details, dict):
+        if cached_tokens == 0:
+            cached_tokens = _to_non_negative_int(details.get("cached_tokens", 0), 0)
+        if not cache_creation_5m and not cache_creation_1h:
+            creation = details.get("cache_creation")
+            if isinstance(creation, dict):
+                cache_creation_5m = _to_non_negative_int(
+                    creation.get("ephemeral_5m_input_tokens", 0), 0
+                )
+                cache_creation_1h = _to_non_negative_int(
+                    creation.get("ephemeral_1h_input_tokens", 0), 0
+                )
     total_tokens = _to_non_negative_int(
         raw.get("total_tokens", prompt_tokens + completion_tokens),
         prompt_tokens + completion_tokens,
@@ -39,6 +55,8 @@ def _extract_usage_tokens(raw: Dict[str, Any]) -> Dict[str, int]:
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "cached_tokens": cached_tokens,
+        "cache_creation_5m_tokens": cache_creation_5m,
+        "cache_creation_1h_tokens": cache_creation_1h,
         "total_tokens": total_tokens,
     }
 
@@ -54,6 +72,8 @@ class RequestTrace:
     completion_tokens: int = 0
     prompt_tokens: int = 0
     cached_tokens: int = 0
+    cache_creation_5m_tokens: int = 0
+    cache_creation_1h_tokens: int = 0
     total_tokens: int = 0
     
     # Key and account tracking
@@ -131,12 +151,14 @@ class RequestTrace:
             "completion_tokens": self.completion_tokens,
             "prompt_tokens": self.prompt_tokens,
             "cached_tokens": self.cached_tokens,
+            "cache_creation_5m_tokens": self.cache_creation_5m_tokens,
+            "cache_creation_1h_tokens": self.cache_creation_1h_tokens,
             "total_tokens": self.total_tokens,
             "key_index": self.key_index,
             "key_masked": self.key_masked,
             "account_email": self.account_email
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RequestTrace":
         """从字典创建（用于加载）"""
@@ -151,6 +173,8 @@ class RequestTrace:
         trace.prompt_tokens = usage["prompt_tokens"]
         trace.completion_tokens = usage["completion_tokens"]
         trace.cached_tokens = usage["cached_tokens"]
+        trace.cache_creation_5m_tokens = usage["cache_creation_5m_tokens"]
+        trace.cache_creation_1h_tokens = usage["cache_creation_1h_tokens"]
         trace.total_tokens = usage["total_tokens"]
         trace.key_index = data.get("key_index", -1)
         trace.key_masked = data.get("key_masked", "")
@@ -269,16 +293,20 @@ class PerformanceTracker:
         prompt_tokens: int = 0,
         cached_tokens: int = 0,
         total_tokens: Optional[int] = None,
+        cache_creation_5m_tokens: int = 0,
+        cache_creation_1h_tokens: int = 0,
     ):
         """结束追踪并持久化"""
         if trace_id not in self.active_traces:
             log.warning(f"Trace {trace_id} not found in active traces")
             return
-        
+
         trace = self.active_traces.pop(trace_id)
         trace.prompt_tokens = _to_non_negative_int(prompt_tokens, 0)
         trace.completion_tokens = _to_non_negative_int(completion_tokens, 0)
         trace.cached_tokens = _to_non_negative_int(cached_tokens, 0)
+        trace.cache_creation_5m_tokens = _to_non_negative_int(cache_creation_5m_tokens, 0)
+        trace.cache_creation_1h_tokens = _to_non_negative_int(cache_creation_1h_tokens, 0)
         fallback_total = trace.prompt_tokens + trace.completion_tokens
         if total_tokens is None:
             trace.total_tokens = fallback_total
@@ -417,6 +445,8 @@ class PerformanceTracker:
                 "prompt_tokens": trace_obj.prompt_tokens,
                 "completion_tokens": trace_obj.completion_tokens,
                 "cached_tokens": trace_obj.cached_tokens,
+                "cache_creation_5m_tokens": trace_obj.cache_creation_5m_tokens,
+                "cache_creation_1h_tokens": trace_obj.cache_creation_1h_tokens,
                 "total_tokens": trace_obj.total_tokens,
             }
             page_traces.append({
@@ -424,6 +454,8 @@ class PerformanceTracker:
                 "prompt_tokens": trace_obj.prompt_tokens,
                 "completion_tokens": trace_obj.completion_tokens,
                 "cached_tokens": trace_obj.cached_tokens,
+                "cache_creation_5m_tokens": trace_obj.cache_creation_5m_tokens,
+                "cache_creation_1h_tokens": trace_obj.cache_creation_1h_tokens,
                 "total_tokens": trace_obj.total_tokens,
                 "usage": usage,
                 "metrics": metrics,
@@ -455,6 +487,8 @@ class PerformanceTracker:
                                 "prompt_tokens": trace_obj.prompt_tokens,
                                 "completion_tokens": trace_obj.completion_tokens,
                                 "cached_tokens": trace_obj.cached_tokens,
+                                "cache_creation_5m_tokens": trace_obj.cache_creation_5m_tokens,
+                                "cache_creation_1h_tokens": trace_obj.cache_creation_1h_tokens,
                                 "total_tokens": trace_obj.total_tokens,
                             }
                             return {
@@ -462,6 +496,8 @@ class PerformanceTracker:
                                 "prompt_tokens": trace_obj.prompt_tokens,
                                 "completion_tokens": trace_obj.completion_tokens,
                                 "cached_tokens": trace_obj.cached_tokens,
+                                "cache_creation_5m_tokens": trace_obj.cache_creation_5m_tokens,
+                                "cache_creation_1h_tokens": trace_obj.cache_creation_1h_tokens,
                                 "total_tokens": trace_obj.total_tokens,
                                 "usage": usage,
                                 "metrics": trace_obj.get_metrics(),
@@ -528,10 +564,14 @@ class PerformanceTracker:
                     "prompt_total": 0,
                     "completion_total": 0,
                     "cached_total": 0,
+                    "cache_creation_5m_total": 0,
+                    "cache_creation_1h_total": 0,
                     "total": 0,
                     "avg_prompt": 0,
                     "avg_completion": 0,
                     "avg_cached": 0,
+                    "avg_cache_creation_5m": 0,
+                    "avg_cache_creation_1h": 0,
                     "avg_total": 0,
                     "requests_with_usage": 0,
                 },
@@ -568,20 +608,26 @@ class PerformanceTracker:
         prompt_tokens_total = 0
         completion_tokens_total = 0
         cached_tokens_total = 0
+        cache_creation_5m_total = 0
+        cache_creation_1h_total = 0
         total_tokens_total = 0
         requests_with_usage = 0
-        
+
         for t in all_traces:
             ts = t.get("timestamps", {})
             usage = _extract_usage_tokens(t)
             prompt_tokens = usage["prompt_tokens"]
             completion_tokens = usage["completion_tokens"]
             cached_tokens = usage["cached_tokens"]
+            cache_creation_5m = usage["cache_creation_5m_tokens"]
+            cache_creation_1h = usage["cache_creation_1h_tokens"]
             total_tokens = usage["total_tokens"]
             has_usage = (
                 prompt_tokens > 0
                 or completion_tokens > 0
                 or cached_tokens > 0
+                or cache_creation_5m > 0
+                or cache_creation_1h > 0
                 or total_tokens > 0
             )
             models_set.add(t.get("model", "unknown"))
@@ -591,6 +637,8 @@ class PerformanceTracker:
             prompt_tokens_total += prompt_tokens
             completion_tokens_total += completion_tokens
             cached_tokens_total += cached_tokens
+            cache_creation_5m_total += cache_creation_5m
+            cache_creation_1h_total += cache_creation_1h
             total_tokens_total += total_tokens
             if has_usage:
                 requests_with_usage += 1
@@ -673,10 +721,14 @@ class PerformanceTracker:
                 "prompt_total": prompt_tokens_total,
                 "completion_total": completion_tokens_total,
                 "cached_total": cached_tokens_total,
+                "cache_creation_5m_total": cache_creation_5m_total,
+                "cache_creation_1h_total": cache_creation_1h_total,
                 "total": total_tokens_total,
                 "avg_prompt": round(prompt_tokens_total / len(all_traces), 2) if all_traces else 0,
                 "avg_completion": round(completion_tokens_total / len(all_traces), 2) if all_traces else 0,
                 "avg_cached": round(cached_tokens_total / len(all_traces), 2) if all_traces else 0,
+                "avg_cache_creation_5m": round(cache_creation_5m_total / len(all_traces), 2) if all_traces else 0,
+                "avg_cache_creation_1h": round(cache_creation_1h_total / len(all_traces), 2) if all_traces else 0,
                 "avg_total": round(total_tokens_total / len(all_traces), 2) if all_traces else 0,
                 "requests_with_usage": requests_with_usage,
             },

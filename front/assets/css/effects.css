@@ -1,0 +1,105 @@
+/* ============================================================
+ * AMB2API · Effects (v2)
+ * 仅保留少数签名时刻 + Focus / View Transitions
+ * 不再有粒子 / 光斑泛滥
+ * ============================================================ */
+
+/* Focus visibility */
+:focus-visible { outline: 0; }
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+.tab:focus-visible,
+.ac-btn:focus-visible {
+  box-shadow: var(--elev-focus) !important;
+  border-color: var(--line-focus) !important;
+}
+
+/* View Transitions for theme switch */
+@supports (view-transition-name: root) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+  }
+  ::view-transition-old(root) { z-index: 1; }
+  ::view-transition-new(root) {
+    z-index: 2;
+    animation: ac-theme-reveal var(--dur-emphasis) var(--ease-emphasis) forwards;
+  }
+  [data-theme="dark"]::view-transition-old(root) { z-index: 2; }
+  [data-theme="dark"]::view-transition-new(root) { z-index: 1; }
+}
+@keyframes ac-theme-reveal {
+  from { clip-path: circle(0% at var(--theme-x, 100%) var(--theme-y, 0%)); }
+  to   { clip-path: circle(150% at var(--theme-x, 100%) var(--theme-y, 0%)); }
+}
+
+/* Live dot for log connection */
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sig-success);
+  position: relative;
+  flex-shrink: 0;
+}
+.live-dot::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1.5px solid var(--sig-success);
+  animation: liveRing 1.6s var(--ease-standard) infinite;
+}
+@keyframes liveRing {
+  0%   { transform: scale(0.5); opacity: 1; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+.live-dot--off { background: var(--ink-subtle); }
+.live-dot--off::after { border-color: var(--ink-subtle); animation: none; }
+
+/* Breath signature animation (rarely used) */
+@keyframes breath {
+  0%, 100% { opacity: 1; letter-spacing: var(--tracking-normal); }
+  40%      { opacity: 0.85; letter-spacing: 0.03em; }
+}
+.ac-breath { animation: breath 4.8s var(--ease-standard) infinite; }
+
+/* Aurora ring (login card signature) */
+.ac-aurora-ring {
+  position: relative;
+  background: var(--bg-leaf);
+  border-radius: inherit;
+  isolation: isolate;
+}
+.ac-aurora-ring::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  background: var(--aurora-text);
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0.45;
+  filter: blur(0.4px);
+}
+.ac-aurora-ring::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--bg-leaf);
+  border-radius: inherit;
+  z-index: -1;
+}
+
+/* Hairline gold accent (printed feel) */
+.ac-gold-hairline {
+  border-bottom: 1px solid var(--gold-hairline);
+}
+
+/* Misc */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

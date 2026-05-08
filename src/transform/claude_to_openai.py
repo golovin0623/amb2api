@@ -45,7 +45,24 @@ def convert_claude_request_to_openai(claude_request: Dict[str, Any]) -> Dict[str
     if tc is not None:
         openai_req["tool_choice"] = tc
 
+    # Prompt caching pass-through (Gateway-level fields).
+    for key in ("cache_control", "prompt_cache_retention", "prompt_cache_key"):
+        val = claude_request.get(key)
+        if val is not None:
+            openai_req[key] = val
+
     return openai_req
+
+
+def _last_block_cache_control(blocks: Any) -> Optional[Dict[str, Any]]:
+    """Return cache_control from the last block that declares it (Anthropic semantic)."""
+    if not isinstance(blocks, list):
+        return None
+    last = None
+    for block in blocks:
+        if isinstance(block, dict) and isinstance(block.get("cache_control"), dict):
+            last = block["cache_control"]
+    return last
 
 
 # ── Messages ──
@@ -58,9 +75,9 @@ def _convert_messages(
     result: List[Dict[str, Any]] = []
 
     # system prompt
-    sys_text = _extract_system_text(system)
-    if sys_text:
-        result.append({"role": "system", "content": sys_text})
+    sys_msg = _build_system_message(system)
+    if sys_msg is not None:
+        result.append(sys_msg)
 
     i = 0
     while i < len(messages):
@@ -82,20 +99,39 @@ def _convert_messages(
     return result
 
 
-def _extract_system_text(system: Any) -> str:
+def _build_system_message(system: Any) -> Optional[Dict[str, Any]]:
+    """Build a system message and lift cache_control from the last block if present."""
     if not system:
-        return ""
+        return None
     if isinstance(system, str):
-        return system.strip()
+        text = system.strip()
+        return {"role": "system", "content": text} if text else None
     if isinstance(system, list):
-        parts = []
+        parts: List[str] = []
         for block in system:
             if isinstance(block, dict) and block.get("type") == "text":
                 parts.append(block.get("text", ""))
             elif isinstance(block, str):
                 parts.append(block)
-        return "\n\n".join(parts).strip()
-    return str(system).strip()
+        text = "\n\n".join(parts).strip()
+        if not text:
+            return None
+        msg: Dict[str, Any] = {"role": "system", "content": text}
+        cache_control = _last_block_cache_control(system)
+        if cache_control is not None:
+            msg["cache_control"] = cache_control
+        return msg
+    text = str(system).strip()
+    return {"role": "system", "content": text} if text else None
+
+
+def _extract_system_text(system: Any) -> str:
+    """Compat shim — keep for any external callers."""
+    msg = _build_system_message(system)
+    if msg is None:
+        return ""
+    content = msg.get("content")
+    return content if isinstance(content, str) else ""
 
 
 def _convert_user_message(msg: Dict[str, Any]) -> Dict[str, Any]:
@@ -103,7 +139,11 @@ def _convert_user_message(msg: Dict[str, Any]) -> Dict[str, Any]:
     if content is None:
         return {"role": "user", "content": ""}
     if isinstance(content, str):
-        return {"role": "user", "content": content}
+        out = {"role": "user", "content": content}
+        cc = msg.get("cache_control")
+        if isinstance(cc, dict):
+            out["cache_control"] = cc
+        return out
 
     # multimodal content blocks
     parts: List[Dict[str, Any]] = []
@@ -120,8 +160,14 @@ def _convert_user_message(msg: Dict[str, Any]) -> Dict[str, Any]:
         # tool_result blocks in user messages are handled separately
 
     if len(parts) == 1 and parts[0].get("type") == "text":
-        return {"role": "user", "content": parts[0]["text"]}
-    return {"role": "user", "content": parts or ""}
+        out = {"role": "user", "content": parts[0]["text"]}
+    else:
+        out = {"role": "user", "content": parts or ""}
+
+    cache_control = msg.get("cache_control") or _last_block_cache_control(content)
+    if isinstance(cache_control, dict):
+        out["cache_control"] = cache_control
+    return out
 
 
 def _convert_assistant_message(msg: Dict[str, Any]) -> Dict[str, Any]:
@@ -129,7 +175,11 @@ def _convert_assistant_message(msg: Dict[str, Any]) -> Dict[str, Any]:
     if content is None:
         return {"role": "assistant", "content": None}
     if isinstance(content, str):
-        return {"role": "assistant", "content": content}
+        out = {"role": "assistant", "content": content}
+        cc = msg.get("cache_control")
+        if isinstance(cc, dict):
+            out["cache_control"] = cc
+        return out
 
     text_parts: List[str] = []
     tool_calls: List[Dict[str, Any]] = []
@@ -154,6 +204,10 @@ def _convert_assistant_message(msg: Dict[str, Any]) -> Dict[str, Any]:
     result["content"] = "".join(text_parts) if text_parts else None
     if tool_calls:
         result["tool_calls"] = tool_calls
+
+    cache_control = msg.get("cache_control") or _last_block_cache_control(content)
+    if isinstance(cache_control, dict):
+        result["cache_control"] = cache_control
     return result
 
 
@@ -177,11 +231,15 @@ def _convert_tool_results(msg: Dict[str, Any]) -> List[Dict[str, Any]]:
     for block in content:
         if not isinstance(block, dict) or block.get("type") != "tool_result":
             continue
-        results.append({
+        item = {
             "role": "tool",
             "tool_call_id": block.get("tool_use_id", ""),
             "content": _flatten_tool_result_content(block.get("content")),
-        })
+        }
+        cc = block.get("cache_control")
+        if isinstance(cc, dict):
+            item["cache_control"] = cc
+        results.append(item)
     return results
 
 

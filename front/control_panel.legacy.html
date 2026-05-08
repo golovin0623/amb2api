@@ -6431,26 +6431,6 @@
             }
         }
     </style>
-
-    <!-- ================ Aether Codex Refactor (2026-05) ================ -->
-    <!-- 新设计令牌与组件层在原 inline CSS 之后加载，
-         通过 cascade 顺序自然覆盖旧规则；
-         旧 .config-input / .modal / .btn 等 class 名继续工作。 -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
-    <link rel="stylesheet" href="/static/css/tokens.css">
-    <link rel="stylesheet" href="/static/css/base.css">
-    <link rel="stylesheet" href="/static/css/legacy-bridge.css">
-    <link rel="stylesheet" href="/static/css/components.css">
-    <link rel="stylesheet" href="/static/css/layout.css">
-    <link rel="stylesheet" href="/static/css/effects.css">
-    <link rel="stylesheet" href="/static/css/pages.css">
-    <!-- V2 AppShell · 仅在 body[data-shell="v2"] 时生效 -->
-    <link rel="stylesheet" href="/static/css/v2/shell.css">
-    <!-- V2 #ratelimitTab 深度精化（顶级 dashboard） -->
-    <link rel="stylesheet" href="/static/css/v2/ratelimit.css">
-    <!-- =================================================================== -->
 </head>
 
 <body>
@@ -6701,26 +6681,14 @@
                     <h3>API Key 速率限制监控</h3>
                     <p>实时监控每个 API Key 的速率限制状态和配额使用情况</p>
 
-                    <div class="v2-rl-toolbar">
-                        <button class="v2-rl-toolbar__btn" id="rateLimitRefreshBtn" onclick="loadRateLimits()" data-icon="refresh-cw">
-                            <span>刷新数据</span>
-                        </button>
-                        <label class="v2-rl-toolbar__auto">
+                    <div style="margin-bottom: 20px;">
+                        <button class="btn btn-sm" onclick="loadRateLimits()">刷新数据</button>
+                        <label style="display: inline-block; margin-left: 20px;">
                             <input type="checkbox" id="autoRefreshRateLimit" onchange="toggleAutoRefresh()" checked>
-                            <span>自动刷新（每 5s）</span>
+                            自动刷新（每5秒）
                         </label>
-                        <span class="v2-rl-countdown" id="rateLimitCountdown" aria-hidden="true">
-                            <svg class="v2-rl-countdown__ring" viewBox="0 0 14 14">
-                                <circle class="track" cx="7" cy="7" r="5.5"></circle>
-                                <circle class="fill" cx="7" cy="7" r="5.5"
-                                    stroke-dasharray="34.5575" stroke-dashoffset="0"
-                                    transform="rotate(-90 7 7)"></circle>
-                            </svg>
-                            <span id="rateLimitCountdownText">5s</span>
-                        </span>
                     </div>
 
-                    <div id="rateLimitKpi" class="v2-rl-kpi-row" hidden></div>
                     <div id="rateLimitStatus"></div>
 
                     <div id="rateLimitSection">
@@ -7460,15 +7428,7 @@
                             </div>
                             <div class="perf-stat-card">
                                 <div class="perf-stat-value" id="perfCachedTotal">0</div>
-                                <div class="perf-stat-label">缓存读取 Tokens</div>
-                            </div>
-                            <div class="perf-stat-card" title="Anthropic ephemeral_5m_input_tokens">
-                                <div class="perf-stat-value" id="perfCache5mTotal">0</div>
-                                <div class="perf-stat-label">缓存创建 5m</div>
-                            </div>
-                            <div class="perf-stat-card" title="Anthropic ephemeral_1h_input_tokens">
-                                <div class="perf-stat-value" id="perfCache1hTotal">0</div>
-                                <div class="perf-stat-label">缓存创建 1h</div>
+                                <div class="perf-stat-label">缓存 Tokens</div>
                             </div>
                             <div class="perf-stat-card">
                                 <div class="perf-stat-value" id="perfTotalTokens">0</div>
@@ -8324,12 +8284,8 @@
                 <div class="wf-metrics-grid" style="margin-top:8px;">
                     <div class="wf-metric-item"><div class="wf-label">输入 Tokens</div><div id="wfPromptTokens" class="wf-metric-val">0</div></div>
                     <div class="wf-metric-item"><div class="wf-label">输出 Tokens</div><div id="wfCompletionTokens" class="wf-metric-val">0</div></div>
-                    <div class="wf-metric-item"><div class="wf-label">缓存读取</div><div id="wfCachedTokens" class="wf-metric-val">0</div></div>
+                    <div class="wf-metric-item"><div class="wf-label">缓存 Tokens</div><div id="wfCachedTokens" class="wf-metric-val">0</div></div>
                     <div class="wf-metric-item"><div class="wf-label">总 Tokens</div><div id="wfTotalTokens" class="wf-metric-val">0</div></div>
-                </div>
-                <div class="wf-metrics-grid" style="margin-top:8px;">
-                    <div class="wf-metric-item" title="Anthropic ephemeral_5m_input_tokens"><div class="wf-label">缓存创建 5m</div><div id="wfCache5mTokens" class="wf-metric-val">0</div></div>
-                    <div class="wf-metric-item" title="Anthropic ephemeral_1h_input_tokens"><div class="wf-label">缓存创建 1h</div><div id="wfCache1hTokens" class="wf-metric-val">0</div></div>
                 </div>
             </div>
             <div class="modal-footer" style="justify-content: center;">
@@ -8950,9 +8906,6 @@
             }
             if (tabName === 'ratelimit') {
                 loadRateLimits();
-                // V2：默认 checkbox=checked 时自动启动 interval + 倒计时
-                const cb = document.getElementById('autoRefreshRateLimit');
-                if (cb && cb.checked && !rateLimitRefreshInterval) toggleAutoRefresh();
             }
             if (tabName === 'account') {
                 initAccountTab();
@@ -9354,12 +9307,10 @@
             const loadingEl = document.getElementById('rateLimitLoading');
             const listEl = document.getElementById('rateLimitList');
             const statusEl = document.getElementById('rateLimitStatus');
-            const refreshBtn = document.getElementById('rateLimitRefreshBtn');
 
-            const isFirstLoad = !listEl || listEl.children.length === 0;
-            if (loadingEl) loadingEl.style.display = isFirstLoad ? 'block' : 'none';
+            if (loadingEl) loadingEl.style.display = 'block';
+            if (listEl) listEl.innerHTML = '';
             if (statusEl) statusEl.innerHTML = '';
-            if (refreshBtn) refreshBtn.setAttribute('data-loading', 'true');
 
             try {
                 const response = await fetch('/rate-limits', {
@@ -9372,7 +9323,6 @@
 
                 const data = await response.json();
                 displayRateLimits(data.rate_limits || []);
-                resetRateLimitCountdown();
 
             } catch (error) {
                 console.error('加载速率限制失败:', error);
@@ -9381,230 +9331,95 @@
                 }
             } finally {
                 if (loadingEl) loadingEl.style.display = 'none';
-                if (refreshBtn) refreshBtn.removeAttribute('data-loading');
             }
-        }
-
-        // ─── 自动刷新倒计时（5s 环形 + 文字） ──────────────────────────
-        let rateLimitCountdownInterval = null;
-        let rateLimitCountdownRemain = 5;
-        const RATE_LIMIT_REFRESH_SEC = 5;
-        const RATE_LIMIT_RING_C = 2 * Math.PI * 5.5; // 圆周长 ≈ 34.56
-
-        function setCountdownVisual(sec) {
-            const text = document.getElementById('rateLimitCountdownText');
-            const ring = document.querySelector('#rateLimitCountdown .fill');
-            if (text) text.textContent = sec + 's';
-            if (ring) {
-                const pct = sec / RATE_LIMIT_REFRESH_SEC;
-                ring.setAttribute('stroke-dashoffset', (RATE_LIMIT_RING_C * (1 - pct)).toFixed(3));
-            }
-        }
-        function resetRateLimitCountdown() {
-            rateLimitCountdownRemain = RATE_LIMIT_REFRESH_SEC;
-            setCountdownVisual(rateLimitCountdownRemain);
-        }
-        function startRateLimitCountdown() {
-            stopRateLimitCountdown();
-            const cd = document.getElementById('rateLimitCountdown');
-            if (cd) cd.style.display = 'inline-flex';
-            resetRateLimitCountdown();
-            rateLimitCountdownInterval = setInterval(() => {
-                rateLimitCountdownRemain -= 1;
-                if (rateLimitCountdownRemain <= 0) rateLimitCountdownRemain = RATE_LIMIT_REFRESH_SEC;
-                setCountdownVisual(rateLimitCountdownRemain);
-            }, 1000);
-        }
-        function stopRateLimitCountdown() {
-            if (rateLimitCountdownInterval) {
-                clearInterval(rateLimitCountdownInterval);
-                rateLimitCountdownInterval = null;
-            }
-            const cd = document.getElementById('rateLimitCountdown');
-            if (cd) cd.style.display = 'none';
         }
 
         function displayRateLimits(rateLimits) {
             const listEl = document.getElementById('rateLimitList');
-            const kpiEl = document.getElementById('rateLimitKpi');
             if (!listEl) return;
 
-            if (!rateLimits || rateLimits.length === 0) {
-                if (kpiEl) { kpiEl.hidden = true; kpiEl.innerHTML = ''; }
-                listEl.innerHTML = '<div class="v2-rl-card v2-rl-card--idle"><div class="v2-rl-card__idle-text">暂无速率限制数据</div></div>';
+            if (rateLimits.length === 0) {
+                listEl.innerHTML = '<div class="usage-info">暂无速率限制数据</div>';
                 return;
             }
 
-            // —— 计算 KPI 与每个 key 的状态 ——
-            const enriched = rateLimits.map(k => {
-                const limit = Number(k.limit) || 0;
-                const used = Number(k.used) || 0;
-                const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
-                let state = 'idle';
-                if (limit > 0) {
-                    if (k.status === 'exhausted' || pct >= 99.5) state = 'exhausted';
-                    else if (pct >= 80) state = 'warn';
-                    else state = 'active';
-                }
-                return { ...k, _pct: pct, _state: state };
-            });
-
-            // KPI 行
-            if (kpiEl) {
-                const total = enriched.length;
-                const activeCnt = enriched.filter(k => k._state === 'active').length;
-                const warnCnt = enriched.filter(k => k._state === 'warn').length;
-                const exhaustedCnt = enriched.filter(k => k._state === 'exhausted').length;
-                const used = enriched.filter(k => k.limit > 0);
-                const avgPct = used.length ? (used.reduce((s, k) => s + k._pct, 0) / used.length) : 0;
-
-                kpiEl.hidden = false;
-                kpiEl.innerHTML = `
-                    <div class="v2-rl-kpi">
-                        <div class="v2-rl-kpi__label"><span>Total Keys</span></div>
-                        <div class="v2-rl-kpi__value">${total}</div>
-                        <div class="v2-rl-kpi__hint">已注册的 API Key</div>
-                    </div>
-                    <div class="v2-rl-kpi">
-                        <div class="v2-rl-kpi__label"><span>Active</span></div>
-                        <div class="v2-rl-kpi__value">${activeCnt}<span class="v2-rl-kpi__value-suffix"> / ${total}</span></div>
-                        <div class="v2-rl-kpi__hint">${warnCnt > 0 ? warnCnt + ' 即将耗尽' : '运行健康'}</div>
-                        <div class="v2-rl-kpi__sparkbar" style="width:${total ? (activeCnt / total * 100).toFixed(1) : 0}%"></div>
-                    </div>
-                    <div class="v2-rl-kpi">
-                        <div class="v2-rl-kpi__label"><span>Exhausted</span></div>
-                        <div class="v2-rl-kpi__value" style="color: ${exhaustedCnt > 0 ? 'var(--sig-danger)' : 'var(--ink-pure)'}">${exhaustedCnt}<span class="v2-rl-kpi__value-suffix"> / ${total}</span></div>
-                        <div class="v2-rl-kpi__hint">${exhaustedCnt > 0 ? '需要等待重置' : '无限流'}</div>
-                    </div>
-                    <div class="v2-rl-kpi">
-                        <div class="v2-rl-kpi__label"><span>Avg Usage</span></div>
-                        <div class="v2-rl-kpi__value">${avgPct.toFixed(1)}<span class="v2-rl-kpi__value-suffix">%</span></div>
-                        <div class="v2-rl-kpi__hint">${used.length} key 在使用</div>
-                        <div class="v2-rl-kpi__sparkbar" style="width:${avgPct.toFixed(1)}%"></div>
-                    </div>
-                `;
-            }
-
-            // 单 key 卡片
-            const RING_R = 22;
-            const RING_C = 2 * Math.PI * RING_R; // 138.23
-            const fmtKey = (s) => {
-                if (!s) return '';
-                if (s.length <= 14) return s;
-                return s.slice(0, 8) + '••••' + s.slice(-4);
-            };
-            const fmtTime = (ts) => ts > 0 ? new Date(ts * 1000).toLocaleString('zh-CN', {
-                month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
-            }) : '从未使用';
-            const fmtReset = (sec) => {
-                if (sec <= 0) return null;
-                if (sec < 60) return sec + 's';
-                const m = Math.floor(sec / 60), s = sec % 60;
-                return m + 'm' + (s ? ' ' + s + 's' : '');
-            };
-
             let html = '';
-            enriched.forEach(key => {
-                const idle = key._state === 'idle';
-                const ringOffset = (RING_C * (1 - key._pct / 100)).toFixed(2);
-                const resetTxt = fmtReset(key.reset_in_seconds);
-                const lastTxt = fmtTime(key.last_request_time);
 
-                if (idle) {
-                    html += `
-                        <article class="v2-rl-card v2-rl-card--idle" data-state="idle">
-                            <div class="v2-rl-card__head">
-                                <div class="v2-rl-ring">
-                                    <svg viewBox="0 0 50 50">
-                                        <circle class="track" cx="25" cy="25" r="${RING_R}"></circle>
-                                        <circle class="fill" cx="25" cy="25" r="${RING_R}"
-                                            stroke-dasharray="${RING_C.toFixed(2)}" stroke-dashoffset="${RING_C.toFixed(2)}"></circle>
-                                    </svg>
-                                    <div class="v2-rl-ring__label">
-                                        <span class="v2-rl-ring__pct">—</span>
-                                        <span class="v2-rl-ring__cap">idle</span>
-                                    </div>
-                                </div>
-                                <div class="v2-rl-card__id">
-                                    <span class="v2-rl-card__index">Key #${key.index}</span>
-                                    <span class="v2-rl-card__key" title="${key.key}">${fmtKey(key.key)}</span>
-                                </div>
-                                <span class="v2-rl-card__badge">未使用</span>
-                            </div>
-                            <div class="v2-rl-card__idle-text">该 Key 尚未发起请求 · 等待首次调用后展示用量</div>
-                        </article>
-                    `;
-                    return;
+            rateLimits.forEach(key => {
+                const usagePercent = key.limit > 0 ? (key.used / key.limit * 100) : 0;
+                const statusClass = key.status === 'active' ? 'status-active' :
+                    key.status === 'exhausted' ? 'status-exhausted' : 'status-unused';
+                const statusText = key.status === 'active' ? '🟢 可用' :
+                    key.status === 'exhausted' ? '🔴 已耗尽' : '⚪ 未使用';
+
+                let progressClass = 'progress-green';
+                if (usagePercent > 80) {
+                    progressClass = 'progress-red';
+                } else if (usagePercent > 50) {
+                    progressClass = 'progress-yellow';
                 }
 
-                const stateLabel = key._state === 'exhausted' ? '已耗尽'
-                    : key._state === 'warn' ? '即将耗尽' : '可用';
+                const resetText = key.reset_in_seconds > 0 ?
+                    `${key.reset_in_seconds}秒后重置` :
+                    (key.limit > 0 ? '已重置' : '未使用');
+
+                const lastRequestTime = key.last_request_time > 0 ?
+                    new Date(key.last_request_time * 1000).toLocaleString('zh-CN', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                    }) :
+                    '从未使用';
 
                 html += `
-                    <article class="v2-rl-card" data-state="${key._state}">
-                        <div class="v2-rl-card__head">
-                            <div class="v2-rl-ring">
-                                <svg viewBox="0 0 50 50">
-                                    <circle class="track" cx="25" cy="25" r="${RING_R}"></circle>
-                                    <circle class="fill" cx="25" cy="25" r="${RING_R}"
-                                        stroke-dasharray="${RING_C.toFixed(2)}" stroke-dashoffset="${ringOffset}"></circle>
-                                </svg>
-                                <div class="v2-rl-ring__label">
-                                    <span class="v2-rl-ring__pct">${key._pct.toFixed(0)}<span style="font-size:9px;opacity:0.7">%</span></span>
-                                    <span class="v2-rl-ring__cap">used</span>
+                    <div class="rate-limit-card">
+                        <div class="rate-limit-header">
+                            <div class="rate-limit-key">Key #${key.index}: ${key.key}</div>
+                            <div class="rate-limit-status ${statusClass}">${statusText}</div>
+                        </div>
+                        
+                        ${key.limit > 0 ? `
+                            <div class="rate-limit-info">
+                                <div class="rate-limit-info-item">
+                                    <div class="rate-limit-info-label">限额</div>
+                                    <div class="rate-limit-info-value">${key.limit} 次/分钟</div>
+                                </div>
+                                <div class="rate-limit-info-item">
+                                    <div class="rate-limit-info-label">已使用</div>
+                                    <div class="rate-limit-info-value">${key.used} 次</div>
+                                </div>
+                                <div class="rate-limit-info-item">
+                                    <div class="rate-limit-info-label">剩余</div>
+                                    <div class="rate-limit-info-value">${key.remaining} 次</div>
+                                </div>
+                                <div class="rate-limit-info-item">
+                                    <div class="rate-limit-info-label">最后请求</div>
+                                    <div class="rate-limit-info-value" style="font-size: 13px;">${lastRequestTime}</div>
                                 </div>
                             </div>
-                            <div class="v2-rl-card__id">
-                                <span class="v2-rl-card__index">Key #${key.index}</span>
-                                <span class="v2-rl-card__key" title="${key.key}">${fmtKey(key.key)}</span>
+                            
+                            <div class="rate-limit-progress">
+                                <div class="rate-limit-progress-bar ${progressClass}" 
+                                     style="width: ${usagePercent}%">
+                                    ${usagePercent >= 10 ? usagePercent.toFixed(1) + '%' : ''}
+                                </div>
+                                ${usagePercent < 10 ? `<div class="rate-limit-progress-text">${usagePercent.toFixed(1)}%</div>` : ''}
                             </div>
-                            <span class="v2-rl-card__badge">${stateLabel}</span>
-                        </div>
-
-                        <div class="v2-rl-card__metrics">
-                            <div class="v2-rl-metric">
-                                <span class="v2-rl-metric__label">Limit</span>
-                                <span class="v2-rl-metric__value">${key.limit}<span class="v2-rl-metric__cap">/min</span></span>
+                            
+                            <div class="rate-limit-reset">⏱️ ${resetText}</div>
+                        ` : `
+                            <div class="usage-info" style="text-align: center; padding: 20px; color: #999;">
+                                该 Key 尚未使用
                             </div>
-                            <div class="v2-rl-metric">
-                                <span class="v2-rl-metric__label">Used</span>
-                                <span class="v2-rl-metric__value">${key.used}</span>
-                            </div>
-                            <div class="v2-rl-metric">
-                                <span class="v2-rl-metric__label">Remaining</span>
-                                <span class="v2-rl-metric__value">${key.remaining}</span>
-                            </div>
-                        </div>
-
-                        <div class="v2-rl-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${key._pct.toFixed(0)}">
-                            <div class="v2-rl-bar__fill" style="width: ${key._pct.toFixed(2)}%"></div>
-                            <span class="v2-rl-bar__tick" style="left: 25%"></span>
-                            <span class="v2-rl-bar__tick" style="left: 50%"></span>
-                            <span class="v2-rl-bar__tick" style="left: 75%"></span>
-                        </div>
-
-                        <div class="v2-rl-card__foot">
-                            <span class="v2-rl-card__foot-item">
-                                <span data-icon="clock"></span>
-                                <span>Last <span class="v2-rl-mono">${lastTxt}</span></span>
-                            </span>
-                            <span class="v2-rl-card__foot-item">
-                                ${resetTxt ?
-                                    `<span data-icon="refresh-cw"></span><span>Resets in <span class="v2-rl-mono">${resetTxt}</span></span>` :
-                                    `<span data-icon="check"></span><span>已重置</span>`
-                                }
-                            </span>
-                        </div>
-                    </article>
+                        `}
+                    </div>
                 `;
             });
 
             listEl.innerHTML = html;
-
-            // 渲染 inline data-icon SVG
-            if (window.icons && typeof window.icons.render === 'function') {
-                window.icons.render(listEl);
-            }
         }
 
         function toggleAutoRefresh() {
@@ -9619,16 +9434,14 @@
                         if (tab && tab.classList.contains('active')) {
                             loadRateLimits();
                         }
-                    }, RATE_LIMIT_REFRESH_SEC * 1000);
+                    }, 5000); // 每5秒刷新
                 }
-                startRateLimitCountdown();
             } else {
                 // 停止自动刷新
                 if (rateLimitRefreshInterval) {
                     clearInterval(rateLimitRefreshInterval);
                     rateLimitRefreshInterval = null;
                 }
-                stopRateLimitCountdown();
             }
         }
 
@@ -13767,8 +13580,6 @@
                 document.getElementById('perfPromptTotal').textContent = Number(tokens.prompt_total || 0).toLocaleString();
                 document.getElementById('perfCompletionTotal').textContent = Number(tokens.completion_total || 0).toLocaleString();
                 document.getElementById('perfCachedTotal').textContent = Number(tokens.cached_total || 0).toLocaleString();
-                document.getElementById('perfCache5mTotal').textContent = Number(tokens.cache_creation_5m_total || 0).toLocaleString();
-                document.getElementById('perfCache1hTotal').textContent = Number(tokens.cache_creation_1h_total || 0).toLocaleString();
                 document.getElementById('perfTotalTokens').textContent = Number(tokens.total || 0).toLocaleString();
             } catch (e) {
                 console.error('加载性能统计失败:', e);
@@ -13915,8 +13726,6 @@
                 document.getElementById('wfPromptTokens').textContent = toToken('prompt_tokens').toLocaleString();
                 document.getElementById('wfCompletionTokens').textContent = toToken('completion_tokens').toLocaleString();
                 document.getElementById('wfCachedTokens').textContent = toToken('cached_tokens').toLocaleString();
-                document.getElementById('wfCache5mTokens').textContent = toToken('cache_creation_5m_tokens').toLocaleString();
-                document.getElementById('wfCache1hTokens').textContent = toToken('cache_creation_1h_tokens').toLocaleString();
                 document.getElementById('wfTotalTokens').textContent = toToken('total_tokens').toLocaleString();
 
                 // 渲染瀑布图
@@ -18768,17 +18577,6 @@
             startAccountAutoRefresh();
         }
     </script>
-
-    <!-- ================ Aether Codex Refactor JS Modules ================ -->
-    <!-- 必须在所有业务 JS 之后加载：boot.js 装饰旧 markup，
-         ui.js 包装 showStatus → toast。 -->
-    <script src="/static/js/icons.js"></script>
-    <script src="/static/js/ui.js"></script>
-    <script src="/static/js/theme.js"></script>
-    <script src="/static/js/boot.js"></script>
-    <!-- V2 AppShell：在 #mainSection 显示后注入 sidebar+appbar，并镜像旧 #mainTabs -->
-    <script src="/static/js/v2/shell.js"></script>
-    <!-- =================================================================== -->
 </body>
 
 </html>

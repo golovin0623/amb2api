@@ -1,0 +1,396 @@
+/* ============================================================
+ * AMB2API · V2 AppShell
+ *
+ * 仅作用于「已登录后」的内部控制台（body[data-shell="v2"]）。
+ * 登录页 (#loginSection) 不受影响。
+ *
+ * 桌面端 (>=1025px)：左侧 fixed Sidebar 264 / 72(折叠)；顶部 fixed AppBar 56；
+ *                    .fixed-header (旧 7-tab 顶栏) 隐藏，但 markup 保留以兼容业务 JS。
+ * 平板/移动 (<1025px)：Sidebar 隐藏，恢复旧 .fixed-header。
+ * ============================================================ */
+
+/* 标记位（boot-v2.js 在登录后给 body 添加；登出移除） */
+body[data-shell="v2"] {
+  --sidebar-w-current: var(--sidebar-w);
+}
+body[data-shell="v2"][data-sidebar="mini"] {
+  --sidebar-w-current: var(--sidebar-w-mini);
+}
+
+/* ============================================================
+ * Sidebar
+ * ============================================================ */
+.v2-sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--sidebar-w-current, var(--sidebar-w));
+  z-index: var(--z-fixed);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-leaf);
+  border-right: 1px solid var(--line-default);
+  transition: width var(--dur-fast) var(--ease-standard);
+  overflow: hidden;
+}
+[data-theme="dark"] .v2-sidebar {
+  background: var(--bg-overlay);
+}
+
+.v2-sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 0 var(--s-4);
+  height: var(--appbar-h);
+  border-bottom: 1px solid var(--line-default);
+  flex-shrink: 0;
+}
+.v2-sidebar__brand-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ink-pure);
+  color: var(--ink-inverse);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.04em;
+  flex-shrink: 0;
+}
+[data-theme="dark"] .v2-sidebar__brand-logo {
+  background: var(--ink-pure);
+  color: var(--ink-inverse);
+}
+.v2-sidebar__brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  opacity: 1;
+  transition: opacity var(--dur-instant) var(--ease-standard);
+}
+.v2-sidebar__brand-name {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  color: var(--ink-pure);
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+.v2-sidebar__brand-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-muted);
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+body[data-sidebar="mini"] .v2-sidebar__brand-text { opacity: 0; pointer-events: none; }
+
+.v2-sidebar__nav {
+  flex: 1;
+  padding: var(--s-3) var(--s-2);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+}
+.v2-sidebar__section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  color: var(--ink-muted);
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  padding: var(--s-3) var(--s-3) var(--s-2);
+  opacity: 1;
+  transition: opacity var(--dur-instant) var(--ease-standard);
+}
+body[data-sidebar="mini"] .v2-sidebar__section-label {
+  opacity: 0;
+  height: 8px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.v2-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 0 var(--s-3);
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-normal);
+  text-align: left;
+  border-radius: var(--r-2);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    color var(--dur-instant) var(--ease-standard);
+  width: 100%;
+  white-space: nowrap;
+}
+.v2-nav-item:hover {
+  background: var(--bg-overlay);
+  color: var(--ink-pure);
+}
+.v2-nav-item[data-active="true"] {
+  background: var(--ink-pure);
+  color: var(--ink-inverse);
+}
+[data-theme="dark"] .v2-nav-item[data-active="true"] {
+  background: var(--ink-pure);
+  color: var(--ink-inverse);
+}
+.v2-nav-item__icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+.v2-nav-item__icon svg {
+  width: 18px;
+  height: 18px;
+}
+.v2-nav-item__label {
+  flex: 1;
+  min-width: 0;
+  opacity: 1;
+  transition: opacity var(--dur-instant) var(--ease-standard);
+}
+.v2-nav-item__shortcut {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-muted);
+  letter-spacing: var(--tracking-wide);
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.v2-nav-item[data-active="true"] .v2-nav-item__shortcut {
+  color: var(--ink-inverse);
+  opacity: 0.55;
+}
+body[data-sidebar="mini"] .v2-nav-item__label,
+body[data-sidebar="mini"] .v2-nav-item__shortcut { opacity: 0; pointer-events: none; }
+body[data-sidebar="mini"] .v2-nav-item { padding: 0 var(--s-3); justify-content: center; }
+
+/* mini 态 hover popover label */
+body[data-sidebar="mini"] .v2-nav-item:hover::after {
+  content: attr(data-label);
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--ink-pure);
+  color: var(--ink-inverse);
+  padding: 4px 10px;
+  border-radius: var(--r-2);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-medium);
+  font-family: var(--font-sans);
+  white-space: nowrap;
+  z-index: var(--z-tooltip);
+  pointer-events: none;
+  box-shadow: var(--elev-2);
+}
+
+.v2-sidebar__footer {
+  padding: var(--s-3);
+  border-top: 1px solid var(--line-default);
+  flex-shrink: 0;
+}
+.v2-sidebar__collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line-default);
+  background: transparent;
+  border-radius: var(--r-2);
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: all var(--dur-instant) var(--ease-standard);
+}
+.v2-sidebar__collapse:hover {
+  border-color: var(--line-strong);
+  color: var(--ink-pure);
+  background: var(--bg-overlay);
+}
+.v2-sidebar__collapse svg {
+  width: 14px;
+  height: 14px;
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+body[data-sidebar="mini"] .v2-sidebar__collapse svg {
+  transform: rotate(180deg);
+}
+
+/* ============================================================
+ * AppBar
+ * ============================================================ */
+.v2-appbar {
+  position: fixed;
+  top: 0;
+  left: var(--sidebar-w-current, var(--sidebar-w));
+  right: 0;
+  height: var(--appbar-h);
+  z-index: calc(var(--z-fixed) - 1);
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: 0 var(--s-5);
+  background: oklch(0.998 0.002 85 / 0.85);
+  border-bottom: 1px solid var(--line-default);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  transition: left var(--dur-fast) var(--ease-standard);
+}
+[data-theme="dark"] .v2-appbar {
+  background: oklch(0.18 0.012 270 / 0.75);
+}
+
+.v2-appbar__crumb {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  flex: 1;
+  min-width: 0;
+}
+.v2-appbar__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  color: var(--ink-muted);
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+}
+.v2-appbar__sep {
+  color: var(--ink-subtle);
+  font-size: 12px;
+}
+.v2-appbar__title {
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--ink-pure);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-appbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.v2-appbar__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 var(--s-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-2);
+  color: var(--ink-muted);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  gap: var(--s-2);
+  transition: all var(--dur-instant) var(--ease-standard);
+}
+.v2-appbar__btn:hover {
+  background: var(--bg-overlay);
+  color: var(--ink-pure);
+  border-color: var(--line-default);
+}
+.v2-appbar__btn svg { width: 16px; height: 16px; }
+.v2-appbar__btn--icon { width: 32px; padding: 0; }
+
+.v2-appbar__cmdk {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: 32px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--line-default);
+  border-radius: var(--r-2);
+  background: var(--bg-overlay);
+  color: var(--ink-muted);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  transition: all var(--dur-instant) var(--ease-standard);
+}
+.v2-appbar__cmdk:hover {
+  border-color: var(--line-strong);
+  color: var(--ink-pure);
+}
+.v2-appbar__cmdk svg { width: 14px; height: 14px; }
+.v2-appbar__cmdk-text { color: inherit; }
+.v2-appbar__cmdk-kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  border: 1px solid var(--line-default);
+  border-radius: var(--r-1);
+  color: var(--ink-muted);
+  background: var(--bg-leaf);
+  letter-spacing: 0;
+}
+
+/* ============================================================
+ * 主内容偏移
+ *
+ * v2 模式下：旧 .fixed-header 隐藏；body 给 sidebar / appbar 留位置；
+ * #mainSection > .tab-content-wrapper 接管真正的滚动容器。
+ * ============================================================ */
+@media (min-width: 1025px) {
+  body[data-shell="v2"] {
+    padding-left: var(--sidebar-w-current, var(--sidebar-w));
+    padding-top: var(--appbar-h);
+    transition: padding-left var(--dur-fast) var(--ease-standard);
+  }
+  body[data-shell="v2"] > .container > #mainSection > .fixed-header {
+    display: none !important;
+  }
+  body[data-shell="v2"] > .container > #mainSection > .tab-content-wrapper {
+    padding: var(--s-6) var(--s-7) var(--s-7);
+    max-width: var(--content-max);
+    margin: 0 auto;
+  }
+}
+
+@media (max-width: 1024px) {
+  /* 平板/移动：sidebar / appbar 隐藏，恢复旧顶栏 */
+  body[data-shell="v2"] .v2-sidebar,
+  body[data-shell="v2"] .v2-appbar {
+    display: none !important;
+  }
+}
+
+/* 旧 .container 在 v2 模式下保持透明 / full width，让 sidebar+appbar 接管视觉 */
+body[data-shell="v2"] > .container {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  max-width: none !important;
+  width: 100% !important;
+}

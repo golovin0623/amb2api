@@ -22,6 +22,7 @@ class OpenAIChatMessage(BaseModel):
     name: Optional[str] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None
     tool_call_id: Optional[str] = None
+    cache_control: Optional[Dict[str, Any]] = None
 
 class OpenAIChatCompletionRequest(BaseModel):
     model: str
@@ -38,7 +39,11 @@ class OpenAIChatCompletionRequest(BaseModel):
     response_format: Optional[Dict[str, Any]] = None
     top_k: Optional[int] = Field(None, ge=1)
     enable_anti_truncation: Optional[bool] = False
-    
+    # AssemblyAI LLM Gateway prompt-caching pass-through fields.
+    cache_control: Optional[Dict[str, Any]] = None
+    prompt_cache_retention: Optional[str] = None
+    prompt_cache_key: Optional[str] = None
+
     class Config:
         extra = "allow"  # Allow additional fields not explicitly defined
 
