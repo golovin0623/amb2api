@@ -11,9 +11,28 @@ on:
       - main
   workflow_dispatch:
 
+# 并发控制策略 (仿 AetherBlog):
+#   - PR: 同一 ref 上的旧运行被取消, 节省 runner (反正会被新 push 覆盖)
+#   - push to main / tag v*: 每次给独立 group, 让 gitleaks / test /
+#     config-validate 等"检查类" job 在多次连续合并时完全并行 ——
+#     共享 group 会让后到的 push 整段排队
+#
+# deploy / build job 单独通过 job 级 `concurrency` 串行化, 见各 job 内部
+# 声明, 防止后部署的旧 commit 把更新的服务版本覆盖回去
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: >-
+    ${{
+      github.event_name == 'pull_request'
+        && format('{0}-pr-{1}', github.workflow, github.ref)
+        || format('{0}-push-{1}', github.workflow, github.run_id)
+    }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# 工作流级权限默认收敛为只读. 需要写权限的单独 job (如 trivy 上传 SARIF)
+# 必须在本地重新声明所需权限. 防止被篡改的 Action 偷偷利用 GITHUB_TOKEN
+# 默认的读写权限.
+permissions:
+  contents: read
 
 env:
   PYTHON_VERSION: "3.12"
@@ -21,6 +40,30 @@ env:
   DOCKER_REPOSITORY: amb2api
 
 jobs:
+  # ==========================================================================
+  # Gitleaks secret scanning: 阻止硬编码 secret / JWT / API key 进入 diff
+  # ==========================================================================
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # gitleaks 需要全历史扫描每次 diff
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        # 当前不阻断 —— 作为可见性信号, 等基线清理完后再切换为强阻断
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==========================================================================
+  # Python 测试套件
+  # ==========================================================================
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -36,6 +79,9 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
+        # CLAUDE.md 第 23 行说明: hypothesis 在 [dependency-groups].dev,
+        # 不在主依赖. 当前 Python 3.12 不支持 `pip install --group dev`
+        # (需 3.13+), 所以单独装 dev tools.
         run: |
           python -m pip install --upgrade pip wheel setuptools
           python -m pip install -e .
@@ -44,6 +90,9 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
+  # ==========================================================================
+  # Docker Compose 配置校验
+  # ==========================================================================
   config-validate:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -51,20 +100,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Validate Docker Compose
+      - name: Validate docker-compose.yml
         run: |
           docker compose -f docker-compose.yml config --quiet
-          echo "Docker compose config is valid"
+          echo "✅ Docker compose config is valid"
 
+  # ==========================================================================
+  # 条件性 Docker 镜像构建: 仅 push 到 main 或 v* tag, 且 Docker 凭证已配置
+  # ==========================================================================
   docker-build-push:
-    needs:
-      - test
-      - config-validate
+    needs: [test, config-validate]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    # 同 ref 的多次 push build 串行 —— 避免后完成的 build push :latest /
+    # :main 把先完成的覆盖回去 (导致 deploy 拉到错误版本).
+    concurrency:
+      group: build-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 40
     outputs:
       image_pushed: ${{ steps.docker-creds.outputs.enabled }}
+      short_sha: ${{ steps.prep.outputs.short_sha }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -82,6 +138,12 @@ jobs:
           else
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Set up QEMU
+        if: steps.docker-creds.outputs.enabled == 'true'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
 
       - name: Set up Docker Buildx
         if: steps.docker-creds.outputs.enabled == 'true'
@@ -118,6 +180,7 @@ jobs:
             printf "%s\n" "${tags[@]}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
 
           echo "Will push image tags:"
           printf '  %s\n' "${tags[@]}"
@@ -131,19 +194,67 @@ jobs:
           push: true
           tags: ${{ steps.prep.outputs.tags }}
           platforms: linux/amd64,linux/arm64
-          cache-from: type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}:buildcache
-          cache-to: type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}:buildcache,mode=max
+          # 双缓存策略 (仿 AetherBlog): GHA 缓存用于 CI 增量构建加速,
+          # registry 缓存用于持久备份, 跨 runner 也能命中.
+          cache-from: |
+            type=gha,scope=amb2api
+            type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}:buildcache
+          cache-to: |
+            type=gha,scope=amb2api,mode=max
+            type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}:buildcache,mode=max
 
+  # ==========================================================================
+  # Trivy 镜像 CVE 扫描: 仅 main 分支构建后执行
+  # ==========================================================================
+  trivy-scan:
+    needs: docker-build-push
+    if: |
+      always() && needs.docker-build-push.result == 'success' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.docker-build-push.outputs.image_pushed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write   # 可选: 写入 Security → Code scanning alerts
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Scan amb2api image
+        # v0.35.0 用 SHA 钉死 setup-trivy 不再受 tag 移动影响 (见 AetherBlog
+        # ci-cd.yml 同名 step 注释).
+        uses: aquasecurity/trivy-action@v0.35.0
+        continue-on-error: true
+        with:
+          image-ref: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}:sha-${{ needs.docker-build-push.outputs.short_sha }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'   # 先观测, 不阻断; 稳定后改为 1
+
+  # ==========================================================================
+  # 自动部署 (Webhook 触发): 优先 HMAC-SHA256 签名, 兼容 Bearer Token
+  # ==========================================================================
   deploy:
     needs: docker-build-push
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.docker-build-push.outputs.image_pushed == 'true'
+    if: |
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.docker-build-push.outputs.image_pushed == 'true'
+    # main 多次 push 的 deploy 排队执行, 按 commit 顺序滚动重启.
+    # 不能 cancel-in-progress: 跳过中间任意一次会让该 commit 的镜像永远
+    # 上不到服务器.
+    concurrency:
+      group: deploy-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Trigger deployment webhook
         env:
           DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
           DEPLOY_WEBHOOK_TOKEN: ${{ secrets.DEPLOY_WEBHOOK_TOKEN }}
+          IMAGE_REF: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}
+          IMAGE_TAG: sha-${{ needs.docker-build-push.outputs.short_sha }}
         run: |
           set -euo pipefail
 
@@ -152,19 +263,35 @@ jobs:
             exit 0
           fi
 
-          response_file=$(mktemp)
+          # 构造 JSON 报文 —— 签名必须基于请求体按字节一致计算
+          # (与 AetherBlog ops/webhook HMAC 验签流程兼容).
+          body=$(printf '{"image":"%s","tag":"%s","ref":"%s","sha":"%s"}' \
+            "$IMAGE_REF" "$IMAGE_TAG" "$GITHUB_REF" "$GITHUB_SHA")
+
           auth_args=()
-          if [ -n "${DEPLOY_WEBHOOK_TOKEN:-}" ]; then
-            auth_args=(-H "Authorization: Bearer ${DEPLOY_WEBHOOK_TOKEN}")
+          if [ -n "${DEPLOY_WEBHOOK_SECRET:-}" ]; then
+            # HMAC-SHA256 (推荐): 与 GitHub 风格 X-Hub-Signature-256 兼容.
+            sig=$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$DEPLOY_WEBHOOK_SECRET" -hex | awk '{print $NF}')
+            auth_args+=(-H "X-Hub-Signature-256: sha256=$sig")
+            echo "Using HMAC-SHA256 webhook signature"
+          elif [ -n "${DEPLOY_WEBHOOK_TOKEN:-}" ]; then
+            # Bearer Token (向后兼容现有部署 webhook).
+            auth_args+=(-H "Authorization: Bearer ${DEPLOY_WEBHOOK_TOKEN}")
+            echo "Using Bearer webhook token (legacy fallback)"
+          else
+            echo "Neither DEPLOY_WEBHOOK_SECRET nor DEPLOY_WEBHOOK_TOKEN configured —— sending unsigned request"
           fi
 
+          response_file=$(mktemp)
           http_code=$(curl -sS -X POST \
             --max-time 900 \
             --connect-timeout 10 \
             --retry 2 \
             --retry-delay 2 \
             --retry-connrefused \
+            -H "Content-Type: application/json" \
             "${auth_args[@]}" \
+            --data-raw "$body" \
             -o "$response_file" \
             -w "%{http_code}" \
             "$DEPLOY_WEBHOOK_URL")
@@ -174,8 +301,8 @@ jobs:
           cat "$response_file"
 
           if [ "$http_code" != "200" ]; then
-            echo "Deployment failed, webhook status: $http_code"
+            echo "❌ Deployment failed, webhook status: $http_code"
             exit 1
           fi
 
-          echo "Deployment completed successfully"
+          echo "✅ Deployment completed successfully"

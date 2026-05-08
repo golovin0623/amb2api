@@ -572,6 +572,10 @@ def assembly_response_to_openai(
         if isinstance(cache_creation, dict) and cache_creation:
             prompt_tokens_details["cache_creation"] = cache_creation
         usage["prompt_tokens_details"] = prompt_tokens_details
+        # 透传 GPT-5 / o-series 推理 token 计数 (completion_tokens_details.reasoning_tokens 等)
+        completion_details_raw = usage_raw.get("completion_tokens_details")
+        if isinstance(completion_details_raw, dict) and completion_details_raw:
+            usage["completion_tokens_details"] = completion_details_raw
     else:
         usage = None
 

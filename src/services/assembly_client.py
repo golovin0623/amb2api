@@ -1480,6 +1480,7 @@ async def send_assembly_request(
     # 透传常用参数
     for key in [
         "max_tokens",
+        "max_completion_tokens",
         "stop",
         "seed",
         "response_format",
@@ -1489,6 +1490,12 @@ async def send_assembly_request(
         "cache_control",
         "prompt_cache_retention",
         "prompt_cache_key",
+        # OpenAI 标准字段
+        "stream_options",
+        "parallel_tool_calls",
+        # GPT-5 系列推理 / 输出长度控制
+        "reasoning_effort",
+        "verbosity",
     ]:
         val = getattr(openai_request, key, None)
         if val is not None:
