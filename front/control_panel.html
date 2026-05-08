@@ -2239,35 +2239,31 @@
             margin-bottom: 15px;
         }
 
-        /* 头部标题行 - 三栏布局实现居中 */
+        /* 头部标题行 - 三栏 grid 布局让标题真正居中，两侧自然对称 */
         .header-title-row {
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
             align-items: center;
-            justify-content: space-between;
+            gap: 12px;
             margin-bottom: 15px;
-        }
-
-        .header-spacer {
-            width: 50px;
-            flex-shrink: 0;
         }
 
         .header-title-row h1 {
             margin: 0;
             text-align: center;
-            flex: 1;
+            white-space: nowrap;
         }
 
-        /* 退出按钮样式 */
+        /* 退出按钮样式 - 自然宽度，胶囊形状 */
         .logout-btn {
-            width: 50px;
-            flex-shrink: 0;
+            justify-self: end;
+            width: auto !important;
             background: #6c757d !important;
             font-size: 12px !important;
-            padding: 6px 12px !important;
-            border-radius: 6px !important;
+            padding: 6px 14px !important;
+            border-radius: 999px !important;
             white-space: nowrap;
-            text-align: center;
+            line-height: 1.2;
         }
 
         .logout-btn:hover {
@@ -2291,17 +2287,13 @@
             }
 
             .header-title-row {
+                gap: 10px;
                 margin-bottom: 12px;
             }
 
-            .header-spacer,
             .logout-btn {
-                width: 45px;
-            }
-
-            .logout-btn {
-                font-size: 11px !important;
-                padding: 5px 8px !important;
+                font-size: 12px !important;
+                padding: 5px 12px !important;
             }
         }
 
@@ -2322,6 +2314,7 @@
             }
 
             .header-title-row {
+                gap: 8px;
                 margin-bottom: 10px;
             }
 
@@ -2329,15 +2322,9 @@
                 font-size: 1.1em;
             }
 
-            .header-spacer,
             .logout-btn {
-                width: 40px;
-            }
-
-            .logout-btn {
-                font-size: 10px !important;
-                padding: 4px 6px !important;
-                border-radius: 4px !important;
+                font-size: 11px !important;
+                padding: 4px 10px !important;
             }
         }
 
@@ -2389,8 +2376,8 @@
             overflow-x: auto;
             overflow-y: hidden;
             -webkit-overflow-scrolling: touch;
-            scrollbar-width: thin;
-            scrollbar-color: var(--border-color) transparent;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
             position: relative;
             background: #f0f0f0;
             border-radius: 12px;
@@ -2424,22 +2411,9 @@
             }
         }
 
-        /* 标签页滚动条样式 */
+        /* 隐藏标签页滚动条 - 保留滚动能力但视觉上更干净 */
         .tabs::-webkit-scrollbar {
-            height: 4px;
-        }
-
-        .tabs::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        .tabs::-webkit-scrollbar-thumb {
-            background: var(--border-color);
-            border-radius: 2px;
-        }
-
-        .tabs::-webkit-scrollbar-thumb:hover {
-            background: var(--text-secondary);
+            display: none;
         }
 
         .tab {
