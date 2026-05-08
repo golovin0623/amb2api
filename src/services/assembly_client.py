@@ -153,10 +153,17 @@ def _sanitize_messages(messages) -> list:
             return {}
         return {"value": raw_args}
     
+    def _attr_or_key(m, key):
+        if hasattr(m, key):
+            return getattr(m, key, None)
+        if isinstance(m, dict):
+            return m.get(key)
+        return None
+
     for m in messages:
         role = getattr(m, "role", None) or (m.get("role") if isinstance(m, dict) else "user")
         content = getattr(m, "content", None) if hasattr(m, "content") else (m.get("content") if isinstance(m, dict) else None)
-        
+
         # 处理多模态内容
         if isinstance(content, list):
             parts_text = []
@@ -164,21 +171,24 @@ def _sanitize_messages(messages) -> list:
                 if isinstance(part, dict) and part.get("type") == "text" and part.get("text"):
                     parts_text.append(part["text"])
             content = "\n".join(parts_text) if parts_text else ""
-        
+
         # 确保 content 是字符串
         if content is None:
             content = ""
-        
+
         # 获取 reasoning_content 和 thought_signature（Gemini thinking模型需要）
-        reasoning_content = getattr(m, "reasoning_content", None) if hasattr(m, "reasoning_content") else (m.get("reasoning_content") if isinstance(m, dict) else None)
-        thought_signature = getattr(m, "thought_signature", None) if hasattr(m, "thought_signature") else (m.get("thought_signature") if isinstance(m, dict) else None)
-        
+        reasoning_content = _attr_or_key(m, "reasoning_content")
+        thought_signature = _attr_or_key(m, "thought_signature")
+        cache_control = _attr_or_key(m, "cache_control")
+        if not isinstance(cache_control, dict):
+            cache_control = None
+
         # 获取 tool_calls（如果存在）
-        tool_calls = getattr(m, "tool_calls", None) if hasattr(m, "tool_calls") else (m.get("tool_calls") if isinstance(m, dict) else None)
-        
+        tool_calls = _attr_or_key(m, "tool_calls")
+
         # 获取 tool_call_id（对于 tool 角色的消息）
-        tool_call_id = getattr(m, "tool_call_id", None) if hasattr(m, "tool_call_id") else (m.get("tool_call_id") if isinstance(m, dict) else None)
-        
+        tool_call_id = _attr_or_key(m, "tool_call_id")
+
         # 情况1: assistant 消息带有 tool_calls -> 转换为 function_call 格式
         if role == "assistant" and tool_calls:
             # 先添加 assistant 的文本内容（如果有，或者有 reasoning_content/thought_signature）
@@ -188,6 +198,8 @@ def _sanitize_messages(messages) -> list:
                     assistant_msg["reasoning_content"] = reasoning_content
                 if thought_signature:
                     assistant_msg["thought_signature"] = thought_signature
+                if cache_control is not None:
+                    assistant_msg["cache_control"] = cache_control
                 sanitized.append(assistant_msg)
             
             # 将每个 tool_call 转换为 function_call 格式
@@ -283,9 +295,11 @@ def _sanitize_messages(messages) -> list:
                     }
                 ],
             }
+            if cache_control is not None:
+                function_output_msg["cache_control"] = cache_control
             sanitized.append(function_output_msg)
             log.debug(f"Converted tool message to function_call_output: {func_name} (id={tool_call_id})")
-        
+
         # 情况3: 普通消息（user、assistant、system）
         else:
             message = {"role": role, "content": content}
@@ -294,6 +308,8 @@ def _sanitize_messages(messages) -> list:
                 message["reasoning_content"] = reasoning_content
             if thought_signature:
                 message["thought_signature"] = thought_signature
+            if cache_control is not None:
+                message["cache_control"] = cache_control
             sanitized.append(message)
     
     return sanitized
@@ -1464,11 +1480,22 @@ async def send_assembly_request(
     # 透传常用参数
     for key in [
         "max_tokens",
+        "max_completion_tokens",
         "stop",
         "seed",
         "response_format",
         "tools",
         "tool_choice",
+        # AssemblyAI Gateway prompt-caching pass-through
+        "cache_control",
+        "prompt_cache_retention",
+        "prompt_cache_key",
+        # OpenAI 标准字段
+        "stream_options",
+        "parallel_tool_calls",
+        # GPT-5 系列推理 / 输出长度控制
+        "reasoning_effort",
+        "verbosity",
     ]:
         val = getattr(openai_request, key, None)
         if val is not None:

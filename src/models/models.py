@@ -22,6 +22,7 @@ class OpenAIChatMessage(BaseModel):
     name: Optional[str] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None
     tool_call_id: Optional[str] = None
+    cache_control: Optional[Dict[str, Any]] = None
 
 class OpenAIChatCompletionRequest(BaseModel):
     model: str
@@ -30,6 +31,8 @@ class OpenAIChatCompletionRequest(BaseModel):
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
     top_p: Optional[float] = Field(None, ge=0.0, le=1.0)
     max_tokens: Optional[int] = Field(None, ge=1)
+    # GPT-5 / o-series 正式字段，逐步替代 max_tokens
+    max_completion_tokens: Optional[int] = Field(None, ge=1)
     stop: Optional[Union[str, List[str]]] = None
     frequency_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
     presence_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0)
@@ -38,7 +41,19 @@ class OpenAIChatCompletionRequest(BaseModel):
     response_format: Optional[Dict[str, Any]] = None
     top_k: Optional[int] = Field(None, ge=1)
     enable_anti_truncation: Optional[bool] = False
-    
+    # AssemblyAI LLM Gateway prompt-caching pass-through fields.
+    cache_control: Optional[Dict[str, Any]] = None
+    prompt_cache_retention: Optional[str] = None
+    prompt_cache_key: Optional[str] = None
+    # OpenAI 标准字段 - 流式末尾 usage chunk
+    stream_options: Optional[Dict[str, Any]] = None
+    # OpenAI 标准字段 - 控制是否允许并行 tool_calls
+    parallel_tool_calls: Optional[bool] = None
+    # GPT-5 系列 - 控制思考深度（"low" / "medium" / "high"）
+    reasoning_effort: Optional[str] = None
+    # GPT-5 系列 - 控制输出长度（"low" / "medium" / "high"）
+    verbosity: Optional[str] = None
+
     class Config:
         extra = "allow"  # Allow additional fields not explicitly defined
 

@@ -16,16 +16,23 @@ class TestStreamingConfig:
     """测试流式模式配置"""
     
     @pytest.mark.asyncio
-    async def test_default_value_is_false(self):
-        """测试默认值为 False（使用假流式）"""
-        # 清除环境变量
+    async def test_default_value_is_true(self):
+        """默认值为 True：原生流式已稳定"""
         with patch.dict(os.environ, {}, clear=True):
-            # Mock storage adapter 返回 None
+            with patch('config.get_config_value', new_callable=AsyncMock) as mock_config:
+                mock_config.return_value = True
+                result = await get_enable_real_streaming()
+                assert result is True
+
+    @pytest.mark.asyncio
+    async def test_explicit_disable_via_storage(self):
+        """显式在配置存储里写 False 时，仍然可以回退到假流式"""
+        with patch.dict(os.environ, {}, clear=True):
             with patch('config.get_config_value', new_callable=AsyncMock) as mock_config:
                 mock_config.return_value = False
                 result = await get_enable_real_streaming()
                 assert result is False
-    
+
     @pytest.mark.asyncio
     async def test_env_var_true(self):
         """测试环境变量设置为 true"""
@@ -34,11 +41,12 @@ class TestStreamingConfig:
             with patch.dict(os.environ, {"ENABLE_REAL_STREAMING": value}):
                 result = await get_enable_real_streaming()
                 assert result is True, f"Failed for value: {value}"
-    
+
     @pytest.mark.asyncio
     async def test_env_var_false(self):
-        """测试环境变量设置为 false"""
-        test_cases = ["false", "False", "FALSE", "0", "no", "NO", "off", "OFF", ""]
+        """测试环境变量显式设置为 false 时强制假流式"""
+        # 注意：空字符串不再视为关闭；它会落到 storage/默认值（默认 True）
+        test_cases = ["false", "False", "FALSE", "0", "no", "NO", "off", "OFF"]
         for value in test_cases:
             with patch.dict(os.environ, {"ENABLE_REAL_STREAMING": value}):
                 result = await get_enable_real_streaming()

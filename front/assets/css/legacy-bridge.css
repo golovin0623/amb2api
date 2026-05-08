@@ -1,0 +1,975 @@
+/* ============================================================
+ * AMB2API · Legacy Reset Overlay
+ *
+ * 此文件的目的：把 control_panel.html 中 6432 行 inline CSS 的
+ *               "视觉决定"全部中和掉，但保留它们的"结构决定"。
+ *
+ * 视觉决定（要中和）：颜色、背景、阴影、边框、字号、字体、圆角、字距
+ * 结构决定（要保留）：display、flex/grid 容器、position、padding/margin（部分）
+ *
+ * 策略：用 html body 前缀 + !important 击败旧规则。
+ * ============================================================ */
+
+/* ============================================================
+ * 1. 通用文字 / 颜色统一
+ * ============================================================ */
+html body,
+html body * {
+  font-family: var(--font-sans);
+  letter-spacing: var(--tracking-normal);
+}
+html body code,
+html body kbd,
+html body pre,
+html body samp,
+html body .text-mono,
+html body [style*="monospace"],
+html body [style*="Courier"],
+html body [style*="SF Mono"],
+html body [style*="Monaco"] {
+  font-family: var(--font-mono) !important;
+}
+
+/* ============================================================
+ * 2. 旧 .container - 不再做卡片
+ * ============================================================ */
+html body > .container {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  max-width: none !important;
+  width: 100% !important;
+  position: relative !important;
+  z-index: auto !important;
+}
+html body > .container.login-mode {
+  padding: 0 !important;
+}
+
+/* ============================================================
+ * 3. 旧 .btn / .btn-sm / .btn-outline-* 全面重置
+ *    （内 inline style 颜色由后续选择器细化）
+ * ============================================================ */
+html body .btn,
+html body .btn-sm,
+html body button.btn,
+html body button.btn-sm {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  height: 36px;
+  padding: 0 var(--s-4) !important;
+  font-family: var(--font-sans) !important;
+  font-size: var(--fs-caption) !important;
+  font-weight: var(--fw-medium) !important;
+  line-height: 1 !important;
+  letter-spacing: var(--tracking-normal) !important;
+  background: var(--ink-pure) !important;
+  color: var(--ink-inverse) !important;
+  border: 1px solid var(--ink-pure) !important;
+  border-radius: var(--r-2) !important;
+  box-shadow: none !important;
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    color var(--dur-instant) var(--ease-standard),
+    border-color var(--dur-instant) var(--ease-standard),
+    transform var(--dur-instant) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+  white-space: nowrap;
+}
+html body .btn-sm {
+  height: 28px !important;
+  padding: 0 var(--s-3) !important;
+  font-size: var(--fs-micro) !important;
+}
+html body .btn:hover,
+html body .btn-sm:hover {
+  background: oklch(0.30 0.012 270) !important;
+  border-color: oklch(0.30 0.012 270) !important;
+  color: var(--ink-inverse) !important;
+}
+html body .btn:active,
+html body .btn-sm:active { transform: translateY(0.5px); }
+html body .btn:disabled,
+html body .btn-sm:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+}
+[data-theme="dark"] html body .btn,
+[data-theme="dark"] html body .btn-sm {
+  background: var(--ink-pure) !important;
+  color: var(--ink-inverse) !important;
+  border-color: var(--ink-hairline) !important;
+}
+[data-theme="dark"] html body .btn:hover,
+[data-theme="dark"] html body .btn-sm:hover {
+  background: oklch(0.85 0.005 270) !important;
+  color: oklch(0.10 0.005 270) !important;
+}
+
+/* outline 系列 */
+html body .btn-outline-primary,
+html body .btn-outline-secondary,
+html body .btn-outline-danger,
+html body .btn-outline-warning,
+html body .btn-outline-info,
+html body .btn-outline-success {
+  display: inline-flex !important;
+  align-items: center;
+  gap: var(--s-1);
+  height: 28px;
+  padding: 0 var(--s-3) !important;
+  font-family: var(--font-sans) !important;
+  font-size: var(--fs-micro) !important;
+  font-weight: var(--fw-medium) !important;
+  background: var(--bg-leaf) !important;
+  color: var(--ink-secondary) !important;
+  border: 1px solid var(--line-default) !important;
+  border-radius: var(--r-2) !important;
+  cursor: pointer;
+  box-shadow: none !important;
+  white-space: nowrap;
+  transition: all var(--dur-instant) var(--ease-standard);
+}
+html body .btn-outline-primary { color: var(--aurora-1) !important; border-color: var(--line-aurora) !important; }
+html body .btn-outline-primary:hover { background: oklch(0.62 0.180 268 / 0.08) !important; }
+html body .btn-outline-danger { color: var(--sig-danger) !important; border-color: oklch(0.58 0.215 25 / 0.30) !important; }
+html body .btn-outline-danger:hover { background: var(--sig-danger-soft) !important; }
+html body .btn-outline-warning { color: var(--sig-warning) !important; border-color: oklch(0.72 0.155 70 / 0.30) !important; }
+html body .btn-outline-warning:hover { background: var(--sig-warning-soft) !important; }
+html body .btn-outline-info { color: var(--sig-info) !important; border-color: oklch(0.62 0.150 240 / 0.30) !important; }
+html body .btn-outline-info:hover { background: var(--sig-info-soft) !important; }
+html body .btn-outline-success { color: var(--sig-success) !important; border-color: oklch(0.62 0.165 145 / 0.30) !important; }
+html body .btn-outline-success:hover { background: var(--sig-success-soft) !important; }
+html body .btn-outline-secondary:hover { background: var(--bg-overlay) !important; color: var(--ink-primary) !important; }
+
+/* 旧 inline style 颜色覆盖 */
+html body .btn[style*="4285f4"],
+html body .btn-sm[style*="4285f4"] {
+  background: var(--aurora-1) !important;
+  border-color: var(--aurora-1) !important;
+  color: white !important;
+}
+html body .btn[style*="dc3545"],
+html body .btn-sm[style*="dc3545"] {
+  background: var(--sig-danger) !important;
+  border-color: var(--sig-danger) !important;
+  color: white !important;
+}
+html body .btn[style*="28a745"],
+html body .btn-sm[style*="28a745"] {
+  background: var(--sig-success) !important;
+  border-color: var(--sig-success) !important;
+  color: white !important;
+}
+html body .btn[style*="6c757d"],
+html body .btn-sm[style*="6c757d"] {
+  background: var(--bg-leaf) !important;
+  border-color: var(--line-default) !important;
+  color: var(--ink-secondary) !important;
+}
+html body .btn[style*="ffc107"],
+html body .btn-sm[style*="ffc107"] {
+  background: var(--sig-warning) !important;
+  border-color: var(--sig-warning) !important;
+  color: white !important;
+}
+html body .btn[style*="17a2b8"],
+html body .btn-sm[style*="17a2b8"] {
+  background: var(--sig-info) !important;
+  border-color: var(--sig-info) !important;
+  color: white !important;
+}
+
+/* ============================================================
+ * 4. 旧标题 / 强调中文文字 - 保留默认字体（display 字体仅用于真正标题）
+ * ============================================================ */
+html body h1, html body h2, html body h3,
+html body h4, html body h5, html body h6 {
+  font-family: var(--font-display);
+  letter-spacing: var(--tracking-tight);
+  color: var(--ink-pure);
+  font-weight: var(--fw-medium);
+}
+html body h3, html body h4, html body h5, html body h6 {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-semibold);
+}
+
+/* ============================================================
+ * 5. 旧 input / textarea / select 全面重置
+ * ============================================================ */
+html body input[type="text"],
+html body input[type="number"],
+html body input[type="password"],
+html body input[type="email"],
+html body input[type="search"],
+html body textarea,
+html body select,
+html body .config-input,
+html body .filter-select,
+html body .page-size-select {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  min-width: 0;
+  height: 36px;
+  padding: 0 var(--s-3) !important;
+  background: var(--bg-leaf) !important;
+  color: var(--ink-primary) !important;
+  font-family: var(--font-sans) !important;
+  font-size: var(--fs-caption) !important;
+  font-weight: var(--fw-regular) !important;
+  border: 1px solid var(--line-default) !important;
+  border-radius: var(--r-3) !important;
+  box-shadow: none !important;
+  outline: 0 !important;
+  transition: border-color var(--dur-instant) var(--ease-standard),
+              box-shadow var(--dur-instant) var(--ease-standard);
+}
+html body textarea,
+html body textarea.config-input {
+  height: auto !important;
+  min-height: 96px;
+  padding: var(--s-2) var(--s-3) !important;
+  line-height: var(--lh-normal) !important;
+  resize: vertical;
+}
+html body input:focus,
+html body textarea:focus,
+html body select:focus,
+html body .config-input:focus,
+html body .filter-select:focus {
+  border-color: var(--line-focus) !important;
+  box-shadow: var(--elev-focus) !important;
+}
+html body input::placeholder,
+html body textarea::placeholder { color: var(--ink-muted) !important; opacity: 1; }
+
+/* select 原生箭头略 */
+html body select,
+html body .config-input[tag="select"] {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M1 1l4 4 4-4' stroke='%237a7468' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>") !important;
+  background-position: right var(--s-3) center !important;
+  background-repeat: no-repeat !important;
+  background-size: 10px 6px !important;
+  padding-right: var(--s-7) !important;
+  cursor: pointer;
+}
+[data-theme="dark"] html body select,
+[data-theme="dark"] html body .config-input[tag="select"] {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M1 1l4 4 4-4' stroke='%23cbd5e1' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>") !important;
+}
+
+/* ============================================================
+ * 6. 旧 .config-group - 改为编辑体卡片
+ * ============================================================ */
+html body .config-group {
+  background: var(--bg-leaf) !important;
+  border: 1px solid var(--line-default) !important;
+  border-radius: var(--r-4) !important;
+  padding: var(--s-5) !important;
+  margin-bottom: var(--s-5) !important;
+  box-shadow: var(--elev-1) !important;
+  position: relative;
+}
+html body .config-group h4 {
+  margin: 0 0 var(--s-4) !important;
+  padding-bottom: var(--s-3) !important;
+  font-family: var(--font-display) !important;
+  font-size: var(--fs-h4) !important;
+  font-weight: var(--fw-regular) !important;
+  letter-spacing: var(--tracking-tight);
+  color: var(--ink-pure) !important;
+  border-bottom: 1px solid var(--line-default) !important;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+}
+html body .config-group h4::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 0.85em;
+  background: var(--ink-pure);
+  border-radius: 1px;
+  margin-right: var(--s-2);
+  align-self: center;
+}
+html body .config-note {
+  color: var(--ink-muted) !important;
+  font-size: var(--fs-micro) !important;
+  font-family: var(--font-editorial);
+  font-style: italic;
+}
+html body .config-note a { color: var(--aurora-1) !important; font-style: normal; }
+
+/* 警告色 inline 卡片中和（优先级配置） */
+html body .config-group[style*="fff9e6"],
+html body .config-group[style*="ffc107"] {
+  background: oklch(0.72 0.155 70 / 0.08) !important;
+  border: 1px solid oklch(0.72 0.155 70 / 0.30) !important;
+}
+html body .config-group[style*="fff9e6"] h4,
+html body .config-group[style*="fff9e6"] span,
+html body .config-group[style*="fff9e6"] small.config-note { color: var(--sig-warning) !important; }
+
+/* ============================================================
+ * 7. 旧 .modal - editorial 玻璃态遮罩
+ * ============================================================ */
+html body .modal {
+  position: fixed !important;
+  inset: 0 !important;
+  background: var(--modal-overlay) !important;
+  backdrop-filter: blur(20px) saturate(120%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(120%) !important;
+  display: none !important;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-5);
+  z-index: var(--z-modal) !important;
+  animation: modalFadeIn var(--dur-enter) var(--ease-enter);
+}
+html body .modal.show,
+html body .modal.active,
+html body .modal[open],
+html body .modal[style*="display: flex"],
+html body .modal[style*="display:flex"] { display: flex !important; }
+html body .modal-content {
+  background: var(--bg-leaf) !important;
+  color: var(--ink-primary) !important;
+  border: 1px solid var(--line-default) !important;
+  border-radius: var(--r-5) !important;
+  box-shadow: var(--elev-4) !important;
+  max-width: 920px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: modalIn var(--dur-enter) var(--ease-enter);
+}
+@keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+html body .modal-header,
+html body .modal-footer {
+  padding: var(--s-4) var(--s-5);
+  border-bottom: 1px solid var(--line-default);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  background: var(--bg-leaf);
+  flex-shrink: 0;
+}
+html body .modal-footer { border-bottom: 0; border-top: 1px solid var(--line-default); }
+html body .modal-body { padding: var(--s-5); overflow-y: auto; }
+html body .modal-title {
+  margin: 0 !important;
+  font-family: var(--font-display) !important;
+  font-size: var(--fs-h4) !important;
+  font-weight: var(--fw-medium) !important;
+  letter-spacing: var(--tracking-tight);
+  color: var(--ink-pure) !important;
+}
+html body .modal-close {
+  width: 32px; height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-2) !important;
+  font-size: 0 !important;
+  color: var(--ink-muted) !important;
+  background: transparent !important;
+  border: 0 !important;
+  cursor: pointer;
+}
+html body .modal-close:hover { background: var(--bg-overlay) !important; color: var(--ink-primary) !important; }
+
+/* ============================================================
+ * 8. 旧 .table - 编辑体表格
+ * ============================================================ */
+html body .table {
+  width: 100% !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  font-size: var(--fs-caption) !important;
+  font-family: var(--font-sans) !important;
+}
+html body .table thead th {
+  text-align: left;
+  padding: var(--s-3) var(--s-3) !important;
+  font-family: var(--font-sans) !important;
+  font-size: var(--fs-micro) !important;
+  font-weight: var(--fw-medium) !important;
+  letter-spacing: var(--tracking-wider) !important;
+  text-transform: uppercase;
+  color: var(--ink-muted) !important;
+  background: var(--bg-overlay) !important;
+  border-bottom: 1px solid var(--line-default) !important;
+  border-top: 1px solid var(--line-default);
+}
+html body .table tbody td {
+  padding: var(--s-3) var(--s-3) !important;
+  border-bottom: 1px solid var(--line-soft) !important;
+  color: var(--ink-secondary) !important;
+  background: var(--bg-leaf);
+  vertical-align: middle;
+}
+html body .table tbody tr:hover td { background: var(--bg-overlay) !important; }
+html body .table tbody tr:last-child td { border-bottom: 0 !important; }
+
+/* ============================================================
+ * 9. 旧 .pagination-btn
+ * ============================================================ */
+html body .pagination-btn {
+  width: 32px !important;
+  height: 32px !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-leaf) !important;
+  color: var(--ink-secondary) !important;
+  border: 1px solid var(--line-default) !important;
+  border-radius: var(--r-2) !important;
+  cursor: pointer;
+  font-size: 0 !important;
+  padding: 0 !important;
+}
+html body .pagination-btn:hover {
+  background: var(--bg-overlay) !important;
+  color: var(--ink-primary) !important;
+  border-color: var(--line-aurora) !important;
+}
+
+/* ============================================================
+ * 10. 旧 .status-badge / .badge / .key-stat-badge
+ * ============================================================ */
+html body .status-badge,
+html body .key-stat-badge {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  padding: 1px var(--s-2) !important;
+  font-size: var(--fs-micro) !important;
+  font-weight: var(--fw-medium) !important;
+  font-family: var(--font-sans) !important;
+  letter-spacing: var(--tracking-wide) !important;
+  background: var(--bg-overlay) !important;
+  color: var(--ink-secondary) !important;
+  border: 1px solid var(--line-default) !important;
+  border-radius: var(--r-full) !important;
+  text-transform: none !important;
+  margin: 0;
+}
+
+/* ============================================================
+ * 11. 装饰元素 · 仅登录页（层林尽染）显示，登录后整体收起
+ *
+ *  原方案（v1）把所有装饰一刀切隐藏，但用户希望保留登录页"层林尽染 +
+ *  水波熔岩浸染"的标志性体验。这里改为：登录态 (.container.login-mode)
+ *  下完整放行原 inline 装饰；登录后 (#mainSection 出现) 自动隐藏。
+ * ============================================================ */
+html body > .container:not(.login-mode) .floating-orb,
+html body > .container:not(.login-mode) .twinkle-star,
+html body > .container:not(.login-mode) #particleCanvas,
+html body > .container:not(.login-mode) #gradientOverlay,
+html body > .container:not(.login-mode) #rippleCanvas,
+html body > .container:not(.login-mode) #confettiCanvas,
+html body > .container:not(.login-mode) .mouse-glow {
+  display: none !important;
+}
+html body > .container.login-mode #confettiCanvas {
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ============================================================
+ * 12. 金额跳动 - 改为编辑体的 ink cursor 风格（柔和）
+ * ============================================================ */
+html body .balance-amount {
+  color: var(--sig-danger) !important;
+  font-family: var(--font-mono) !important;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-medium) !important;
+  text-shadow: none !important;
+  animation: none !important;
+}
+html body .spend-amount {
+  color: var(--sig-success) !important;
+  font-family: var(--font-mono) !important;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-medium) !important;
+  text-shadow: none !important;
+  animation: none !important;
+}
+
+/* ============================================================
+ * 13. 旧 form-group / label
+ * ============================================================ */
+html body .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2) !important;
+  margin-bottom: var(--s-4) !important;
+}
+html body .form-group:last-child { margin-bottom: 0 !important; }
+html body .form-group label,
+html body label[for] {
+  font-family: var(--font-sans) !important;
+  font-size: var(--fs-caption) !important;
+  font-weight: var(--fw-medium) !important;
+  color: var(--ink-secondary) !important;
+  letter-spacing: var(--tracking-normal) !important;
+}
+
+/* ============================================================
+ * 14. 旧 .custom-select-wrapper - 自定义下拉
+ * ============================================================ */
+html body .custom-select-wrapper {
+  position: relative;
+  display: inline-flex !important;
+  min-width: 140px;
+}
+html body .custom-select-trigger {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--s-3) !important;
+  background: var(--bg-leaf) !important;
+  color: var(--ink-primary) !important;
+  border: 1px solid var(--line-default) !important;
+  border-radius: var(--r-3) !important;
+  font-family: var(--font-sans) !important;
+  font-size: var(--fs-caption) !important;
+  cursor: pointer;
+  transition: border-color var(--dur-instant) var(--ease-standard);
+}
+html body .custom-select-trigger:hover { border-color: var(--line-aurora) !important; }
+html body .custom-select-trigger::after {
+  content: "";
+  width: 8px; height: 8px;
+  border-right: 1.4px solid currentColor;
+  border-bottom: 1.4px solid currentColor;
+  transform: rotate(45deg) translateY(-1px);
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+html body .custom-select-options {
+  position: absolute;
+  top: calc(100% + var(--s-1));
+  left: 0; right: 0;
+  min-width: 100%;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--bg-leaf) !important;
+  border: 1px solid var(--line-default) !important;
+  border-radius: var(--r-3) !important;
+  box-shadow: var(--elev-3) !important;
+  z-index: var(--z-popover);
+  padding: var(--s-1);
+  display: none;
+}
+html body .custom-select-wrapper.open .custom-select-options { display: block; }
+html body .custom-select-option {
+  padding: var(--s-2) var(--s-3) !important;
+  font-family: var(--font-sans) !important;
+  font-size: var(--fs-caption) !important;
+  color: var(--ink-secondary) !important;
+  border-radius: var(--r-1) !important;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+html body .custom-select-option:hover { background: var(--bg-overlay) !important; color: var(--ink-primary) !important; }
+html body .custom-select-option.selected {
+  background: oklch(0.62 0.180 268 / 0.10) !important;
+  color: var(--aurora-1) !important;
+  font-weight: var(--fw-medium);
+}
+
+/* ============================================================
+ * 15. 旧 .progress-bar / spinner / skeleton
+ * ============================================================ */
+html body .progress-bar {
+  width: 100%;
+  height: 4px;
+  background: var(--bg-overlay) !important;
+  border-radius: var(--r-full) !important;
+  overflow: hidden;
+  margin-top: var(--s-2);
+}
+html body .progress-fill {
+  height: 100%;
+  border-radius: var(--r-full);
+  transition: width var(--dur-standard) var(--ease-standard);
+}
+html body .spinner {
+  width: 18px;
+  height: 18px;
+  border: 1.6px solid oklch(0.62 0.180 268 / 0.20);
+  border-top-color: var(--aurora-1);
+  border-radius: var(--r-full);
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto;
+}
+html body .spinner-text {
+  margin-top: var(--s-2);
+  font-size: var(--fs-caption);
+  color: var(--ink-muted);
+  text-align: center;
+}
+html body .skeleton-line {
+  height: 12px;
+  background: linear-gradient(90deg, var(--bg-overlay) 0%, var(--bg-sunken) 50%, var(--bg-overlay) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: var(--r-1);
+  margin-bottom: var(--s-2);
+}
+html body .skeleton-line.short  { width: 30%; }
+html body .skeleton-line.medium { width: 60%; }
+html body .skeleton-line.long   { width: 100%; }
+html body .skeleton-card {
+  padding: var(--s-4);
+  background: var(--bg-leaf) !important;
+  border: 1px solid var(--line-default) !important;
+  border-radius: var(--r-4) !important;
+  margin-bottom: var(--s-3);
+}
+
+/* ============================================================
+ * 16. 旧 .checkbox 全部统一
+ * ============================================================ */
+html body input[type="checkbox"]:not([class*="switch"]),
+html body input[type="checkbox"].config-checkbox,
+html body input[type="checkbox"].select-all-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--line-strong) !important;
+  border-radius: var(--r-1) !important;
+  background: var(--bg-leaf) !important;
+  cursor: pointer;
+  position: relative;
+  vertical-align: middle;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background-color var(--dur-instant) var(--ease-standard),
+              border-color var(--dur-instant) var(--ease-standard);
+}
+html body input[type="checkbox"]:checked {
+  background: var(--ink-pure) !important;
+  border-color: var(--ink-pure) !important;
+}
+html body input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  width: 6px;
+  height: 9px;
+  border: solid var(--ink-inverse);
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(45deg);
+}
+
+/* ============================================================
+ * 17. 旧装饰圆 / range slider
+ * ============================================================ */
+html body input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--bg-overlay) !important;
+  border: 0 !important;
+  border-radius: var(--r-full);
+  outline: 0;
+  padding: 0;
+  cursor: pointer;
+}
+html body input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--ink-pure);
+  border: 2px solid var(--bg-leaf);
+  border-radius: 50%;
+  box-shadow: var(--elev-2);
+  cursor: pointer;
+}
+html body input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--ink-pure);
+  border: 2px solid var(--bg-leaf);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+/* ============================================================
+ * 18. 旧 emoji 文本符号块清洗 - 这些是图标位，由 boot.js 替换为 SVG
+ * ============================================================ */
+html body .lava-ripple-icon,
+html body .lava-ripple-text {
+  background: none !important;
+  -webkit-background-clip: initial !important;
+  background-clip: initial !important;
+  -webkit-text-fill-color: initial !important;
+  color: var(--ink-secondary) !important;
+  font-weight: var(--fw-medium) !important;
+  font-size: var(--fs-caption) !important;
+}
+
+/* ============================================================
+ * 19. 登录页（#loginSection）例外区 · 还原"层林尽染"原始视觉
+ *
+ *   关键：#loginSection 自身就有 class="login-form"，所以选择器
+ *   不能写成 `#loginSection .login-form X`（后代选择器），否则不命中。
+ *   一律直接 `#loginSection X`。
+ *
+ *   前面若干段落对 input / .btn / 通用色板做了全局重置，会把
+ *   登录卡的密码框、登录按钮、字体感观全部统一到 Aether 编辑体。
+ *   登录页要保留 inline 中"水波熔岩 + 蓝白渐变 + 浮动 logo + 圆角
+ *   24px 玻璃卡"的原始体验，故在此显式反向恢复。
+ * ============================================================ */
+
+/* 容器 - 让 inline `.container.login-mode { padding-top: 10vh }` 生效 */
+html body > .container.login-mode {
+  padding: 0 !important;
+  padding-top: 10vh !important;
+  min-height: 100vh;
+}
+@media (max-width: 768px) {
+  html body > .container.login-mode {
+    padding: 16px 8px !important;
+    padding-top: 12vh !important;
+  }
+}
+@media (max-width: 480px) {
+  html body > .container.login-mode {
+    padding: 8px !important;
+    padding-top: 8vh !important;
+  }
+}
+
+/* 密码输入框：圆角 12 / padding 48 留出 emoji 位置 / 蓝光焦点环 */
+html body #loginSection input[type="password"] {
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  padding: 16px 16px 16px 48px !important;
+  background: var(--input-bg) !important;
+  color: var(--text-color) !important;
+  border: 2px solid var(--border-color) !important;
+  border-radius: 12px !important;
+  font-family: inherit !important;
+  font-size: 16px !important;
+  font-weight: 500 !important;
+  letter-spacing: 2px !important;
+  box-shadow: none !important;
+  outline: 0 !important;
+  transition: all .3s ease !important;
+  box-sizing: border-box !important;
+}
+html body #loginSection input[type="password"]:focus {
+  border-color: #4285f4 !important;
+  box-shadow: 0 0 0 4px rgba(66, 133, 244, 0.10) !important;
+}
+[data-theme="dark"] html body #loginSection input[type="password"]:focus {
+  border-color: #4285f4 !important;
+  box-shadow: 0 0 0 4px rgba(66, 133, 244, 0.15) !important;
+}
+html body #loginSection input[type="password"]::placeholder {
+  letter-spacing: 0 !important;
+  font-weight: 400 !important;
+  color: var(--text-muted) !important;
+}
+html body #loginSection input[type="password"].error {
+  border-color: #ea4335 !important;
+  box-shadow: 0 0 0 4px rgba(234, 67, 53, 0.10) !important;
+}
+
+/* 登录按钮：蓝白渐变 + 上浮 hover；覆盖 bridge#3 的黑底重置 */
+html body #loginSection #loginBtn,
+html body #loginSection button.btn {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 100% !important;
+  height: auto !important;
+  padding: 14px 24px !important;
+  font-family: inherit !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.5px !important;
+  color: #fff !important;
+  background: linear-gradient(135deg, #4285f4 0%, #34a9ff 100%) !important;
+  background-color: transparent !important;  /* 防止 bridge 黑底叠加 */
+  border: none !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 15px rgba(66, 133, 244, 0.30) !important;
+  transition: all .3s ease !important;
+  cursor: pointer;
+}
+html body #loginSection #loginBtn:hover,
+html body #loginSection button.btn:hover {
+  background: linear-gradient(135deg, #4285f4 0%, #34a9ff 100%) !important;
+  color: #fff !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 8px 25px rgba(66, 133, 244, 0.40) !important;
+}
+html body #loginSection #loginBtn:active,
+html body #loginSection button.btn:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 4px 15px rgba(66, 133, 244, 0.30) !important;
+}
+[data-theme="dark"] html body #loginSection #loginBtn,
+[data-theme="dark"] html body #loginSection button.btn {
+  background: linear-gradient(135deg, #4285f4 0%, #5b9bd5 100%) !important;
+  border-color: transparent !important;
+}
+
+/* 登录卡 h1 / 副标题 / 底部信息：让 inline 的字体/字号生效 */
+html body #loginSection h1 {
+  font-family: inherit !important;
+  font-size: 26px !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.5px !important;
+  color: var(--text-color) !important;
+  margin: 0 0 8px !important;
+  padding: 0 !important;
+  text-align: center;
+}
+html body #loginSection h1::after {
+  display: none !important;
+}
+html body #loginSection .login-subtitle {
+  font-family: inherit !important;
+  font-style: normal !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  color: var(--text-secondary) !important;
+  margin: 0 0 28px !important;
+  max-width: none !important;
+  text-align: center;
+}
+html body #loginSection .login-footer {
+  margin-top: 24px;
+  text-align: center;
+}
+html body #loginSection .login-footer p {
+  margin: 0;
+  font-family: inherit !important;
+  font-size: 13px !important;
+  color: var(--text-muted);
+  white-space: normal;
+  word-break: keep-all;
+}
+html body #loginSection .login-footer a {
+  font-family: inherit !important;
+  font-size: 13px !important;
+  color: #4285f4 !important;
+  font-weight: 500 !important;
+  text-decoration: none;
+  white-space: nowrap;
+}
+html body #loginSection .login-footer a:hover { text-decoration: underline; }
+
+/* eyebrow（CONFIGURATION 等）只在已登录主面板显示，登录页不要 */
+html body #loginSection .ac-eyebrow { display: none !important; }
+
+/* 登录卡：响应式收紧 */
+html body #loginSection .login-card {
+  background: var(--container-bg);
+  border-radius: 24px;
+  padding: 40px 36px;
+  width: 100%;
+  max-width: 460px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.06);
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+[data-theme="dark"] html body #loginSection .login-card {
+  background: var(--bg-leaf);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.40), 0 8px 24px rgba(0, 0, 0, 0.30);
+}
+html body #loginSection .login-card-wrapper {
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 0 16px;
+  box-sizing: border-box;
+}
+@media (max-width: 480px) {
+  html body #loginSection .login-card {
+    padding: 28px 20px;
+    border-radius: 20px;
+    max-width: 100%;
+  }
+  html body #loginSection .login-card-wrapper {
+    padding: 0 12px;
+    max-width: 100%;
+  }
+  html body #loginSection h1 { font-size: 22px !important; }
+  html body #loginSection .login-subtitle { font-size: 13px !important; margin-bottom: 24px !important; }
+  html body #loginSection input[type="password"] {
+    padding: 14px 14px 14px 44px !important;
+    font-size: 15px !important;
+  }
+}
+
+/* 登录页内的输入图标：让 emoji 正常显示，并固定到正确位置 */
+html body #loginSection .login-input-wrapper {
+  position: relative;
+  margin-bottom: 24px;
+}
+html body #loginSection .login-input-wrapper .input-icon {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 18px;
+  color: var(--text-muted);
+  z-index: 2;
+  pointer-events: none;
+  line-height: 1;
+}
+html body #loginSection .login-input-wrapper:focus-within .input-icon { color: #4285f4; }
+
+/* lock-icon 的图标盒：方框背景 */
+html body #loginSection .login-subtitle {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+html body #loginSection .login-subtitle .lock-icon {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: linear-gradient(135deg, rgba(66, 133, 244, 0.10), rgba(135, 206, 235, 0.10));
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1;
+}

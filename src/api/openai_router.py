@@ -154,10 +154,22 @@ def _extract_usage_metrics(usage: Any) -> Dict[str, int]:
         usage_map.get("cached_tokens", usage_map.get("input_cached_tokens", 0)),
         0,
     )
+    prompt_details = usage_map.get("prompt_tokens_details")
+    if not isinstance(prompt_details, dict):
+        prompt_details = {}
     if cached_tokens == 0:
-        prompt_details = usage_map.get("prompt_tokens_details")
-        if isinstance(prompt_details, dict):
-            cached_tokens = _to_non_negative_int(prompt_details.get("cached_tokens", 0), 0)
+        cached_tokens = _to_non_negative_int(prompt_details.get("cached_tokens", 0), 0)
+
+    cache_creation = prompt_details.get("cache_creation")
+    if not isinstance(cache_creation, dict):
+        cache_creation = {}
+    cache_creation_5m = _to_non_negative_int(
+        cache_creation.get("ephemeral_5m_input_tokens", 0), 0
+    )
+    cache_creation_1h = _to_non_negative_int(
+        cache_creation.get("ephemeral_1h_input_tokens", 0), 0
+    )
+
     total_tokens = _to_non_negative_int(
         usage_map.get("total_tokens", prompt_tokens + completion_tokens),
         prompt_tokens + completion_tokens,
@@ -167,6 +179,8 @@ def _extract_usage_metrics(usage: Any) -> Dict[str, int]:
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "cached_tokens": cached_tokens,
+        "cache_creation_5m_tokens": cache_creation_5m,
+        "cache_creation_1h_tokens": cache_creation_1h,
         "total_tokens": total_tokens,
     }
 
@@ -521,6 +535,8 @@ async def anthropic_messages(
             prompt_tokens=usage_metrics["prompt_tokens"],
             cached_tokens=usage_metrics["cached_tokens"],
             total_tokens=usage_metrics["total_tokens"],
+            cache_creation_5m_tokens=usage_metrics.get("cache_creation_5m_tokens", 0),
+            cache_creation_1h_tokens=usage_metrics.get("cache_creation_1h_tokens", 0),
         )
 
     return JSONResponse(content=anthropic_response)
@@ -799,6 +815,8 @@ async def chat_completions(
         "prompt_tokens": 0,
         "completion_tokens": 0,
         "cached_tokens": 0,
+        "cache_creation_5m_tokens": 0,
+        "cache_creation_1h_tokens": 0,
         "total_tokens": 0,
     }
     try:
@@ -904,8 +922,10 @@ async def chat_completions(
                 prompt_tokens=usage_metrics["prompt_tokens"],
                 cached_tokens=usage_metrics["cached_tokens"],
                 total_tokens=usage_metrics["total_tokens"],
+                cache_creation_5m_tokens=usage_metrics.get("cache_creation_5m_tokens", 0),
+                cache_creation_1h_tokens=usage_metrics.get("cache_creation_1h_tokens", 0),
             )
-        
+
         return JSONResponse(content=openai_response)
     except Exception as e:
         try:
