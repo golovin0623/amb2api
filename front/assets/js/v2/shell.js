@@ -69,6 +69,7 @@
       btn.className = 'v2-nav-item';
       btn.setAttribute('data-tab', meta.id);
       btn.setAttribute('data-label', meta.label);
+      btn.setAttribute('title', meta.label);
       btn.innerHTML = `
         <span class="v2-nav-item__icon"></span>
         <span class="v2-nav-item__label">${meta.label}</span>
@@ -120,9 +121,15 @@
     bar.querySelector('.v2-theme-icon').appendChild(ensureSvg('moon', 16));
     bar.querySelector('.v2-logout-icon').appendChild(ensureSvg('log-out', 14));
 
-    $('#v2ThemeToggle', bar).addEventListener('click', () => {
-      const legacy = document.querySelector('.theme-toggle');
-      if (legacy) legacy.click();
+    $('#v2ThemeToggle', bar).addEventListener('click', (e) => {
+      // 优先调 window.theme.toggle —— 旧 .theme-toggle 在 V2 模式下被隐藏，
+      // 浏览器对 display:none 元素的 programmatic click 行为不一致。
+      if (window.theme && typeof window.theme.toggle === 'function') {
+        window.theme.toggle(e);
+      } else {
+        const legacy = document.querySelector('.theme-toggle');
+        if (legacy) legacy.click();
+      }
     });
     $('#v2LogoutBtn', bar).addEventListener('click', () => {
       if (typeof window.logout === 'function') window.logout();
