@@ -130,14 +130,22 @@ jobs:
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
           DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+          # 设为 'true' 允许"凭证缺失时跳过构建"的旧行为 (首次接入仓库时
+          # 临时使用). 默认 'false' —— 缺凭证就 fail, 防止静默跳过几个月
+          # 都没人发现.
+          ALLOW_MISSING_DOCKER_CREDS: ${{ vars.ALLOW_MISSING_DOCKER_CREDS || 'false' }}
         run: |
           set -euo pipefail
           if [ -z "${DOCKER_USERNAME:-}" ] || [ -z "${DOCKER_PASSWORD:-}" ]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "Docker credentials not configured. Skip docker build/push."
-          else
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            if [ "${ALLOW_MISSING_DOCKER_CREDS}" = "true" ]; then
+              echo "enabled=false" >> "$GITHUB_OUTPUT"
+              echo "::warning::Docker credentials not configured. Skipping build/push (ALLOW_MISSING_DOCKER_CREDS=true)."
+              exit 0
+            fi
+            echo "::error::DOCKER_USERNAME / DOCKER_PASSWORD secret missing. Configure them in repo Settings → Secrets, or set repo variable ALLOW_MISSING_DOCKER_CREDS=true to bypass."
+            exit 1
           fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         if: steps.docker-creds.outputs.enabled == 'true'
@@ -253,14 +261,26 @@ jobs:
           DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
           DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
           DEPLOY_WEBHOOK_TOKEN: ${{ secrets.DEPLOY_WEBHOOK_TOKEN }}
+          # 同 docker-creds 检查: 默认缺 secret 直接 fail, 设 repo 变量
+          # ALLOW_MISSING_DEPLOY_WEBHOOK=true 才回到旧的"静默跳过".
+          ALLOW_MISSING_DEPLOY_WEBHOOK: ${{ vars.ALLOW_MISSING_DEPLOY_WEBHOOK || 'false' }}
           IMAGE_REF: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}
           IMAGE_TAG: sha-${{ needs.docker-build-push.outputs.short_sha }}
         run: |
           set -euo pipefail
 
           if [ -z "${DEPLOY_WEBHOOK_URL:-}" ]; then
-            echo "DEPLOY_WEBHOOK_URL is empty. Skip deploy webhook."
-            exit 0
+            if [ "${ALLOW_MISSING_DEPLOY_WEBHOOK}" = "true" ]; then
+              echo "::warning::DEPLOY_WEBHOOK_URL not configured. Skipping deploy (ALLOW_MISSING_DEPLOY_WEBHOOK=true)."
+              exit 0
+            fi
+            echo "::error::DEPLOY_WEBHOOK_URL secret missing. Configure it in repo Settings → Secrets, or set repo variable ALLOW_MISSING_DEPLOY_WEBHOOK=true to bypass."
+            exit 1
+          fi
+
+          if [ -z "${DEPLOY_WEBHOOK_SECRET:-}" ] && [ -z "${DEPLOY_WEBHOOK_TOKEN:-}" ]; then
+            echo "::error::Neither DEPLOY_WEBHOOK_SECRET nor DEPLOY_WEBHOOK_TOKEN configured —— webhook receiver will reject the request as unauthenticated. Configure DEPLOY_WEBHOOK_SECRET (HMAC, recommended) or DEPLOY_WEBHOOK_TOKEN (Bearer)."
+            exit 1
           fi
 
           # 构造 JSON 报文 —— 签名必须基于请求体按字节一致计算
