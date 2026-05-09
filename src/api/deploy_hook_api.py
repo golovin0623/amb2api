@@ -90,20 +90,22 @@ def _spawn_deploy(image: str, tag: str, sha: str) -> None:
 
     log_path = _deploy_log_path()
     os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
-    log_file = open(log_path, "ab", buffering=0)
-    header = (
-        f"\n=== deploy {sha or '?'} {datetime.now(timezone.utc).isoformat()} ===\n"
-        f"image={image} tag={tag}\ncmd={shell_cmd}\n"
-    ).encode("utf-8")
-    log_file.write(header)
+    # Popen 在 fork 时 dup 了 stdout fd 给子进程, 父进程这边关闭不影响子进程
+    # 写日志. 用 with 保证父进程 fd 立刻释放, 防止频繁触发时泄漏 fd.
+    with open(log_path, "ab", buffering=0) as log_file:
+        header = (
+            f"\n=== deploy {sha or '?'} {datetime.now(timezone.utc).isoformat()} ===\n"
+            f"image={image} tag={tag}\ncmd={shell_cmd}\n"
+        ).encode("utf-8")
+        log_file.write(header)
 
-    subprocess.Popen(
-        ["sh", "-c", shell_cmd],
-        stdout=log_file,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-        close_fds=True,
-    )
+        subprocess.Popen(
+            ["sh", "-c", shell_cmd],
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            close_fds=True,
+        )
 
 
 @router.post("/deploy-hook")
