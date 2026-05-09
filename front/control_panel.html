@@ -1093,7 +1093,10 @@
             overflow: hidden;
             max-width: 200px;
             user-select: none;
-            touch-action: manipulation;
+            /* touch-action: none —— 让按钮成为「拖拽优先」的 surface，
+               避免 iOS Safari 把第一段 touchmove 当 scroll 抢走，导致按钮拖不动。
+               click 不受影响 (touch-action 只控制 pan/scroll/zoom)。 */
+            touch-action: none;
         }
 
         .theme-toggle.dragging {
@@ -5277,11 +5280,11 @@
         }
 
         .modal-content {
+            /* 居中由父 .modal { display:flex; align-items:center; justify-content:center } 接管
+               (见 legacy-bridge.css)，这里不要再用 fixed + translate(-50%, -50%)
+               —— 否则会和 @keyframes modalIn 的 transform: translateY/scale 冲突，
+               动画期间 -50% 偏移失效，弹窗会从屏幕右下"飞"到中心后再卡一下归位。 */
             background-color: var(--container-bg);
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
             padding: 20px;
             border-radius: 12px;
             width: 400px;
@@ -5408,11 +5411,8 @@
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            /* 覆盖基础modal-content的定位，确保视口居中 */
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
+            /* 居中由父 .modal { display:flex } 接管 (legacy-bridge.css)，
+               不要再加 fixed + translate(-50%, -50%)，会和 @keyframes modalIn 冲突。 */
         }
 
         .key-modal-header {
@@ -5438,39 +5438,52 @@
         }
 
         .key-modal-tag {
-            background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
-            color: white;
+            background: var(--bg-overlay);
+            color: var(--ink-secondary);
+            border: 1px solid var(--line-default);
             padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 12px;
+            border-radius: var(--r-1);
+            font-size: var(--fs-micro);
+            font-family: var(--font-sans);
+            font-weight: var(--fw-medium);
+            letter-spacing: var(--tracking-wide);
         }
 
         .key-stat-badge {
-            background: var(--card-bg, #f0f0f0);
+            background: var(--bg-overlay);
+            color: var(--ink-secondary);
+            border: 1px solid var(--line-default);
             padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 12px;
+            border-radius: var(--r-1);
+            font-size: var(--fs-micro);
+            font-family: var(--font-mono);
+            letter-spacing: var(--tracking-wide);
         }
 
         .key-stats-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 15px;
-            padding: 20px 0;
-            border-bottom: 1px solid var(--border-color, #e1e4e8);
+            gap: var(--s-3);
+            padding: var(--s-4) 0;
+            border-bottom: 1px solid var(--line-default);
         }
 
         .key-stat-card {
-            background: var(--card-bg, #f8f9fa);
-            border-radius: 12px;
-            padding: 15px;
+            background: var(--bg-leaf);
+            border: 1px solid var(--line-default);
+            border-radius: var(--r-3);
+            padding: var(--s-4);
+            transition: border-color var(--dur-instant) var(--ease-standard);
+        }
+        .key-stat-card:hover {
+            border-color: var(--line-strong);
         }
 
         .key-stat-header {
             display: flex;
             align-items: center;
-            gap: 8px;
-            margin-bottom: 8px;
+            gap: var(--s-2);
+            margin-bottom: var(--s-2);
         }
 
         .key-stat-dot {
@@ -5478,30 +5491,40 @@
             height: 8px;
             border-radius: 50%;
             flex-shrink: 0;
+            box-shadow: 0 0 0 2px color-mix(in oklch, currentColor 22%, transparent);
         }
 
         .key-stat-label {
-            color: var(--text-secondary, #666);
-            font-size: 13px;
+            color: var(--ink-muted);
+            font-family: var(--font-mono);
+            font-size: 10px;
+            font-weight: var(--fw-medium);
+            letter-spacing: var(--tracking-widest);
+            text-transform: uppercase;
         }
 
         .key-stat-value {
-            font-size: 24px;
-            font-weight: bold;
+            font-family: var(--font-mono);
+            font-feature-settings: "tnum" 1;
+            font-size: 22px;
+            font-weight: var(--fw-semibold);
+            letter-spacing: -0.02em;
+            line-height: 1.05;
         }
 
         .key-stat-card .progress-bar {
-            height: 4px;
-            margin-top: 8px;
-            background: #e9ecef;
-            border-radius: 2px;
+            height: 2px;
+            margin-top: var(--s-3);
+            background: var(--bg-overlay);
+            border-radius: var(--r-full);
+            overflow: hidden;
         }
 
         .key-stat-card .progress-fill {
             height: 100%;
-            border-radius: 2px;
+            border-radius: inherit;
             width: 0%;
-            transition: width 0.3s;
+            transition: width var(--dur-standard, 520ms) var(--ease-standard);
         }
 
         .key-toolbar {
@@ -5539,41 +5562,7 @@
             flex-wrap: wrap;
         }
 
-        .key-toolbar-actions .btn {
-            background: #f0f0f0;
-            color: #333;
-            border: none;
-        }
-
-        .key-toolbar-actions .btn-outline-primary {
-            background: transparent;
-            color: #4285f4;
-            border: 1px solid #4285f4;
-        }
-
-        .key-toolbar-actions .btn-outline-danger {
-            background: transparent;
-            color: #dc3545;
-            border: 1px solid #dc3545;
-        }
-
-        .key-toolbar-actions .btn-outline-warning {
-            background: transparent;
-            color: #ffc107;
-            border: 1px solid #ffc107;
-        }
-
-        .key-toolbar-actions .btn-outline-info {
-            background: transparent;
-            color: #17a2b8;
-            border: 1px solid #17a2b8;
-        }
-
-        .key-toolbar-actions .btn-outline-success {
-            background: transparent;
-            color: #28a745;
-            border: 1px solid #28a745;
-        }
+        /* .key-toolbar-actions .btn-outline-* 风格化由 V2 legacy-bridge 接管 */
 
         .key-table-container {
             flex: 1;
@@ -5622,15 +5611,16 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 15px 0;
-            border-top: 1px solid var(--border-color, #e1e4e8);
+            padding: var(--s-4) 0;
+            border-top: 1px solid var(--line-default);
             flex-wrap: wrap;
-            gap: 10px;
+            gap: var(--s-3);
         }
 
         .key-pagination-info {
-            color: var(--text-secondary, #666);
-            font-size: 13px;
+            color: var(--ink-muted);
+            font-family: var(--font-sans);
+            font-size: var(--fs-caption);
         }
 
         .key-pagination-controls {
@@ -5641,41 +5631,46 @@
         }
 
         .key-pagination-current {
-            padding: 6px 12px;
-            background: #4285f4;
-            color: white;
-            border-radius: 4px;
+            padding: 4px 10px;
+            background: var(--ink-pure);
+            color: var(--ink-inverse);
+            border-radius: var(--r-1);
+            font-family: var(--font-mono);
+            font-feature-settings: "tnum" 1;
+            font-size: var(--fs-micro);
+            font-weight: var(--fw-semibold);
+            letter-spacing: var(--tracking-wide);
         }
 
         .key-pagination-label {
             margin-left: 10px;
-            font-size: 13px;
+            font-size: var(--fs-caption);
+            color: var(--ink-secondary);
         }
 
         .key-pagination-input {
-            width: 50px;
-            padding: 4px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
+            width: 56px;
+            padding: 4px 8px;
+            border: 1px solid var(--line-default);
+            background: var(--bg-leaf);
+            color: var(--ink-primary);
+            border-radius: var(--r-1);
+            font-family: var(--font-mono);
+            font-feature-settings: "tnum" 1;
         }
 
         /* ========== 密钥管理弹窗移动端适配 ========== */
         @media (max-width: 768px) {
 
-            /* 弹窗整体 - 不再全屏，改为自适应高度 */
+            /* 弹窗整体 - 不再全屏，改为自适应高度；居中由父 .modal flex 接管，
+               不要再用 fixed + translate(-50%, -50%)，会和 @keyframes modalIn 冲突。 */
             .key-modal-content {
                 width: 95% !important;
                 max-width: 95% !important;
                 height: auto !important;
                 max-height: 90vh !important;
-                margin: 5vh auto !important;
                 border-radius: 12px !important;
                 padding: 12px !important;
-                /* 手机模式下居中定位 */
-                position: fixed !important;
-                top: 50% !important;
-                left: 50% !important;
-                transform: translate(-50%, -50%) !important;
                 display: flex;
                 flex-direction: column;
             }
@@ -6522,7 +6517,7 @@
                 <div class="header-title-row">
                     <div class="header-spacer"></div>
                     <h1>AMB2API 管理面板</h1>
-                    <button class="btn btn-sm logout-btn" onclick="logout()">退出</button>
+                    <button class="btn btn-sm logout-btn" onclick="logout()" title="退出登录" aria-label="退出登录"></button>
                 </div>
 
                 <!-- 标签页 -->
@@ -8093,36 +8088,36 @@
             <div class="key-stats-grid">
                 <div class="key-stat-card">
                     <div class="key-stat-header">
-                        <span class="key-stat-dot" style="background: #28a745;"></span>
+                        <span class="key-stat-dot" style="background: var(--sig-success);"></span>
                         <span class="key-stat-label">已启用</span>
                     </div>
-                    <div class="key-stat-value" style="color: #28a745;"><span id="modalKeyEnabled">0</span> / <span
+                    <div class="key-stat-value" style="color: var(--sig-success);"><span id="modalKeyEnabled">0</span> / <span
                             id="modalKeyTotal2">0</span></div>
                     <div class="progress-bar">
-                        <div id="enabledProgressBar" class="progress-fill" style="background: #28a745;"></div>
+                        <div id="enabledProgressBar" class="progress-fill" style="background: var(--sig-success);"></div>
                     </div>
                 </div>
                 <div class="key-stat-card">
                     <div class="key-stat-header">
-                        <span class="key-stat-dot" style="background: #dc3545;"></span>
+                        <span class="key-stat-dot" style="background: var(--sig-danger);"></span>
                         <span class="key-stat-label">手动禁用</span>
                     </div>
-                    <div class="key-stat-value" style="color: #dc3545;"><span id="modalKeyManualDisabled">0</span> /
+                    <div class="key-stat-value" style="color: var(--sig-danger);"><span id="modalKeyManualDisabled">0</span> /
                         <span id="modalKeyTotal3">0</span>
                     </div>
                     <div class="progress-bar">
-                        <div id="manualDisabledProgressBar" class="progress-fill" style="background: #dc3545;"></div>
+                        <div id="manualDisabledProgressBar" class="progress-fill" style="background: var(--sig-danger);"></div>
                     </div>
                 </div>
                 <div class="key-stat-card">
                     <div class="key-stat-header">
-                        <span class="key-stat-dot" style="background: #ffc107;"></span>
+                        <span class="key-stat-dot" style="background: var(--sig-warning);"></span>
                         <span class="key-stat-label">自动禁用</span>
                     </div>
-                    <div class="key-stat-value" style="color: #ffc107;"><span id="modalKeyAutoDisabled">0</span> / <span
+                    <div class="key-stat-value" style="color: var(--sig-warning);"><span id="modalKeyAutoDisabled">0</span> / <span
                             id="modalKeyTotal4">0</span></div>
                     <div class="progress-bar">
-                        <div id="autoDisabledProgressBar" class="progress-fill" style="background: #ffc107;"></div>
+                        <div id="autoDisabledProgressBar" class="progress-fill" style="background: var(--sig-warning);"></div>
                     </div>
                 </div>
             </div>
@@ -8432,20 +8427,35 @@
             const isMobile = () => window.innerWidth <= 768;
 
             // 从 localStorage 加载位置 (所有设备)
+            // 校验视口范围，避免桌面端拖到的位置 (e.g. left:600px) 在 mobile 上落到屏外或正中央。
             const savedPosition = localStorage.getItem('themeTogglePosition');
             if (savedPosition) {
                 try {
-                    const { top, right, bottom, left } = JSON.parse(savedPosition);
-                    if (top !== null) themeToggle.style.top = top + 'px';
-                    if (right !== null) themeToggle.style.right = right + 'px';
-                    if (bottom !== null) themeToggle.style.bottom = bottom + 'px';
-                    if (left !== null) themeToggle.style.left = left + 'px';
+                    const pos = JSON.parse(savedPosition);
+                    const w = window.innerWidth, h = window.innerHeight;
+                    const margin = 64;
+                    const outOfView = (
+                        (pos.left  != null && (pos.left  < -margin || pos.left  > w - margin)) ||
+                        (pos.right != null && (pos.right < -margin || pos.right > w - margin)) ||
+                        (pos.top   != null && (pos.top   < -margin || pos.top   > h - margin)) ||
+                        (pos.bottom!= null && (pos.bottom< -margin || pos.bottom> h - margin))
+                    );
+                    if (outOfView) {
+                        localStorage.removeItem('themeTogglePosition');
+                    } else {
+                        if (pos.top    !== null) themeToggle.style.top    = pos.top    + 'px';
+                        if (pos.right  !== null) themeToggle.style.right  = pos.right  + 'px';
+                        if (pos.bottom !== null) themeToggle.style.bottom = pos.bottom + 'px';
+                        if (pos.left   !== null) themeToggle.style.left   = pos.left   + 'px';
+                    }
                 } catch (e) {
                     console.error('Failed to load theme toggle position:', e);
                 }
             }
 
             function startDrag(e) {
+                // 已被 boot.js 嵌入到 .header-title-row（mobile + V2）：纯点击模式，不再可拖
+                if (themeToggle.dataset.docked === 'header') return;
                 clickStartTime = Date.now();
                 hasMoved = false;
                 const touch = e.type.includes('touch') ? e.touches[0] : e;
@@ -9524,7 +9534,7 @@
                                         stroke-dasharray="${RING_C.toFixed(2)}" stroke-dashoffset="${ringOffset}"></circle>
                                 </svg>
                                 <div class="v2-rl-ring__label">
-                                    <span class="v2-rl-ring__pct">${key._pct.toFixed(0)}<span style="font-size:9px;opacity:0.7">%</span></span>
+                                    <span class="v2-rl-ring__pct">${key._pct.toFixed(0)}<span style="font-size:8px;opacity:0.65;margin-left:1px">%</span></span>
                                     <span class="v2-rl-ring__cap">used</span>
                                 </div>
                             </div>

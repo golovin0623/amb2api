@@ -91,27 +91,35 @@ html body .header-title-row h1::before {
   border-radius: 1px;
 }
 
-/* 退出按钮 - ghost，必须比 .btn 通用规则更具体 */
+/* 退出按钮 — icon-only 圆形 ghost 按钮 (32x32)。
+   button 内文字已移除，只保留 boot.js 注入的 SVG icon (log-out)。 */
 html body .btn.logout-btn,
 html body button.btn.logout-btn,
 html body .btn-sm.logout-btn,
 html body button.btn-sm.logout-btn {
   background: transparent !important;
   border: 1px solid var(--line-default) !important;
-  color: var(--ink-muted) !important;
-  height: 30px !important;
-  padding: 0 var(--s-3) !important;
-  border-radius: var(--r-2) !important;
-  font-family: var(--font-sans) !important;
-  font-size: var(--fs-micro) !important;
-  font-weight: var(--fw-medium) !important;
-  letter-spacing: var(--tracking-normal) !important;
+  color: var(--ink-secondary) !important;
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  min-height: 32px !important;
+  padding: 0 !important;
+  border-radius: 999px !important;
   box-shadow: none !important;
   display: inline-flex !important;
-  align-items: center;
-  gap: var(--s-2);
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0 !important;
+  line-height: 1 !important;
   cursor: pointer;
-  transition: all var(--dur-instant) var(--ease-standard);
+  font-size: 0 !important;            /* 兜底：万一文字被装饰回来也不可见 */
+  letter-spacing: 0 !important;
+  transition:
+    color var(--dur-instant) var(--ease-standard),
+    background-color var(--dur-instant) var(--ease-standard),
+    border-color var(--dur-instant) var(--ease-standard),
+    transform var(--dur-instant) var(--ease-standard);
 }
 html body .btn.logout-btn:hover,
 html body button.btn.logout-btn:hover,
@@ -121,10 +129,27 @@ html body button.btn-sm.logout-btn:hover {
   color: var(--sig-danger) !important;
   border-color: oklch(0.58 0.215 25 / 0.30) !important;
 }
+html body .btn.logout-btn:active,
+html body button.btn.logout-btn:active,
+html body .btn-sm.logout-btn:active,
+html body button.btn-sm.logout-btn:active {
+  transform: scale(0.92);
+}
 html body .btn.logout-btn svg,
-html body button.btn.logout-btn svg {
-  width: 14px !important;
-  height: 14px !important;
+html body button.btn.logout-btn svg,
+html body .btn-sm.logout-btn svg,
+html body button.btn-sm.logout-btn svg {
+  width: 16px !important;
+  height: 16px !important;
+  flex-shrink: 0 !important;
+  /* hover 时 icon 微推一格强化「向外走」的语义 */
+  transition: transform var(--dur-fast) var(--ease-emphasis) !important;
+}
+html body .btn.logout-btn:hover svg,
+html body button.btn.logout-btn:hover svg,
+html body .btn-sm.logout-btn:hover svg,
+html body button.btn-sm.logout-btn:hover svg {
+  transform: translateX(1px);
 }
 
 /* ============================================================
@@ -249,6 +274,66 @@ html body .theme-toggle #themeText { color: var(--ink-secondary); }
 
 /* 隐藏老的 #themeText 文字（仅显示图标，更克制） */
 html body .theme-toggle #themeText { display: none; }
+
+/* V2 桌面端 AppBar 已注入主题切换 (#v2ThemeToggle)，旧浮动按钮隐藏避免右上角重复。
+   但在 V2 + mobile (<=1024px) 下 AppBar 也被隐藏 (shell.css)，必须把旧浮动按钮放回来，
+   否则手机端就完全没有主题切换入口了。 */
+@media (min-width: 1025px) {
+  html body[data-shell="v2"] .theme-toggle { display: none !important; }
+}
+/* V2 + mobile：boot.js 把 .theme-toggle 节点 dock 到 .header-title-row 内、紧贴 .logout-btn
+   左侧 (data-docked="header")。这里把它从「fixed 浮动」转成「inline-flex 静态卡片」，
+   并采用与 .logout-btn 完全一致的 32x32 圆形 ghost 风格，左右两个按钮组成一对克制的 icon row。 */
+@media (max-width: 1024px) {
+  html body .theme-toggle[data-docked="header"] {
+    position: static !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    gap: 0 !important;
+    border-radius: 999px !important;
+    border: 1px solid var(--line-default) !important;
+    background: transparent !important;
+    color: var(--ink-secondary) !important;
+    box-shadow: none !important;
+    order: 3;
+    transform: none !important;
+    transition:
+      background-color var(--dur-instant) var(--ease-standard),
+      border-color var(--dur-instant) var(--ease-standard),
+      color var(--dur-instant) var(--ease-standard),
+      transform var(--dur-instant) var(--ease-standard) !important;
+  }
+  html body .theme-toggle[data-docked="header"]:hover {
+    background: var(--bg-overlay) !important;
+    border-color: var(--line-strong) !important;
+    color: var(--ink-pure) !important;
+  }
+  html body .theme-toggle[data-docked="header"]:active {
+    transform: scale(0.92) !important;
+  }
+  html body .theme-toggle[data-docked="header"] .icon {
+    font-size: 16px !important;
+    line-height: 1 !important;
+    margin: 0 !important;
+    transition: transform var(--dur-fast) var(--ease-emphasis) !important;
+  }
+  html body .theme-toggle[data-docked="header"]:hover .icon {
+    transform: rotate(-12deg) scale(1.05);
+  }
+  /* dock 后绝对不能再显示文字「暗黑/明亮」，inline `<style>` 在 mobile 已 display:none，
+     这里再兜底 */
+  html body .theme-toggle[data-docked="header"] #themeText {
+    display: none !important;
+  }
+}
 
 /* ============================================================
  * 响应式

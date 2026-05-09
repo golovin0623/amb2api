@@ -53,10 +53,10 @@ html body > .container.login-mode {
  * 3. 旧 .btn / .btn-sm / .btn-outline-* 全面重置
  *    （内 inline style 颜色由后续选择器细化）
  * ============================================================ */
+/* 注：不再带 `button.btn` / `button.btn-sm` selector — 否则会把 specificity 提到 (0,0,1,3)，
+   反过来压过 `.btn-outline-*` (0,0,1,2)，导致 outline 按钮被涂黑底。 */
 html body .btn,
-html body .btn-sm,
-html body button.btn,
-html body button.btn-sm {
+html body .btn-sm {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
@@ -329,8 +329,8 @@ html body .modal {
   position: fixed !important;
   inset: 0 !important;
   background: var(--modal-overlay) !important;
-  backdrop-filter: blur(20px) saturate(120%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(120%) !important;
+  backdrop-filter: blur(10px) saturate(110%) !important;
+  -webkit-backdrop-filter: blur(10px) saturate(110%) !important;
   display: none !important;
   align-items: center;
   justify-content: center;
@@ -342,7 +342,9 @@ html body .modal.show,
 html body .modal.active,
 html body .modal[open],
 html body .modal[style*="display: flex"],
-html body .modal[style*="display:flex"] { display: flex !important; }
+html body .modal[style*="display:flex"],
+html body .modal[style*="display: block"],
+html body .modal[style*="display:block"] { display: flex !important; }
 html body .modal-content {
   background: var(--bg-leaf) !important;
   color: var(--ink-primary) !important;

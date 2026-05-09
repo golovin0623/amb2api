@@ -214,7 +214,7 @@
   --table-stripe:    var(--bg-overlay);
   --table-hover:     var(--bg-overlay);
   --code-bg:         var(--bg-sunken);
-  --modal-overlay:   oklch(0.16 0.005 270 / 0.55);
+  --modal-overlay:   oklch(0.45 0.008 270 / 0.32);
 
   /* 旧名兼容 */
   --bg-void:      var(--bg-page);
@@ -315,6 +315,8 @@
             0 4px 8px oklch(0 0 0 / 0.35);
   --elev-aurora: 0 6px 24px oklch(0.74 0.150 268 / 0.32);
   --elev-focus:  0 0 0 3px oklch(0.74 0.150 268 / 0.28);
+
+  --modal-overlay: oklch(0.04 0.008 270 / 0.62);
 }
 
 /* ============================================================

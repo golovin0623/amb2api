@@ -182,10 +182,16 @@ html body #ratelimitTab .v2-rl-kpi__sparkbar {
   position: absolute;
   left: 0;
   bottom: 0;
-  height: 2px;
-  background: var(--aurora-text);
-  transition: width var(--dur-flow, 520ms) var(--ease-standard);
+  height: 1.5px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--sig-success) 35%, transparent) 35%,
+    var(--sig-success) 100%);
+  opacity: 0.75;
+  transition: width var(--dur-flow, 520ms) var(--ease-standard),
+              opacity var(--dur-instant) var(--ease-standard);
 }
+html body #ratelimitTab .v2-rl-kpi:hover .v2-rl-kpi__sparkbar { opacity: 1; }
 
 /* 卡片网格 */
 html body #ratelimitTab #rateLimitList {
@@ -235,8 +241,8 @@ html body #ratelimitTab .v2-rl-card__head {
 }
 html body #ratelimitTab .v2-rl-ring {
   flex-shrink: 0;
-  width: 64px;
-  height: 64px;
+  width: 72px;
+  height: 72px;
   position: relative;
 }
 html body #ratelimitTab .v2-rl-ring svg {
@@ -271,7 +277,7 @@ html body #ratelimitTab .v2-rl-ring__label {
 }
 html body #ratelimitTab .v2-rl-ring__pct {
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: var(--fw-semibold);
   color: var(--ink-pure);
   letter-spacing: -0.02em;

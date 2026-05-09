@@ -17,22 +17,27 @@ html body #accountTab > h3,
 html body #uploadTab > h3,
 html body #manageTab > h3 {
   font-family: var(--font-display) !important;
-  font-size: var(--fs-h2) !important;
+  font-size: clamp(1.625rem, 1.3rem + 0.9vw, 2rem) !important;  /* 26 → 32px */
   font-weight: var(--fw-regular) !important;
-  letter-spacing: var(--tracking-tight) !important;
+  letter-spacing: -0.025em !important;
+  font-optical-sizing: auto !important;
+  font-variation-settings: "opsz" 144, "SOFT" 30 !important;
+  line-height: 1.12 !important;
   color: var(--ink-pure) !important;
-  margin: 0 0 var(--s-5) !important;
-  padding-bottom: var(--s-3);
+  margin: 0 0 var(--s-4) !important;
+  padding-bottom: var(--s-2);
   display: block !important;
   position: relative;
 }
 html body .tab-content > h3 + p {
-  font-family: var(--font-editorial) !important;
-  font-style: italic !important;
-  font-size: var(--fs-reading) !important;
-  color: var(--ink-muted) !important;
-  margin: calc(-1 * var(--s-3)) 0 var(--s-6) !important;
-  max-width: 60ch;
+  font-family: var(--font-sans) !important;
+  font-style: normal !important;
+  font-size: var(--fs-caption) !important;
+  font-weight: var(--fw-regular) !important;
+  color: var(--ink-secondary) !important;
+  letter-spacing: var(--tracking-normal) !important;
+  margin: calc(-1 * var(--s-2)) 0 var(--s-6) !important;
+  max-width: 64ch;
 }
 html body #configTab > h3::after,
 html body #ratelimitTab > h3::after,
@@ -45,10 +50,11 @@ html body #uploadTab > h3::after,
 html body #manageTab > h3::after {
   content: "";
   display: block;
-  width: 48px;
+  width: 32px;
   height: 1px;
   background: var(--gold-hairline);
   margin-top: var(--s-3);
+  opacity: 0.85;
 }
 
 /* Eyebrow - boot.js 注入在 h3 上方 */
@@ -1357,6 +1363,56 @@ html body .status.info { color: var(--sig-info); }
   html body .login-card { padding: var(--s-6) var(--s-4) !important; }
   html body .modal-content { width: calc(100vw - 16px) !important; max-width: none !important; }
   html body .usage-trace-controls { grid-template-columns: 1fr 1fr !important; }
+
+  /* 使用统计页：3 张 KPI 卡是短数字（个位 / 几十），手机也保持横向 3 等分更紧凑实用 */
+  html body #usageTab .stats-container {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: var(--s-2) !important;
+    margin-bottom: var(--s-4) !important;
+  }
+  html body #usageTab .stat-item {
+    padding: var(--s-4) var(--s-3) !important;
+    gap: var(--s-1) !important;
+    align-items: center !important;
+    text-align: center !important;
+  }
+  html body #usageTab .stat-item::before { width: 3px !important; }
+  html body #usageTab .stat-item .stat-number {
+    font-size: var(--fs-h3) !important;       /* 40px → 30px */
+    line-height: 1 !important;
+  }
+  html body #usageTab .stat-item .stat-label {
+    font-size: 10px !important;
+    letter-spacing: var(--tracking-wide) !important;
+    white-space: nowrap !important;
+  }
+
+  /* 使用统计页：「日志统计 ... | 重置所有统计」inline flex 在窄屏会把标题挤断行，
+     改成 wrap，按钮换到下一行；标题占满第一行不被裁。 */
+  html body #usageTab .config-group > div[style*="justify-content"] {
+    flex-wrap: wrap !important;
+    gap: var(--s-3) !important;
+  }
+  html body #usageTab .config-group > div[style*="justify-content"] > h4 {
+    flex: 1 1 100% !important;
+    font-size: var(--fs-h4) !important;
+    line-height: var(--lh-tight) !important;
+  }
+
+  /* 操作按钮组 (.manage-actions) 等距分布，避免按钮挤成一坨 */
+  html body #usageTab .manage-actions {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: var(--s-2) !important;
+    margin-bottom: var(--s-4) !important;
+  }
+  html body #usageTab .manage-actions > .btn,
+  html body #usageTab .manage-actions > .btn-sm,
+  html body #usageTab .manage-actions > .refresh-btn {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    white-space: nowrap !important;
+  }
 }
 @media (max-width: 600px) {
   html body .stats-container { grid-template-columns: 1fr !important; }
@@ -1364,6 +1420,14 @@ html body .status.info { color: var(--sig-info); }
   html body #loginSection .login-form h1 { font-size: var(--fs-h2) !important; }
   html body .usage-trace-controls { grid-template-columns: 1fr !important; }
   html body .tab-content > h3 { font-size: var(--fs-h3) !important; }
+
+  /* < 600px 维持 #usageTab 三列（覆盖上面 max-width:600px 的 1fr），更省纵向空间 */
+  html body #usageTab .stats-container {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+  html body #usageTab .stat-item .stat-number {
+    font-size: var(--fs-h4) !important;       /* 30px → 24px */
+  }
 }
 
 /* Print */

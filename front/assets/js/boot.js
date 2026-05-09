@@ -211,6 +211,45 @@
     });
   }
 
+  /* 在 V2 + mobile (<=1024px) 下，把 .theme-toggle 节点从 <body> 提到 .header-title-row 内、
+     紧贴 .logout-btn 左侧；切回桌面时还原回 <body>。
+     这是为了让主题切换在 mobile 下「永远固定在退出按钮旁边」，不再 fixed 浮动。 */
+  function relocateThemeToggle() {
+    const theme = document.querySelector('.theme-toggle');
+    const row = document.querySelector('.header-title-row');
+    if (!theme || !row) return;
+
+    const isMobile = window.matchMedia('(max-width: 1024px)').matches;
+    const isV2 = document.body.getAttribute('data-shell') === 'v2';
+
+    if (isMobile && isV2) {
+      const logoutBtn = row.querySelector('.logout-btn');
+      if (theme.parentElement !== row) {
+        if (logoutBtn) row.insertBefore(theme, logoutBtn);
+        else row.appendChild(theme);
+        // 抹掉旧拖拽留下的 inline top/right/bottom/left，让 CSS 接管 static 布局
+        ['top', 'right', 'bottom', 'left'].forEach(p => { theme.style[p] = ''; });
+      }
+      theme.dataset.docked = 'header';
+    } else {
+      if (theme.parentElement !== document.body) {
+        document.body.insertBefore(theme, document.body.firstChild);
+      }
+      theme.dataset.docked = '';
+    }
+  }
+  // 监听 V2 shell 切换 (登录后会从 hidden -> v2 mode) + 视口尺寸变化
+  let _themeRelocateBound = false;
+  function bindThemeRelocateListeners() {
+    if (_themeRelocateBound) return;
+    _themeRelocateBound = true;
+    window.addEventListener('resize', relocateThemeToggle);
+    new MutationObserver(relocateThemeToggle).observe(document.body, {
+      attributes: true,
+      attributeFilter: ['data-shell'],
+    });
+  }
+
   function decorateAll() {
     try { decorateTabs(); } catch (e) { console.warn('[boot] decorateTabs', e); }
     try { decorateModalCloses(); } catch (e) { console.warn('[boot] decorateModalCloses', e); }
@@ -221,6 +260,8 @@
     try { decorateConfigFloatingBtns(); } catch (e) { console.warn('[boot] decorateConfigFloatingBtns', e); }
     try { decorateEmojiTitles(); } catch (e) { console.warn('[boot] decorateEmojiTitles', e); }
     try { decorateTabHeaders(); } catch (e) { console.warn('[boot] decorateTabHeaders', e); }
+    try { relocateThemeToggle(); } catch (e) { console.warn('[boot] relocateThemeToggle', e); }
+    try { bindThemeRelocateListeners(); } catch (e) { console.warn('[boot] bindThemeRelocateListeners', e); }
   }
 
   function start() {
