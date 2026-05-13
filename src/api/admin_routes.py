@@ -81,6 +81,10 @@ async def get_config(token: str = Depends(authenticate)):
         cfg["enable_real_streaming"] = await adapter.get_config("enable_real_streaming", False)
         cfg["stream_keepalive_seconds"] = await adapter.get_config("stream_keepalive_seconds", 0)
         cfg["stream_bootstrap_retries"] = await adapter.get_config("stream_bootstrap_retries", 1)
+        cfg["prompt_cache_enabled"] = await adapter.get_config("prompt_cache_enabled", True)
+        cfg["prompt_cache_affinity_enabled"] = await adapter.get_config("prompt_cache_affinity_enabled", True)
+        cfg["prompt_cache_auto_mode"] = await adapter.get_config("prompt_cache_auto_mode", "conservative")
+        cfg["prompt_cache_default_ttl"] = await adapter.get_config("prompt_cache_default_ttl", "5m")
         cfg["available_models"] = await adapter.get_config("available_models", [])
         cfg["available_models_selected"] = await adapter.get_config("available_models_selected", [])
         cfg["available_models_meta"] = await adapter.get_config("available_models_meta", {})
@@ -97,7 +101,8 @@ async def get_config(token: str = Depends(authenticate)):
     env_locked = [k for k in [
         "API_PASSWORD","PANEL_PASSWORD","PORT","HOST",
         "CALLS_PER_ROTATION","RETRY_429_ENABLED","RETRY_429_MAX_RETRIES","RETRY_429_INTERVAL","AUTO_BAN","AUTO_BAN_ERROR_CODES",
-        "ENABLE_REAL_STREAMING","STREAM_KEEPALIVE_SECONDS","STREAM_BOOTSTRAP_RETRIES"
+        "ENABLE_REAL_STREAMING","STREAM_KEEPALIVE_SECONDS","STREAM_BOOTSTRAP_RETRIES",
+        "PROMPT_CACHE_ENABLED","PROMPT_CACHE_AFFINITY_ENABLED","PROMPT_CACHE_AUTO_MODE","PROMPT_CACHE_DEFAULT_TTL"
     ] if os.getenv(k)]
     return JSONResponse(content={"config": cfg, "env_locked": env_locked})
 
@@ -220,6 +225,19 @@ async def save_config(payload: Dict[str, Any], token: str = Depends(authenticate
                 updates["stream_bootstrap_retries"] = retries
         except (ValueError, TypeError):
             pass
+    # Prompt caching helpers
+    if payload.get("prompt_cache_enabled") is not None:
+        updates["prompt_cache_enabled"] = bool(payload.get("prompt_cache_enabled"))
+    if payload.get("prompt_cache_affinity_enabled") is not None:
+        updates["prompt_cache_affinity_enabled"] = bool(payload.get("prompt_cache_affinity_enabled"))
+    if payload.get("prompt_cache_auto_mode") is not None:
+        mode = str(payload.get("prompt_cache_auto_mode") or "").strip().lower()
+        if mode in ("conservative", "explicit", "off", "none", "disabled"):
+            updates["prompt_cache_auto_mode"] = "explicit" if mode in ("off", "none", "disabled") else mode
+    if payload.get("prompt_cache_default_ttl") is not None:
+        ttl = str(payload.get("prompt_cache_default_ttl") or "").strip()
+        if ttl:
+            updates["prompt_cache_default_ttl"] = ttl
     # 写入
     for k, v in updates.items():
         ok = await adapter.set_config(k, v)

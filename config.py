@@ -115,6 +115,50 @@ async def get_calls_per_rotation() -> int:
     
     return int(await get_config_value("calls_per_rotation", 100))
 
+def _coerce_bool(value: Any, default: bool = False) -> bool:
+    """Convert config/env values to bool without treating arbitrary strings as true."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("true", "1", "yes", "on"):
+            return True
+        if normalized in ("false", "0", "no", "off"):
+            return False
+    return default
+
+async def get_prompt_cache_enabled() -> bool:
+    """Whether amb2api should apply prompt-cache helpers beyond raw pass-through."""
+    value = await get_config_value("prompt_cache_enabled", True, "PROMPT_CACHE_ENABLED")
+    return _coerce_bool(value, True)
+
+async def get_prompt_cache_affinity_enabled() -> bool:
+    """Whether cacheable prompt groups should prefer the same AssemblyAI key."""
+    value = await get_config_value(
+        "prompt_cache_affinity_enabled",
+        True,
+        "PROMPT_CACHE_AFFINITY_ENABLED",
+    )
+    return _coerce_bool(value, True)
+
+async def get_prompt_cache_auto_mode() -> str:
+    """Prompt-cache auto behavior: conservative by default; explicit disables injection."""
+    value = await get_config_value("prompt_cache_auto_mode", "conservative", "PROMPT_CACHE_AUTO_MODE")
+    mode = str(value or "conservative").strip().lower()
+    if mode in ("off", "none", "disabled", "false", "explicit"):
+        return "explicit"
+    return "conservative"
+
+async def get_prompt_cache_default_ttl() -> str:
+    """Default Gateway cache TTL used for conservative Claude cache_control."""
+    value = await get_config_value("prompt_cache_default_ttl", "5m", "PROMPT_CACHE_DEFAULT_TTL")
+    ttl = str(value or "").strip()
+    return ttl or "5m"
+
 async def get_auto_ban_enabled() -> bool:
     """Get auto ban enabled setting."""
     env_value = os.getenv("AUTO_BAN")

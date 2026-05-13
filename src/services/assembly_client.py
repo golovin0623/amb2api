@@ -1,5 +1,6 @@
 import json
 import asyncio
+import hashlib
 from typing import Dict, Any, Optional, List, Set
 import itertools
 import uuid
@@ -22,6 +23,10 @@ from config import (
     get_auto_ban_enabled,
     get_auto_ban_error_codes,
     get_tool_debug_logs_enabled,
+    get_prompt_cache_enabled,
+    get_prompt_cache_affinity_enabled,
+    get_prompt_cache_auto_mode,
+    get_prompt_cache_default_ttl,
 )
 
 
@@ -29,6 +34,161 @@ from config import (
 _key_account_cache: Dict[str, str] = {}
 _key_account_cache_time: float = 0
 _KEY_ACCOUNT_CACHE_TTL: float = 300.0  # 5分钟缓存
+
+
+def _stable_json(value: Any) -> str:
+    """Serialize a value deterministically for hashing only."""
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _sha256_short(value: Any, length: int = 32) -> str:
+    return hashlib.sha256(_stable_json(value).encode("utf-8")).hexdigest()[:length]
+
+
+def _is_claude_model(model: str) -> bool:
+    return "claude" in str(model or "").lower()
+
+
+def _supports_prompt_cache_key(model: str) -> bool:
+    """Return whether Gateway docs expose prompt_cache_key-style controls."""
+    model_lower = str(model or "").strip().lower()
+    return "gpt" in model_lower or "kimi" in model_lower or model_lower.startswith(
+        ("o1", "o3", "o4", "o5")
+    )
+
+
+def _copy_message_list(messages: Any) -> Any:
+    if not isinstance(messages, list):
+        return messages
+    return [dict(m) if isinstance(m, dict) else m for m in messages]
+
+
+def _messages_have_cache_control(messages: Any) -> bool:
+    if not isinstance(messages, list):
+        return False
+    return any(isinstance(m, dict) and isinstance(m.get("cache_control"), dict) for m in messages)
+
+
+def _last_leading_system_index(messages: Any) -> Optional[int]:
+    if not isinstance(messages, list):
+        return None
+    last_system_idx: Optional[int] = None
+    for idx, msg in enumerate(messages):
+        if isinstance(msg, dict) and msg.get("role") == "system":
+            last_system_idx = idx
+            continue
+        break
+    return last_system_idx
+
+
+def _normalize_message_for_cache_source(message: Dict[str, Any]) -> Dict[str, Any]:
+    normalized: Dict[str, Any] = {
+        "role": message.get("role"),
+        "content": message.get("content"),
+    }
+    for key in ("tool_calls", "tool_call_id", "name", "type"):
+        if key in message:
+            normalized[key] = message.get(key)
+    return normalized
+
+
+def _build_stable_prompt_cache_source(payload: Dict[str, Any], model: str) -> Optional[Dict[str, Any]]:
+    """Build a non-logged source object used only to derive cache affinity hashes."""
+    messages = payload.get("messages")
+    prefix_messages: List[Dict[str, Any]] = []
+
+    if isinstance(messages, list):
+        cache_breakpoint_idx = None
+        for idx, msg in enumerate(messages):
+            if isinstance(msg, dict) and isinstance(msg.get("cache_control"), dict):
+                cache_breakpoint_idx = idx
+
+        if cache_breakpoint_idx is not None:
+            for msg in messages[: cache_breakpoint_idx + 1]:
+                if isinstance(msg, dict):
+                    prefix_messages.append(_normalize_message_for_cache_source(msg))
+        else:
+            for msg in messages:
+                if isinstance(msg, dict) and msg.get("role") == "system":
+                    prefix_messages.append(_normalize_message_for_cache_source(msg))
+                    continue
+                break
+
+    source: Dict[str, Any] = {"model": str(model or ""), "messages": prefix_messages}
+    if payload.get("tools") is not None:
+        source["tools"] = payload.get("tools")
+    if payload.get("response_format") is not None:
+        source["response_format"] = payload.get("response_format")
+
+    if not source["messages"] and "tools" not in source and "response_format" not in source:
+        return None
+    return source
+
+
+def _build_auto_prompt_cache_key(payload: Dict[str, Any], model: str) -> Optional[str]:
+    source = _build_stable_prompt_cache_source(payload, model)
+    if not source:
+        return None
+    return f"amb2api:{_sha256_short(source)}"
+
+
+def _apply_prompt_cache_defaults(
+    payload: Dict[str, Any],
+    model: str,
+    auto_mode: str = "conservative",
+    default_ttl: str = "5m",
+) -> Dict[str, Any]:
+    """
+    Apply conservative cache helpers without caching dynamic user content.
+
+    Explicit user-provided cache fields always win. The helper returns a copy.
+    """
+    out = dict(payload)
+    messages = _copy_message_list(out.get("messages"))
+    if isinstance(messages, list):
+        out["messages"] = messages
+
+    mode = str(auto_mode or "conservative").strip().lower()
+    if mode != "conservative":
+        return out
+
+    if (
+        _is_claude_model(model)
+        and not isinstance(out.get("cache_control"), dict)
+        and not _messages_have_cache_control(messages)
+    ):
+        system_idx = _last_leading_system_index(messages)
+        if system_idx is not None and isinstance(messages[system_idx], dict):
+            cache_control = {"type": "ephemeral"}
+            ttl = str(default_ttl or "").strip()
+            if ttl:
+                cache_control["ttl"] = ttl
+            messages[system_idx]["cache_control"] = cache_control
+
+    if _supports_prompt_cache_key(model) and not out.get("prompt_cache_key"):
+        cache_key = _build_auto_prompt_cache_key(out, model)
+        if cache_key:
+            out["prompt_cache_key"] = cache_key
+
+    return out
+
+
+def _build_prompt_cache_affinity_key(payload: Dict[str, Any], model: str) -> Optional[str]:
+    explicit_key = payload.get("prompt_cache_key")
+    if isinstance(explicit_key, str) and explicit_key.strip():
+        return f"prompt_cache_key:{model}:{explicit_key.strip()}"
+
+    source = _build_stable_prompt_cache_source(payload, model)
+    if not source:
+        return None
+    return f"prompt_cache_auto:{_sha256_short(source)}"
+
+
+def _rank_indices_by_affinity(indices: List[int], affinity_key: str) -> List[int]:
+    def _score(idx: int) -> str:
+        return hashlib.sha256(f"{affinity_key}:{idx}".encode("utf-8")).hexdigest()
+
+    return sorted(indices, key=_score, reverse=True)
 
 
 async def _find_account_for_key(api_key: str) -> str:
@@ -957,6 +1117,15 @@ def _next_key_index(n: int) -> int:
     return oldest_idx
 
 
+def _clean_expired_failed_keys(timeout_seconds: float = 60.0) -> None:
+    import time
+
+    current_time = time.time()
+    expired_keys = [k for k, t in _failed_keys.items() if current_time - t > timeout_seconds]
+    for k in expired_keys:
+        del _failed_keys[k]
+
+
 async def _next_key_index_async(n: int, excluded_indices: Optional[Set[int]] = None) -> int:
     """
     异步智能 Key 选择（集成速率限制和轮换策略）：
@@ -1083,6 +1252,49 @@ async def _next_key_index_async(n: int, excluded_indices: Optional[Set[int]] = N
     return enabled_indices[i % len(enabled_indices)]
 
 
+async def _get_affinity_candidate_indices(
+    n: int,
+    affinity_key: str,
+    excluded_indices: Optional[Set[int]] = None,
+) -> List[int]:
+    """Return available key indices ranked by prompt-cache affinity."""
+    if n <= 0 or not affinity_key:
+        return []
+
+    excluded = excluded_indices or set()
+    _clean_expired_failed_keys()
+
+    try:
+        rate_limiter = await get_rate_limiter()
+        from .key_manager import get_key_manager
+        key_manager = await get_key_manager()
+        all_keys_info = await key_manager.get_all_keys()
+        enabled_map = {key.index: key.enabled for key in all_keys_info}
+    except Exception as e:
+        log.warning(f"Failed to build prompt-cache affinity candidates, using local fallback: {e}")
+        fallback = [
+            i
+            for i in range(n)
+            if i not in excluded and i not in _failed_keys
+        ]
+        return _rank_indices_by_affinity(fallback, affinity_key)
+
+    candidates: List[int] = []
+    for idx in range(n):
+        if idx in excluded or idx in _failed_keys:
+            continue
+        if not enabled_map.get(idx, True):
+            continue
+        try:
+            if await rate_limiter.is_key_exhausted(idx):
+                continue
+        except Exception as e:
+            log.warning(f"Failed to check rate limit for affinity key {idx}: {e}")
+        candidates.append(idx)
+
+    return _rank_indices_by_affinity(candidates, affinity_key)
+
+
 def _build_no_available_keys_response():
     """返回无可用密钥错误响应"""
     from fastapi.responses import JSONResponse
@@ -1123,7 +1335,11 @@ def _build_quota_exhausted_response(blocked_keys: List[Dict[str, Any]]):
     )
 
 
-async def _select_key_with_daily_quota(keys: List[str], model: str) -> Dict[str, Any]:
+async def _select_key_with_daily_quota(
+    keys: List[str],
+    model: str,
+    affinity_key: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     选择一个可用且未触达每日限额的 key。
 
@@ -1141,11 +1357,7 @@ async def _select_key_with_daily_quota(keys: List[str], model: str) -> Dict[str,
     excluded_indices: Set[int] = set()
     blocked_by_quota: List[Dict[str, Any]] = []
 
-    for _ in range(len(keys)):
-        idx = await _next_key_index_async(len(keys), excluded_indices=excluded_indices)
-        if idx < 0 or idx >= len(keys):
-            break
-
+    async def _check_quota_for_idx(idx: int) -> Optional[Dict[str, Any]]:
         api_key = keys[idx]
         quota_state = await unified_stats.can_use_key_for_model(api_key, model)
         if quota_state.get("allowed", True):
@@ -1156,7 +1368,6 @@ async def _select_key_with_daily_quota(keys: List[str], model: str) -> Dict[str,
                 "blocked": [],
             }
 
-        excluded_indices.add(idx)
         blocked_by_quota.append({
             "idx": idx,
             "key": _mask_key(api_key),
@@ -1168,6 +1379,45 @@ async def _select_key_with_daily_quota(keys: List[str], model: str) -> Dict[str,
             "model_limit": quota_state.get("model_limit"),
             "next_reset_time": quota_state.get("next_reset_time"),
         })
+        return None
+
+    if affinity_key:
+        ranked_indices = await _get_affinity_candidate_indices(
+            len(keys),
+            affinity_key,
+            excluded_indices=excluded_indices,
+        )
+        for idx in ranked_indices:
+            selected = await _check_quota_for_idx(idx)
+            if selected is not None:
+                return selected
+            excluded_indices.add(idx)
+
+        if blocked_by_quota:
+            return {
+                "idx": -1,
+                "api_key": "",
+                "reason": "quota_exhausted",
+                "blocked": blocked_by_quota,
+            }
+
+        return {
+            "idx": -1,
+            "api_key": "",
+            "reason": "no_available_keys",
+            "blocked": [],
+        }
+
+    for _ in range(len(keys)):
+        idx = await _next_key_index_async(len(keys), excluded_indices=excluded_indices)
+        if idx < 0 or idx >= len(keys):
+            break
+
+        selected = await _check_quota_for_idx(idx)
+        if selected is not None:
+            return selected
+
+        excluded_indices.add(idx)
 
     if blocked_by_quota:
         return {
@@ -1547,6 +1797,29 @@ async def send_assembly_request(
                 payload[penalty_key] = val
     else:
         log.debug(f"Skipping unsupported params for Claude model: {openai_request.model}")
+
+    prompt_cache_enabled = False
+    prompt_cache_affinity_key: Optional[str] = None
+    prompt_cache_auto_mode = "conservative"
+    prompt_cache_default_ttl = "5m"
+    try:
+        prompt_cache_enabled = await get_prompt_cache_enabled()
+        if prompt_cache_enabled:
+            prompt_cache_auto_mode = await get_prompt_cache_auto_mode()
+            prompt_cache_default_ttl = await get_prompt_cache_default_ttl()
+            payload = _apply_prompt_cache_defaults(
+                payload,
+                openai_request.model,
+                auto_mode=prompt_cache_auto_mode,
+                default_ttl=prompt_cache_default_ttl,
+            )
+            if await get_prompt_cache_affinity_enabled():
+                prompt_cache_affinity_key = _build_prompt_cache_affinity_key(
+                    payload,
+                    openai_request.model,
+                )
+    except Exception as e:
+        log.warning(f"Prompt-cache helper setup failed, using raw pass-through behavior: {e}")
     
     # 记录完整的 payload（用于调试）
     payload_debug = {k: v for k, v in payload.items() if k != 'messages'}
@@ -1579,7 +1852,11 @@ async def send_assembly_request(
         api_key = ""
         try:
             # 选择可用且未触达每日限额的 key
-            selection = await _select_key_with_daily_quota(keys, openai_request.model)
+            selection = await _select_key_with_daily_quota(
+                keys,
+                openai_request.model,
+                affinity_key=prompt_cache_affinity_key,
+            )
             idx = selection.get("idx", -1)
             api_key = selection.get("api_key", "")
 
@@ -1782,6 +2059,13 @@ async def send_assembly_request(
                             else _build_claude_tool_fallback_messages(sanitized_messages)
                         )
                         fallback_label = "role/content tool blocks"
+                    if prompt_cache_enabled:
+                        fallback_payload = _apply_prompt_cache_defaults(
+                            fallback_payload,
+                            openai_request.model,
+                            auto_mode=prompt_cache_auto_mode,
+                            default_ttl=prompt_cache_default_ttl,
+                        )
                     fallback_post_data = json.dumps(fallback_payload)
                     log.warning(
                         f"[CLAUDE_TOOL_FALLBACK] Retrying once with {fallback_label} "

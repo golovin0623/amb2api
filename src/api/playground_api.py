@@ -27,6 +27,9 @@ class PreviewRequest(BaseModel):
     stream: Optional[bool] = Field(None, description="是否流式")
     tools: Optional[list] = Field(None, description="工具列表")
     tool_choice: Optional[Any] = Field(None, description="工具选择")
+    cache_control: Optional[Dict[str, Any]] = Field(None, description="顶层缓存控制")
+    prompt_cache_retention: Optional[str] = Field(None, description="OpenAI prompt cache retention")
+    prompt_cache_key: Optional[str] = Field(None, description="OpenAI prompt cache key")
 
 
 class CustomRequest(BaseModel):
@@ -94,6 +97,12 @@ async def generate_request_preview(request: PreviewRequest):
             params["tools"] = request.tools
         if request.tool_choice is not None:
             params["tool_choice"] = request.tool_choice
+        if request.cache_control is not None:
+            params["cache_control"] = request.cache_control
+        if request.prompt_cache_retention is not None:
+            params["prompt_cache_retention"] = request.prompt_cache_retention
+        if request.prompt_cache_key is not None:
+            params["prompt_cache_key"] = request.prompt_cache_key
         
         preview = generator.generate_request_preview(params)
         
@@ -196,6 +205,12 @@ async def generate_initial_request(request: PreviewRequest):
             params["tools"] = request.tools
         if request.tool_choice is not None:
             params["tool_choice"] = request.tool_choice
+        if request.cache_control is not None:
+            params["cache_control"] = request.cache_control
+        if request.prompt_cache_retention is not None:
+            params["prompt_cache_retention"] = request.prompt_cache_retention
+        if request.prompt_cache_key is not None:
+            params["prompt_cache_key"] = request.prompt_cache_key
         
         initial_json = generator.generate_initial_custom_request(params)
         
