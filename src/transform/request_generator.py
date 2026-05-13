@@ -26,6 +26,9 @@ class RequestGenerator:
         "response_format",
         "tools",
         "tool_choice",
+        "cache_control",
+        "prompt_cache_retention",
+        "prompt_cache_key",
         "stream",
     ]
     
@@ -167,6 +170,15 @@ class RequestGenerator:
             tools = data["tools"]
             if not isinstance(tools, list):
                 return False, "Field 'tools' must be an array"
+
+        if "cache_control" in data and not isinstance(data["cache_control"], dict):
+            return False, "Field 'cache_control' must be an object"
+
+        if "prompt_cache_retention" in data and not isinstance(data["prompt_cache_retention"], str):
+            return False, "Field 'prompt_cache_retention' must be a string"
+
+        if "prompt_cache_key" in data and not isinstance(data["prompt_cache_key"], str):
+            return False, "Field 'prompt_cache_key' must be a string"
         
         return True, ""
     

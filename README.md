@@ -193,6 +193,33 @@ python web.py
 - `RETRY_429_ENABLED`：是否启用 429 重试（默认：`true`）
 - `RETRY_429_MAX_RETRIES`：最大重试次数（默认：`5`）
 - `RETRY_429_INTERVAL`：重试间隔秒数（默认：`1`）
+- `PROMPT_CACHE_ENABLED`：是否启用 Prompt Caching 增强逻辑（默认：`true`，显式请求字段仍会透传）
+- `PROMPT_CACHE_AFFINITY_ENABLED`：是否启用缓存密钥亲和度（默认：`true`，同一稳定前缀优先使用同一 AssemblyAI Key）
+- `PROMPT_CACHE_AUTO_MODE`：自动缓存策略（默认：`conservative`；可设为 `explicit` 仅保留显式透传）
+- `PROMPT_CACHE_DEFAULT_TTL`：保守自动缓存给 Claude system 前缀添加的默认 TTL（默认：`5m`）
+
+#### Prompt Caching
+
+项目默认启用保守缓存增强：Claude 请求在未显式提供 `cache_control` 时，只会给开头稳定的 system 前缀添加 `cache_control: {"type":"ephemeral","ttl":"5m"}`；OpenAI/Kimi 类模型会基于稳定 system 前缀、tools、`response_format` 生成不包含明文提示词的 `prompt_cache_key`。动态 user/assistant/tool result 内容不会被自动标记缓存，需由客户端显式传入。
+
+为提高缓存命中率，默认开启缓存密钥亲和度：相同 `prompt_cache_key` 或相同稳定前缀会优先落到同一个可用 AssemblyAI API Key；当该 Key 被禁用、失败、限流或达到每日配额时，会回退到下一个可用 Key。
+
+示例：
+
+```json
+{
+  "model": "claude-sonnet-4-6",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Long stable system prompt...",
+      "cache_control": { "type": "ephemeral", "ttl": "5m" }
+    },
+    { "role": "user", "content": "Current question" }
+  ],
+  "max_tokens": 1000
+}
+```
 
 #### 自动封禁配置
 - `AUTO_BAN`：是否启用自动封禁（默认：`false`）
