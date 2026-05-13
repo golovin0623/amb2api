@@ -165,3 +165,31 @@ async def test_select_key_with_daily_quota_affinity_skips_quota_blocked_candidat
 
     assert selected["idx"] == 1
     assert selected["api_key"] == "sk-b"
+
+
+@pytest.mark.asyncio
+async def test_select_key_with_daily_quota_affinity_miss_falls_back_to_normal_selector():
+    keys = ["sk-a", "sk-b"]
+
+    class _FakeUnified:
+        async def can_use_key_for_model(self, api_key, model):
+            return {"allowed": True}
+
+    with patch("src.stats.unified_stats.get_unified_stats", new=AsyncMock(return_value=_FakeUnified())):
+        with patch(
+            "src.services.assembly_client._get_affinity_candidate_indices",
+            new=AsyncMock(return_value=[]),
+        ):
+            with patch(
+                "src.services.assembly_client._next_key_index_async",
+                new=AsyncMock(return_value=1),
+            ) as fallback_selector:
+                selected = await assembly_client._select_key_with_daily_quota(
+                    keys,
+                    "gpt-4.1",
+                    affinity_key="stage-a",
+                )
+
+    assert selected["idx"] == 1
+    assert selected["api_key"] == "sk-b"
+    fallback_selector.assert_awaited()

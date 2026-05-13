@@ -1401,12 +1401,10 @@ async def _select_key_with_daily_quota(
                 "blocked": blocked_by_quota,
             }
 
-        return {
-            "idx": -1,
-            "api_key": "",
-            "reason": "no_available_keys",
-            "blocked": [],
-        }
+        # Affinity prefilter can be empty during transient failure windows.
+        # Fall through to the normal selector so it can reuse the previous
+        # recovery behavior, including trying the oldest failed key.
+        log.debug("Prompt-cache affinity yielded no key candidates; falling back to normal key selection")
 
     for _ in range(len(keys)):
         idx = await _next_key_index_async(len(keys), excluded_indices=excluded_indices)
