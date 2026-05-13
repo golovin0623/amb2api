@@ -193,3 +193,42 @@ async def test_select_key_with_daily_quota_affinity_miss_falls_back_to_normal_se
     assert selected["idx"] == 1
     assert selected["api_key"] == "sk-b"
     fallback_selector.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_select_key_with_daily_quota_affinity_quota_blocks_fall_back_to_normal_selector():
+    keys = ["sk-a", "sk-b", "sk-c"]
+
+    class _FakeUnified:
+        async def can_use_key_for_model(self, api_key, model):
+            if api_key in ("sk-a", "sk-b"):
+                return {
+                    "allowed": False,
+                    "reason": "model_limit_reached",
+                    "model": model,
+                    "success_count": 10,
+                    "total_limit": 100,
+                    "model_success_count": 10,
+                    "model_limit": 10,
+                    "next_reset_time": "2099-01-01T07:00:00+00:00",
+                }
+            return {"allowed": True}
+
+    with patch("src.stats.unified_stats.get_unified_stats", new=AsyncMock(return_value=_FakeUnified())):
+        with patch(
+            "src.services.assembly_client._get_affinity_candidate_indices",
+            new=AsyncMock(return_value=[0, 1]),
+        ):
+            with patch(
+                "src.services.assembly_client._next_key_index_async",
+                new=AsyncMock(return_value=2),
+            ) as fallback_selector:
+                selected = await assembly_client._select_key_with_daily_quota(
+                    keys,
+                    "gpt-4.1",
+                    affinity_key="stage-a",
+                )
+
+    assert selected["idx"] == 2
+    assert selected["api_key"] == "sk-c"
+    fallback_selector.assert_awaited()

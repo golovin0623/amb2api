@@ -27,6 +27,18 @@ router = APIRouter()
 security = HTTPBearer()
 
 
+def _parse_config_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("true", "1", "yes", "on", "enabled"):
+            return True
+        if normalized in ("false", "0", "no", "off", "disabled", "none", ""):
+            return False
+    return bool(value)
+
+
 async def authenticate(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
     token = credentials.credentials
     password = await get_panel_password()
@@ -227,9 +239,9 @@ async def save_config(payload: Dict[str, Any], token: str = Depends(authenticate
             pass
     # Prompt caching helpers
     if payload.get("prompt_cache_enabled") is not None:
-        updates["prompt_cache_enabled"] = bool(payload.get("prompt_cache_enabled"))
+        updates["prompt_cache_enabled"] = _parse_config_bool(payload.get("prompt_cache_enabled"))
     if payload.get("prompt_cache_affinity_enabled") is not None:
-        updates["prompt_cache_affinity_enabled"] = bool(payload.get("prompt_cache_affinity_enabled"))
+        updates["prompt_cache_affinity_enabled"] = _parse_config_bool(payload.get("prompt_cache_affinity_enabled"))
     if payload.get("prompt_cache_auto_mode") is not None:
         mode = str(payload.get("prompt_cache_auto_mode") or "").strip().lower()
         if mode in ("conservative", "explicit", "off", "none", "disabled"):
