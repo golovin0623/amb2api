@@ -168,6 +168,31 @@ class TestRequestGenerator:
             assert not is_valid, f"Invalid request should fail: {request_json}"
             assert expected_error_part in error, \
                 f"Error should contain '{expected_error_part}', got '{error}' for request: {request_json}"
+
+    def test_custom_request_accepts_openai_reasoning_effort_values(self, generator):
+        """自定义报文校验应接受当前 OpenAI 兼容 reasoning_effort 值。"""
+        for level in ("none", "minimal", "low", "medium", "high", "xhigh"):
+            request_json = json.dumps({
+                "model": "gpt-5",
+                "messages": [{"role": "user", "content": "hi"}],
+                "reasoning_effort": level,
+            })
+
+            is_valid, error = generator.validate_custom_request(request_json)
+
+            assert is_valid, f"{level} should pass validation: {error}"
+
+    def test_custom_request_rejects_unknown_reasoning_effort(self, generator):
+        request_json = json.dumps({
+            "model": "gpt-5",
+            "messages": [{"role": "user", "content": "hi"}],
+            "reasoning_effort": "extreme",
+        })
+
+        is_valid, error = generator.validate_custom_request(request_json)
+
+        assert not is_valid
+        assert "none, minimal, low, medium, high, xhigh" in error
     
     def test_parse_custom_request(self, generator):
         """测试解析自定义请求"""

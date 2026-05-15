@@ -5,7 +5,7 @@ Tests for AssemblyAI LLM Gateway 2026-04 关 OpenAI 兼容侧新字段透传：
 - ``stream_options``                 OpenAI 标准 - 流式末尾 usage chunk
 - ``parallel_tool_calls``           OpenAI 标准 - 控制并行 tool_calls
 - ``max_completion_tokens``         GPT-5 / o-series 正式字段
-- ``reasoning_effort``              GPT-5 - "low" / "medium" / "high"
+- ``reasoning_effort``              GPT-5 - "none" / "minimal" / "low" / "medium" / "high" / "xhigh"
 - ``verbosity``                     GPT-5 - "low" / "medium" / "high"
 
 响应侧：
@@ -44,7 +44,7 @@ def test_chat_request_accepts_max_completion_tokens():
 
 
 def test_chat_request_accepts_reasoning_effort_levels():
-    for level in ("low", "medium", "high"):
+    for level in ("none", "minimal", "low", "medium", "high", "xhigh"):
         req = _minimal_req(reasoning_effort=level)
         assert req.reasoning_effort == level
 

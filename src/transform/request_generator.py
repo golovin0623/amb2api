@@ -10,6 +10,9 @@ from log import log
 
 class RequestGenerator:
     """请求生成器"""
+
+    REASONING_EFFORT_VALUES = ("none", "minimal", "low", "medium", "high", "xhigh")
+    VERBOSITY_VALUES = ("low", "medium", "high")
     
     # OpenAI 兼容的请求参数
     SUPPORTED_PARAMS = [
@@ -182,11 +185,13 @@ class RequestGenerator:
         if "parallel_tool_calls" in data and not isinstance(data["parallel_tool_calls"], bool):
             return False, "Field 'parallel_tool_calls' must be a boolean"
 
-        if "reasoning_effort" in data and data["reasoning_effort"] not in ("low", "medium", "high"):
-            return False, "Field 'reasoning_effort' must be one of: low, medium, high"
+        if "reasoning_effort" in data and data["reasoning_effort"] not in self.REASONING_EFFORT_VALUES:
+            values = ", ".join(self.REASONING_EFFORT_VALUES)
+            return False, f"Field 'reasoning_effort' must be one of: {values}"
 
-        if "verbosity" in data and data["verbosity"] not in ("low", "medium", "high"):
-            return False, "Field 'verbosity' must be one of: low, medium, high"
+        if "verbosity" in data and data["verbosity"] not in self.VERBOSITY_VALUES:
+            values = ", ".join(self.VERBOSITY_VALUES)
+            return False, f"Field 'verbosity' must be one of: {values}"
         
         if "tools" in data:
             tools = data["tools"]
