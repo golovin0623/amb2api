@@ -8621,6 +8621,7 @@
             const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
             html.setAttribute('data-theme', newTheme);
             localStorage.setItem('theme', newTheme);
+            localStorage.setItem('amb2api-theme', newTheme);
             updateThemeButton(newTheme);
 
             // 重新渲染使用动态颜色的组件
@@ -8638,6 +8639,7 @@
                 renderUsageList(usageStatsData);
             }
         }
+        window.addEventListener('themechange', refreshThemeAwareComponents);
 
         function updateThemeButton(theme) {
             const icon = document.getElementById('themeIcon');
@@ -8653,7 +8655,7 @@
 
         // 初始化主题
         (function initTheme() {
-            const savedTheme = localStorage.getItem('theme') || 'light';
+            const savedTheme = localStorage.getItem('amb2api-theme') || localStorage.getItem('theme') || 'light';
             document.documentElement.setAttribute('data-theme', savedTheme);
             // 延迟更新按钮，确保 DOM 已加载
             setTimeout(() => updateThemeButton(savedTheme), 0);
@@ -8847,7 +8849,13 @@
                     hasMoved = false;
                     return;
                 }
-                toggleTheme();
+                e.preventDefault();
+                e.stopPropagation();
+                if (window.theme && typeof window.theme.toggle === 'function') {
+                    window.theme.toggle(e);
+                } else {
+                    toggleTheme();
+                }
             });
         })();
 
@@ -14013,16 +14021,16 @@
 
     </script>
     <!-- 模型选择弹窗 -->
-    <div id="modelsModal" class="modal">
-        <div class="modal-content">
+    <div id="modelsModal" class="modal models-modal">
+        <div class="modal-content models-modal-content">
             <div class="modal-header">
                 <h3 class="modal-title">选择模型</h3>
                 <button class="modal-close" onclick="closeModelsModal()">&times;</button>
             </div>
-            <div class="modal-body" id="modelsModalBody" style="max-height:420px; overflow:auto"></div>
-            <div class="modal-footer">
-                <button class="btn" onclick="closeModelsModal()" style="background:#6c757d">取消</button>
-                <button class="btn" onclick="saveSelectedModels()">确定</button>
+            <div class="modal-body models-modal-body" id="modelsModalBody"></div>
+            <div class="modal-footer models-modal-footer">
+                <button class="btn btn-outline-secondary" onclick="closeModelsModal()">取消</button>
+                <button class="btn models-save-btn" onclick="saveSelectedModels()">确定</button>
             </div>
         </div>
     </div>
@@ -15303,6 +15311,10 @@
             return m[cat] || m.Other;
         }
 
+        function getModelCategoryClass(cat) {
+            return 'model-category--' + String(cat || 'Other').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        }
+
         function formatTokensShort(v) {
             const n = parseInt(v || 0);
             if (!n || n <= 0) return '-';
@@ -15363,22 +15375,49 @@
             const groups = queriedModels.grouped || {};
             const ordered = ['Anthropic', 'OpenAI', 'Google', 'Other'];
             let html = '';
+            const totalCount = (queriedModels.models || []).length;
+            html += `<div class="models-modal-summary">
+                <span class="models-modal-summary__count">${totalCount}</span>
+                <span class="models-modal-summary__label">可用模型</span>
+                <span class="models-modal-summary__selected">${selectedModels.length} 已选择</span>
+            </div>`;
             ordered.forEach(cat => {
                 const items = groups[cat] || [];
-                const colors = getCatColors(cat);
-                html += `<div style="margin:8px 0"><div style="font-weight:600; margin-bottom:6px; color:${colors.text}">${cat} (${items.length})</div>`;
+                const categoryClass = getModelCategoryClass(cat);
+                html += `<section class="models-category ${categoryClass}">
+                    <div class="models-category__header">
+                        <span class="models-category__mark" aria-hidden="true"></span>
+                        <span class="models-category__title">${escapeHtml(cat)}</span>
+                        <span class="models-category__count">${items.length}</span>
+                    </div>
+                    <div class="models-category__grid">`;
                 items.forEach(m => {
                     const checked = selectedModels.includes(m) ? 'checked' : '';
                     const mt = (queriedModels.meta || {})[m] || {};
                     const ctx = formatTokensShort(mt.context_length);
                     const mx = mt.max_tokens ? (mt.max_tokens >= 1000 ? Math.round(mt.max_tokens / 1000) + 'k' : mt.max_tokens) : '-';
-                    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-                    const metaColor = isDark ? 'rgba(255,255,255,0.5)' : '#666';
-                    html += `<label style="display:inline-flex; align-items:center; gap:6px; margin:4px 8px 4px 0; padding:4px 8px; border-left:4px solid ${colors.border}; background:${colors.bg}; border-radius:8px"><input type="checkbox" class="model-check" value="${m}" ${checked}/> <span style="color:${colors.text}">${m}</span><span style="color:${metaColor}; font-size:12px">(ctx:${ctx}, max:${mx})</span></label>`;
+                    const safeModel = escapeHtml(m);
+                    html += `<label class="model-option ${categoryClass}">
+                        <input type="checkbox" class="model-check" value="${safeModel}" ${checked}/>
+                        <span class="model-option__check" aria-hidden="true"></span>
+                        <span class="model-option__body">
+                            <span class="model-option__name" title="${safeModel}">${safeModel}</span>
+                            <span class="model-option__meta">
+                                <span>ctx ${escapeHtml(ctx)}</span>
+                                <span>max ${escapeHtml(String(mx))}</span>
+                            </span>
+                        </span>
+                    </label>`;
                 });
-                html += `</div>`;
+                html += `</div></section>`;
             });
-            body.innerHTML = html || '<div>未查询到模型</div>';
+            body.innerHTML = totalCount ? html : '<div class="models-empty">未查询到模型</div>';
+            body.onchange = (event) => {
+                if (!event.target || !event.target.classList || !event.target.classList.contains('model-check')) return;
+                const selectedCount = body.querySelectorAll('.model-check:checked').length;
+                const selectedEl = body.querySelector('.models-modal-summary__selected');
+                if (selectedEl) selectedEl.textContent = `${selectedCount} 已选择`;
+            };
             modal.style.display = 'block';
         }
 

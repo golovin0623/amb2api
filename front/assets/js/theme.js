@@ -22,7 +22,10 @@
 
     const apply = () => {
       root.setAttribute('data-theme', theme);
-      try { localStorage.setItem(STORAGE_KEY, theme); } catch (e) {}
+      try {
+        localStorage.setItem(STORAGE_KEY, theme);
+        localStorage.setItem('theme', theme);
+      } catch (e) {}
       updateLegacyToggle(theme);
       window.dispatchEvent(new CustomEvent('themechange', { detail: { theme: theme } }));
     };
@@ -64,13 +67,18 @@
 
   function init() {
     let stored = null;
-    try { stored = localStorage.getItem(STORAGE_KEY); } catch (e) {}
+    try { stored = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('theme'); } catch (e) {}
     const initial = stored || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     document.documentElement.setAttribute('data-theme', initial);
+    try {
+      localStorage.setItem(STORAGE_KEY, initial);
+      localStorage.setItem('theme', initial);
+    } catch (e) {}
     updateLegacyToggle(initial);
 
     // 兼容旧 .theme-toggle 元素
     document.addEventListener('click', (evt) => {
+      if (evt.defaultPrevented) return;
       const tgt = evt.target.closest('.theme-toggle, [data-action="toggle-theme"]');
       if (tgt) {
         evt.preventDefault();

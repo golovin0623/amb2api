@@ -332,6 +332,261 @@ html body .model-chip .model-ctx {
   margin-left: var(--s-1);
 }
 
+/* 模型选择弹窗 */
+html body #modelsModal.models-modal {
+  padding: clamp(12px, 3vw, 28px) !important;
+}
+html body #modelsModal .models-modal-content {
+  width: min(980px, 100%) !important;
+  max-height: min(88vh, 760px) !important;
+}
+html body #modelsModal .models-modal-body {
+  display: grid;
+  gap: var(--s-4);
+  padding: var(--s-4) !important;
+  overflow: auto;
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--bg-overlay) 64%, transparent), transparent 48px);
+}
+html body #modelsModal .models-modal-summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: 1px solid var(--line-default);
+  border-radius: var(--r-4);
+  background: var(--bg-leaf);
+}
+html body #modelsModal .models-modal-summary__count {
+  font-family: var(--font-display);
+  font-size: var(--fs-h4);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  color: var(--ink-pure);
+  font-variant-numeric: tabular-nums;
+}
+html body #modelsModal .models-modal-summary__label,
+html body #modelsModal .models-modal-summary__selected {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--ink-secondary);
+}
+html body #modelsModal .models-modal-summary__selected {
+  margin-left: auto;
+  color: var(--aurora-1);
+  font-weight: var(--fw-semibold);
+}
+html body #modelsModal .models-category {
+  display: grid;
+  gap: var(--s-2);
+}
+html body #modelsModal .models-category__header {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 28px;
+  font-family: var(--font-sans);
+}
+html body #modelsModal .models-category__mark {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--model-accent, var(--ink-muted));
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--model-accent, var(--ink-muted)) 16%, transparent);
+}
+html body #modelsModal .models-category__title {
+  color: var(--ink-pure);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+}
+html body #modelsModal .models-category__count {
+  margin-left: auto;
+  min-width: 28px;
+  padding: 2px var(--s-2);
+  border: 1px solid var(--line-default);
+  border-radius: var(--r-full);
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  text-align: center;
+}
+html body #modelsModal .models-category__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--s-2);
+}
+html body #modelsModal .model-option {
+  --model-accent: var(--aurora-1);
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--s-2);
+  min-height: 68px;
+  padding: var(--s-3);
+  border: 1px solid var(--line-default);
+  border-left: 3px solid color-mix(in oklch, var(--model-accent) 78%, var(--line-default));
+  border-radius: var(--r-3);
+  background: var(--bg-leaf);
+  color: var(--ink-primary);
+  cursor: pointer;
+  box-shadow: var(--elev-1);
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    border-color var(--dur-instant) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard),
+    transform var(--dur-instant) var(--ease-standard);
+}
+html body #modelsModal .model-option:hover {
+  border-color: color-mix(in oklch, var(--model-accent) 42%, var(--line-default));
+  background: color-mix(in oklch, var(--model-accent) 5%, var(--bg-leaf));
+  box-shadow: var(--elev-2);
+  transform: translateY(-1px);
+}
+html body #modelsModal .model-option:has(.model-check:checked) {
+  border-color: color-mix(in oklch, var(--model-accent) 54%, var(--line-default));
+  background: color-mix(in oklch, var(--model-accent) 10%, var(--bg-leaf));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--model-accent) 20%, transparent),
+    var(--elev-2);
+}
+html body #modelsModal .model-check {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+html body #modelsModal .model-option__check {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-1);
+  background: var(--bg-raised);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.22);
+}
+html body #modelsModal .model-option__check::after {
+  content: "";
+  display: block;
+  width: 7px;
+  height: 4px;
+  margin: 5px 0 0 4px;
+  border-left: 2px solid var(--ink-inverse);
+  border-bottom: 2px solid var(--ink-inverse);
+  transform: rotate(-45deg) scale(0.8);
+  opacity: 0;
+}
+html body #modelsModal .model-check:checked + .model-option__check {
+  border-color: var(--model-accent);
+  background: var(--model-accent);
+}
+html body #modelsModal .model-check:checked + .model-option__check::after {
+  opacity: 1;
+}
+html body #modelsModal .model-option__body {
+  display: grid;
+  gap: var(--s-2);
+  min-width: 0;
+}
+html body #modelsModal .model-option__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-pure);
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0;
+}
+html body #modelsModal .model-option__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+}
+html body #modelsModal .model-option__meta span {
+  padding: 2px 6px;
+  border-radius: var(--r-full);
+  background: color-mix(in oklch, var(--model-accent) 9%, var(--bg-overlay));
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.25;
+}
+html body #modelsModal .model-category--anthropic { --model-accent: oklch(0.62 0.155 302); }
+html body #modelsModal .model-category--openai { --model-accent: oklch(0.58 0.150 232); }
+html body #modelsModal .model-category--google { --model-accent: oklch(0.62 0.155 145); }
+html body #modelsModal .model-category--other { --model-accent: oklch(0.58 0.018 270); }
+html body #modelsModal .models-modal-footer {
+  justify-content: flex-end !important;
+}
+html body #modelsModal .models-save-btn {
+  min-width: 96px;
+  background: var(--ink-pure) !important;
+  color: var(--ink-inverse) !important;
+  border-color: var(--ink-pure) !important;
+}
+html body #modelsModal .models-save-btn:hover {
+  background: oklch(0.30 0.012 270) !important;
+  border-color: oklch(0.30 0.012 270) !important;
+}
+html body #modelsModal .models-empty {
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+  color: var(--ink-muted);
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+}
+html[data-theme="dark"] body #modelsModal .models-modal-body {
+  background:
+    linear-gradient(180deg, oklch(0.12 0.008 270 / 0.82), transparent 56px);
+}
+html[data-theme="dark"] body #modelsModal .models-modal-summary,
+html[data-theme="dark"] body #modelsModal .model-option {
+  background: oklch(0.135 0.008 270);
+  border-color: oklch(0.96 0.005 270 / 0.10);
+}
+html[data-theme="dark"] body #modelsModal .model-option:hover,
+html[data-theme="dark"] body #modelsModal .model-option:has(.model-check:checked) {
+  background: color-mix(in oklch, var(--model-accent) 14%, oklch(0.135 0.008 270));
+}
+
+@media (max-width: 640px) {
+  html body #modelsModal.models-modal {
+    align-items: flex-end !important;
+    padding: var(--s-3) var(--s-2) 0 !important;
+  }
+  html body #modelsModal .models-modal-content {
+    max-height: calc(92dvh - env(safe-area-inset-bottom, 0px)) !important;
+    border-radius: var(--r-5) var(--r-5) 0 0 !important;
+  }
+  html body #modelsModal .modal-header,
+  html body #modelsModal .models-modal-footer {
+    padding: var(--s-3) !important;
+  }
+  html body #modelsModal .models-modal-body {
+    padding: var(--s-3) !important;
+  }
+  html body #modelsModal .models-modal-summary {
+    align-items: center;
+  }
+  html body #modelsModal .models-modal-summary__count {
+    font-size: 22px;
+  }
+  html body #modelsModal .models-category__grid {
+    grid-template-columns: 1fr;
+  }
+  html body #modelsModal .model-option {
+    min-height: 62px;
+  }
+  html body #modelsModal .models-modal-footer .btn {
+    flex: 1 1 0;
+    justify-content: center;
+    min-height: 40px;
+  }
+}
+
 /* configLoading */
 html body #configTab #configLoading,
 html body #configTab .loading {
@@ -1576,6 +1831,233 @@ html body #logsTab .log-row--warning {
   }
   html body #logsTab .log-btn .btn-icon {
     display: none !important;
+  }
+}
+
+/* 实时日志 · 亮色主题修正
+   基础层必须服务亮色，暗色只在 [data-theme="dark"] 中覆盖，避免亮色下出现整块黑色终端。 */
+html body #logsTab .log-hero {
+  background:
+    linear-gradient(135deg, var(--bg-leaf), color-mix(in oklch, var(--bg-overlay) 78%, var(--bg-leaf))),
+    radial-gradient(circle at 12% 0%, color-mix(in oklch, var(--sig-info) 14%, transparent), transparent 36%) !important;
+  border-color: var(--line-default) !important;
+  box-shadow: var(--elev-1) !important;
+}
+html body #logsTab .log-hero__title {
+  color: var(--ink-secondary) !important;
+}
+html body #logsTab .log-console-panel {
+  background: var(--bg-leaf) !important;
+  border-color: var(--line-default) !important;
+  box-shadow: var(--elev-2) !important;
+}
+html body #logsTab .log-console-toolbar {
+  background:
+    linear-gradient(180deg, var(--bg-raised), color-mix(in oklch, var(--bg-overlay) 78%, var(--bg-raised))) !important;
+  border-color: var(--line-default) !important;
+}
+html body #logsTab .log-btn {
+  background: var(--bg-leaf) !important;
+  color: var(--ink-secondary) !important;
+  border-color: var(--line-default) !important;
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.18) !important;
+}
+html body #logsTab .log-btn:hover {
+  background: var(--bg-overlay) !important;
+  color: var(--ink-pure) !important;
+  border-color: var(--line-strong) !important;
+}
+html body #logsTab .log-btn-connect {
+  background: var(--sig-success-soft) !important;
+  color: var(--sig-success) !important;
+  border-color: color-mix(in oklch, var(--sig-success) 32%, var(--line-default)) !important;
+}
+html body #logsTab .log-btn-connect:hover {
+  background: color-mix(in oklch, var(--sig-success) 16%, var(--bg-leaf)) !important;
+}
+html body #logsTab .log-btn-disconnect {
+  background: var(--sig-danger-soft) !important;
+  color: var(--sig-danger) !important;
+  border-color: color-mix(in oklch, var(--sig-danger) 28%, var(--line-default)) !important;
+}
+html body #logsTab .log-btn-download {
+  color: var(--sig-info) !important;
+  border-color: color-mix(in oklch, var(--sig-info) 28%, var(--line-default)) !important;
+}
+html body #logsTab .log-filter-strip {
+  min-width: 0;
+}
+html body #logsTab .log-field .filter-select,
+html body #logsTab #logSearchInput,
+html body #logsTab .log-toggle {
+  background: var(--bg-leaf) !important;
+  color: var(--ink-primary) !important;
+  border-color: var(--line-default) !important;
+}
+html body #logsTab .log-console,
+html body #logsTab #logContainer {
+  background:
+    linear-gradient(180deg, var(--bg-sunken), color-mix(in oklch, var(--bg-overlay) 70%, var(--bg-sunken))) !important;
+  color: var(--ink-primary) !important;
+}
+html body #logsTab .log-row {
+  background: color-mix(in oklch, var(--bg-leaf) 78%, var(--bg-overlay)) !important;
+  border-color: var(--line-soft) !important;
+  color: var(--ink-primary) !important;
+}
+html body #logsTab .log-row:hover {
+  background: var(--bg-leaf) !important;
+  border-color: var(--line-default) !important;
+}
+html body #logsTab .log-row__index,
+html body #logsTab .log-row__time {
+  color: var(--ink-muted) !important;
+}
+html body #logsTab .log-row__level {
+  color: var(--ink-secondary) !important;
+  background: var(--bg-overlay) !important;
+  border-color: var(--line-default) !important;
+}
+html body #logsTab .log-row__source {
+  color: var(--ink-secondary) !important;
+}
+html body #logsTab .log-row__message {
+  color: var(--ink-primary) !important;
+}
+html body #logsTab .log-fact {
+  color: var(--ink-secondary) !important;
+  background: var(--bg-overlay) !important;
+  border-color: var(--line-default) !important;
+}
+html body #logsTab .log-fact b {
+  color: var(--ink-muted) !important;
+}
+html body #logsTab .log-row--error {
+  background: linear-gradient(90deg, var(--sig-danger-soft), color-mix(in oklch, var(--bg-leaf) 78%, var(--bg-overlay))) !important;
+  border-color: color-mix(in oklch, var(--sig-danger) 22%, var(--line-default)) !important;
+}
+html body #logsTab .log-row--warning {
+  background: linear-gradient(90deg, var(--sig-warning-soft), color-mix(in oklch, var(--bg-leaf) 78%, var(--bg-overlay))) !important;
+  border-color: color-mix(in oklch, var(--sig-warning) 24%, var(--line-default)) !important;
+}
+html body #logsTab mark {
+  background: color-mix(in oklch, var(--sig-warning) 24%, transparent) !important;
+  color: var(--ink-pure) !important;
+}
+
+html[data-theme="dark"] body #logsTab .log-hero {
+  background:
+    linear-gradient(135deg, oklch(0.18 0.010 270 / 0.80), oklch(0.10 0.008 270 / 0.96)),
+    radial-gradient(circle at 14% 0%, oklch(0.62 0.145 240 / 0.18), transparent 34%) !important;
+  border-color: oklch(0.96 0.005 270 / 0.10) !important;
+}
+html[data-theme="dark"] body #logsTab .log-hero__title {
+  color: oklch(0.80 0.020 270) !important;
+}
+html[data-theme="dark"] body #logsTab .log-console-panel {
+  background:
+    linear-gradient(180deg, oklch(0.12 0.008 270), oklch(0.075 0.005 270)) !important;
+  border-color: oklch(0.96 0.005 270 / 0.10) !important;
+  box-shadow:
+    0 18px 48px oklch(0 0 0 / 0.24),
+    inset 0 1px 0 oklch(1 0 0 / 0.05) !important;
+}
+html[data-theme="dark"] body #logsTab .log-console-toolbar {
+  background:
+    linear-gradient(180deg, oklch(0.145 0.009 270), oklch(0.105 0.007 270)) !important;
+  border-color: oklch(0.96 0.005 270 / 0.09) !important;
+}
+html[data-theme="dark"] body #logsTab .log-btn {
+  background: oklch(0.135 0.008 270) !important;
+  color: var(--ink-primary) !important;
+  border-color: oklch(0.96 0.005 270 / 0.12) !important;
+}
+html[data-theme="dark"] body #logsTab .log-btn:hover {
+  background: oklch(0.18 0.010 270) !important;
+  color: var(--ink-pure) !important;
+}
+html[data-theme="dark"] body #logsTab .log-btn-connect {
+  color: oklch(0.82 0.115 165) !important;
+  border-color: oklch(0.70 0.140 165 / 0.32) !important;
+  background: oklch(0.18 0.055 165 / 0.36) !important;
+}
+html[data-theme="dark"] body #logsTab .log-btn-disconnect {
+  background: oklch(0.18 0.060 25 / 0.28) !important;
+}
+html[data-theme="dark"] body #logsTab .log-field .filter-select,
+html[data-theme="dark"] body #logsTab #logSearchInput,
+html[data-theme="dark"] body #logsTab .log-toggle {
+  background: oklch(0.08 0.006 270) !important;
+  border-color: oklch(0.96 0.005 270 / 0.11) !important;
+  color: var(--ink-primary) !important;
+}
+html[data-theme="dark"] body #logsTab .log-console,
+html[data-theme="dark"] body #logsTab #logContainer {
+  background:
+    linear-gradient(180deg, oklch(0.065 0.006 270), oklch(0.045 0.005 270)) !important;
+}
+html[data-theme="dark"] body #logsTab .log-row {
+  background: oklch(0.095 0.006 270 / 0.72) !important;
+  border-color: oklch(0.96 0.005 270 / 0.045) !important;
+  color: oklch(0.85 0.008 270) !important;
+}
+html[data-theme="dark"] body #logsTab .log-row:hover {
+  background: oklch(0.14 0.008 270 / 0.90) !important;
+  border-color: oklch(0.96 0.005 270 / 0.10) !important;
+}
+html[data-theme="dark"] body #logsTab .log-row__index,
+html[data-theme="dark"] body #logsTab .log-row__time {
+  color: oklch(0.55 0.012 270) !important;
+}
+html[data-theme="dark"] body #logsTab .log-row__source {
+  color: oklch(0.66 0.012 270) !important;
+}
+html[data-theme="dark"] body #logsTab .log-row__message {
+  color: oklch(0.86 0.008 270) !important;
+}
+html[data-theme="dark"] body #logsTab .log-fact {
+  color: oklch(0.74 0.025 270) !important;
+  background: oklch(0.16 0.010 270 / 0.78) !important;
+  border-color: oklch(0.96 0.005 270 / 0.07) !important;
+}
+html[data-theme="dark"] body #logsTab .log-fact b {
+  color: oklch(0.55 0.012 270) !important;
+}
+html[data-theme="dark"] body #logsTab .log-row--error {
+  background: linear-gradient(90deg, oklch(0.18 0.070 25 / 0.55), oklch(0.095 0.006 270 / 0.72)) !important;
+  border-color: oklch(0.68 0.190 25 / 0.18) !important;
+}
+html[data-theme="dark"] body #logsTab .log-row--warning {
+  background: linear-gradient(90deg, oklch(0.20 0.070 75 / 0.36), oklch(0.095 0.006 270 / 0.72)) !important;
+}
+
+@media (max-width: 640px) {
+  html body #logsTab .log-hero {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+  html body #logsTab .log-btn-group {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  html body #logsTab .log-btn {
+    min-height: 40px !important;
+  }
+  html body #logsTab .log-filter-strip {
+    grid-template-columns: 1fr !important;
+  }
+  html body #logsTab .log-field,
+  html body #logsTab .log-field--search,
+  html body #logsTab .log-toggle,
+  html body #logsTab .log-field .filter-select,
+  html body #logsTab #logSearchInput {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  html body #logsTab .log-toggle {
+    justify-content: space-between;
+  }
+  html body #logsTab .log-toggle > span {
+    display: inline !important;
   }
 }
 
