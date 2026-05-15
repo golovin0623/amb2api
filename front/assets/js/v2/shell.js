@@ -37,6 +37,13 @@
     return span;
   }
 
+  function syncThemeIcon(theme) {
+    const host = $('.v2-theme-icon');
+    if (!host) return;
+    host.innerHTML = '';
+    host.appendChild(ensureSvg(theme === 'dark' ? 'sun' : 'moon', 16));
+  }
+
   function buildSidebar() {
     if ($('.v2-sidebar')) return;
     const aside = document.createElement('aside');
@@ -120,6 +127,7 @@
     bar.querySelector('.v2-cmdk-icon').appendChild(ensureSvg('search', 14));
     bar.querySelector('.v2-theme-icon').appendChild(ensureSvg('moon', 16));
     bar.querySelector('.v2-logout-icon').appendChild(ensureSvg('log-out', 14));
+    syncThemeIcon(document.documentElement.getAttribute('data-theme') || 'light');
 
     $('#v2ThemeToggle', bar).addEventListener('click', (e) => {
       // 优先调 window.theme.toggle —— 旧 .theme-toggle 在 V2 模式下被隐藏，
@@ -241,6 +249,10 @@
       }
     });
   }
+
+  window.addEventListener('themechange', (event) => {
+    syncThemeIcon((event.detail && event.detail.theme) || document.documentElement.getAttribute('data-theme') || 'light');
+  });
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
