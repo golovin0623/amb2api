@@ -334,16 +334,16 @@ html body .model-chip .model-ctx {
 
 /* 模型选择弹窗 */
 html body #modelsModal.models-modal {
-  padding: clamp(12px, 3vw, 28px) !important;
+  padding: clamp(12px, 3vw, 28px);
 }
 html body #modelsModal .models-modal-content {
-  width: min(980px, 100%) !important;
-  max-height: min(88vh, 760px) !important;
+  width: min(980px, 100%);
+  max-height: min(88vh, 760px);
 }
 html body #modelsModal .models-modal-body {
   display: grid;
   gap: var(--s-4);
-  padding: var(--s-4) !important;
+  padding: var(--s-4);
   overflow: auto;
   background:
     linear-gradient(180deg, color-mix(in oklch, var(--bg-overlay) 64%, transparent), transparent 48px);
@@ -518,7 +518,7 @@ html body #modelsModal .model-category--openai { --model-accent: oklch(0.58 0.15
 html body #modelsModal .model-category--google { --model-accent: oklch(0.62 0.155 145); }
 html body #modelsModal .model-category--other { --model-accent: oklch(0.58 0.018 270); }
 html body #modelsModal .models-modal-footer {
-  justify-content: flex-end !important;
+  justify-content: flex-end;
 }
 html body #modelsModal .models-save-btn {
   min-width: 96px;
@@ -554,19 +554,19 @@ html[data-theme="dark"] body #modelsModal .model-option:has(.model-check:checked
 
 @media (max-width: 640px) {
   html body #modelsModal.models-modal {
-    align-items: flex-end !important;
-    padding: var(--s-3) var(--s-2) 0 !important;
+    align-items: flex-end;
+    padding: var(--s-3) var(--s-2) 0;
   }
   html body #modelsModal .models-modal-content {
-    max-height: calc(92dvh - env(safe-area-inset-bottom, 0px)) !important;
+    max-height: calc(92dvh - env(safe-area-inset-bottom, 0px));
     border-radius: var(--r-5) var(--r-5) 0 0 !important;
   }
   html body #modelsModal .modal-header,
   html body #modelsModal .models-modal-footer {
-    padding: var(--s-3) !important;
+    padding: var(--s-3);
   }
   html body #modelsModal .models-modal-body {
-    padding: var(--s-3) !important;
+    padding: var(--s-3);
   }
   html body #modelsModal .models-modal-summary {
     align-items: center;

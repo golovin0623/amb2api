@@ -22,10 +22,7 @@
 
     const apply = () => {
       root.setAttribute('data-theme', theme);
-      try {
-        localStorage.setItem(STORAGE_KEY, theme);
-        localStorage.setItem('theme', theme);
-      } catch (e) {}
+      if (opts.persist !== false) persistTheme(theme);
       updateLegacyToggle(theme);
       window.dispatchEvent(new CustomEvent('themechange', { detail: { theme: theme } }));
     };
@@ -50,6 +47,13 @@
     setTheme(currentTheme() === 'dark' ? 'light' : 'dark', { x, y });
   }
 
+  function persistTheme(theme) {
+    try {
+      localStorage.setItem(STORAGE_KEY, theme);
+      localStorage.setItem('theme', theme);
+    } catch (e) {}
+  }
+
   function updateLegacyToggle(theme) {
     const isDark = theme === 'dark';
     const iconEl = document.getElementById('themeIcon');
@@ -70,10 +74,7 @@
     try { stored = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('theme'); } catch (e) {}
     const initial = stored || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     document.documentElement.setAttribute('data-theme', initial);
-    try {
-      localStorage.setItem(STORAGE_KEY, initial);
-      localStorage.setItem('theme', initial);
-    } catch (e) {}
+    if (stored) persistTheme(initial);
     updateLegacyToggle(initial);
 
     // 兼容旧 .theme-toggle 元素
@@ -92,9 +93,9 @@
       const handler = (e) => {
         // 仅在用户从未手动选择时跟随系统
         try {
-          if (localStorage.getItem(STORAGE_KEY)) return;
+          if (localStorage.getItem(STORAGE_KEY) || localStorage.getItem('theme')) return;
         } catch (err) { /* ignore */ }
-        setTheme(e.matches ? 'dark' : 'light', { noAnim: true });
+        setTheme(e.matches ? 'dark' : 'light', { noAnim: true, persist: false });
       };
       try { mql.addEventListener('change', handler); }
       catch (e) { mql.addListener && mql.addListener(handler); }
