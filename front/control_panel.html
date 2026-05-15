@@ -11306,10 +11306,16 @@
                         normalized.startsWith('assembly_dashboard_session:') ||
                         normalized.startsWith('perf_traces') ||
                         normalized.includes('secret') ||
+                        normalized.includes('credential') ||
+                        normalized.includes('private') ||
                         normalized === 'token' ||
                         normalized.endsWith('_token') ||
+                        normalized.endsWith('_api_key') ||
                         normalized.includes('auth_token') ||
-                        normalized.includes('api_token');
+                        normalized.includes('api_token') ||
+                        normalized.endsWith('_dsn') ||
+                        normalized.endsWith('_uri') ||
+                        normalized === 'proxy';
                 };
 
                 const getDisplayConfigKey = (key, sensitive) => {
@@ -14640,8 +14646,8 @@
 
         function buildPlaygroundRequestBody({ placeholder = false, defaultIfEmpty = false } = {}) {
             const sel = document.getElementById('playgroundModel');
-            const temp = parseFloat(document.getElementById('playgroundTemperatureValue')?.value || document.getElementById('playgroundTemperature')?.value) || 0.5;
-            const maxT = parseInt(document.getElementById('playgroundMaxTokensValue')?.value || document.getElementById('playgroundMaxTokens')?.value) || 4096;
+            const temp = getOptionalNumber('playgroundTemperatureValue') ?? getOptionalNumber('playgroundTemperature') ?? 0.5;
+            const maxT = getOptionalNumber('playgroundMaxTokensValue') ?? getOptionalNumber('playgroundMaxTokens') ?? 4096;
             const tokenMode = document.getElementById('playgroundTokenFieldMode')?.value || 'max_tokens';
 
             const body = {
