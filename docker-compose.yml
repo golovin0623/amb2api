@@ -26,6 +26,22 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - LOG_FILE=${LOG_FILE:-log.txt}
       - POSTGRES_DSN=${POSTGRES_DSN:-}
+      # /deploy-hook 配置 — 三个都为空时路由会 503 拒绝请求
+      - DEPLOY_WEBHOOK_SECRET=${DEPLOY_WEBHOOK_SECRET:-}
+      - DEPLOY_WEBHOOK_TOKEN=${DEPLOY_WEBHOOK_TOKEN:-}
+      - DEPLOY_EXPECTED_IMAGE=${DEPLOY_EXPECTED_IMAGE:-golovin0623/amb2api}
+      - DEPLOY_COMPOSE_DIR=${DEPLOY_COMPOSE_DIR:-/deploy}
+      - DEPLOY_COMPOSE_FILE=${DEPLOY_COMPOSE_FILE:-}
+      - DEPLOY_LOG_PATH=${DEPLOY_LOG_PATH:-/deploy/deploy.log}
+    volumes:
+      # /deploy-hook 自部署: 通过 host docker daemon 执行 compose pull/up.
+      # 仅当启用了 deploy hook 时才需要这两个挂载; 没启用也无害.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 把 host 上的 docker-compose.yml 所在目录挂进容器, 让 hook 内的
+      # `docker compose pull && up -d` 能找到正确的 compose 文件.
+      # 默认假设 host 上的 compose 文件在 ./deploy 目录下; 通过环境变量
+      # DEPLOY_COMPOSE_DIR / DEPLOY_COMPOSE_FILE 调整.
+      - ${DEPLOY_HOST_COMPOSE_DIR:-./deploy}:/deploy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import sys, urllib.request, os; port = os.environ.get('PORT', '7861'); req = urllib.request.Request(f'http://localhost:{port}/v1/models', headers={'Authorization': 'Bearer ' + os.environ.get('API_PASSWORD', 'pwd')}); sys.exit(0 if urllib.request.urlopen(req, timeout=5).getcode() == 200 else 1)\""]
       interval: 30s

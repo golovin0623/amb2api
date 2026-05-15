@@ -20,6 +20,7 @@ from src.api.admin_routes import router as admin_router
 from src.api.account_api import router as account_router
 from src.api.key_management_api import router as keys_router
 from src.api.playground_api import router as playground_router
+from src.api.deploy_hook_api import router as deploy_hook_router
 # Google/Gemini 相关路由与控制面板已移除
 
 # Import managers and utilities
@@ -101,6 +102,12 @@ app.include_router(
     playground_router,
     prefix="",
     tags=["Playground"]
+)
+
+app.include_router(
+    deploy_hook_router,
+    prefix="",
+    tags=["Deploy Hook"],
 )
 
 # Gemini原生路由 - 处理Gemini格式请求
