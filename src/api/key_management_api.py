@@ -118,7 +118,7 @@ async def get_all_keys(
             
             keys_response.append(KeyResponse(
                 index=key_info.index,
-                key=key_info.key,
+                key=key_info.masked_key,
                 masked_key=key_info.masked_key,
                 enabled=key_info.enabled,
                 status=key_info.status.value,

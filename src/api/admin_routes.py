@@ -50,6 +50,64 @@ async def authenticate(credentials: HTTPAuthorizationCredentials = Depends(secur
     return token
 
 
+def _mask_email(value: Any) -> Optional[str]:
+    if not isinstance(value, str) or "@" not in value:
+        return None
+
+    local, domain = value.split("@", 1)
+    if not local or not domain:
+        return None
+    visible = local[:2] if len(local) > 2 else local[:1]
+    return f"{visible}***@{domain}"
+
+
+def _is_sensitive_config_key(key: Any) -> bool:
+    normalized = str(key or "").lower()
+    sensitive_exact = {
+        "api_password",
+        "panel_password",
+        "password",
+        "assembly_api_key",
+        "assembly_api_keys",
+        "assembly_accounts_list",
+        "assembly_current_account",
+        "key_states",
+        "rate_limit_info",
+        "unified_stats",
+    }
+    return (
+        normalized in sensitive_exact
+        or normalized.startswith("assembly_dashboard_session:")
+        or normalized.startswith("perf_traces")
+        or "secret" in normalized
+        or "credential" in normalized
+        or "private" in normalized
+        or normalized == "token"
+        or normalized.endswith("_token")
+        or normalized.endswith("_api_key")
+        or "api_token" in normalized
+        or "auth_token" in normalized
+        or normalized.endswith("_dsn")
+        or normalized.endswith("_uri")
+        or normalized == "proxy"
+    )
+
+
+def _redact_config_value(value: Any) -> Any:
+    if isinstance(value, list):
+        return f"已隐藏敏感列表（{len(value)} 项）"
+    if isinstance(value, dict):
+        return f"已隐藏敏感对象（{len(value)} 项）"
+    return "已隐藏敏感值"
+
+
+def _redact_config_key(key: Any) -> str:
+    key_str = str(key)
+    if key_str.lower().startswith("assembly_dashboard_session:"):
+        return "assembly_dashboard_session:*"
+    return key_str
+
+
 @router.get("/ui")
 async def admin_ui():
     # 从 src/api/admin_routes.py 回到项目根目录需要 3 级
@@ -121,7 +179,14 @@ async def get_config(token: str = Depends(authenticate)):
 @router.get("/config/all")
 async def get_all_config(token: str = Depends(authenticate)):
     adapter = await get_storage_adapter()
-    cfg = await adapter.get_all_config()
+    raw_cfg = await adapter.get_all_config()
+    cfg: Dict[str, Any] = {}
+    for raw_key, value in raw_cfg.items():
+        sensitive = _is_sensitive_config_key(raw_key)
+        display_key = _redact_config_key(raw_key) if sensitive else str(raw_key)
+        if display_key in cfg:
+            display_key = f"{display_key}#{len(cfg)}"
+        cfg[display_key] = _redact_config_value(value) if sensitive else value
     backend = "file"
     if os.getenv("REDIS_URI"):
         backend = "redis"
@@ -129,6 +194,52 @@ async def get_all_config(token: str = Depends(authenticate)):
         backend = "postgres"
     prefix = os.getenv("REDIS_PREFIX", "AMB2API")
     return JSONResponse(content={"backend": backend, "prefix": prefix, "config": cfg})
+
+
+@router.get("/creds/status")
+async def get_creds_status(token: str = Depends(authenticate)):
+    adapter = await get_storage_adapter()
+    creds: Dict[str, Any] = {}
+
+    try:
+        filenames = await adapter.list_credentials()
+        for filename in filenames:
+            try:
+                state = await adapter.get_credential_state(filename)
+                error_codes = state.get("error_codes", [])
+                if not isinstance(error_codes, list):
+                    error_codes = [error_codes]
+                masked_email = _mask_email(state.get("user_email"))
+
+                normalized_state = {
+                    "disabled": bool(state.get("disabled", False)),
+                    "error_codes": error_codes,
+                    "last_success": state.get("last_success"),
+                    "user_email": masked_email,
+                }
+                creds[filename] = {
+                    "filename": filename,
+                    "status": normalized_state,
+                    "user_email": masked_email,
+                }
+            except Exception as exc:
+                log.warning(f"Failed to read credential status for {filename}: {exc}")
+                creds[filename] = {
+                    "filename": filename,
+                    "status": {
+                        "disabled": False,
+                        "error_codes": [],
+                        "last_success": None,
+                        "user_email": None,
+                    },
+                    "error": "无法读取凭证状态",
+                    "user_email": None,
+                }
+    except Exception as exc:
+        log.error(f"Failed to load credential status: {exc}")
+        raise HTTPException(status_code=500, detail="加载凭证状态失败")
+
+    return JSONResponse(content={"creds": creds})
 
 
 @router.post("/config/save")
