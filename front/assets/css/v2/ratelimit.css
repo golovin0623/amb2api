@@ -163,7 +163,7 @@ html body #ratelimitTab .v2-rl-kpi__value {
   font-size: 26px;
   font-weight: var(--fw-semibold);
   color: var(--ink-pure);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   line-height: 1.05;
 }
 html body #ratelimitTab .v2-rl-kpi__value-suffix {
@@ -280,7 +280,7 @@ html body #ratelimitTab .v2-rl-ring__pct {
   font-size: 13px;
   font-weight: var(--fw-semibold);
   color: var(--ink-pure);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   font-feature-settings: "tnum" 1;
   line-height: 1;
 }
@@ -395,7 +395,7 @@ html body #ratelimitTab .v2-rl-metric__value {
   font-size: 15px;
   font-weight: var(--fw-semibold);
   color: var(--ink-pure);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   line-height: 1.1;
 }
 html body #ratelimitTab .v2-rl-metric__cap {

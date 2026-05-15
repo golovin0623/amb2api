@@ -352,6 +352,96 @@ html body .theme-toggle #themeText { display: none; }
   html body .theme-toggle { padding: 0 var(--s-2) !important; }
 }
 
+/* 移动端旧顶栏：把横向下划线 tab 打磨为紧凑分段控件，避免选中态只靠粗线。 */
+@media (max-width: 1024px) {
+  html body .fixed-header {
+    background:
+      linear-gradient(180deg, color-mix(in oklch, var(--bg-leaf) 96%, transparent), color-mix(in oklch, var(--bg-leaf) 90%, transparent)) !important;
+    box-shadow: 0 10px 28px oklch(0 0 0 / 0.07) !important;
+  }
+  [data-theme="dark"] html body .fixed-header {
+    background:
+      linear-gradient(180deg, oklch(0.16 0.009 270 / 0.94), oklch(0.11 0.008 270 / 0.94)) !important;
+    border-bottom-color: oklch(0.96 0.005 270 / 0.08) !important;
+    box-shadow:
+      0 10px 30px oklch(0 0 0 / 0.32),
+      inset 0 -1px 0 oklch(1 0 0 / 0.03) !important;
+  }
+  html body .header-title-row h1 {
+    font-weight: var(--fw-semibold) !important;
+    letter-spacing: 0 !important;
+  }
+  html body .tabs-wrapper {
+    padding: 0 var(--s-4) var(--s-2) !important;
+    background: transparent !important;
+    border-bottom: 0 !important;
+  }
+  html body .tabs {
+    gap: var(--s-1) !important;
+    padding: var(--s-1) !important;
+    background: color-mix(in oklch, var(--bg-overlay) 82%, transparent) !important;
+    border: 1px solid var(--line-default) !important;
+    border-radius: var(--r-3) !important;
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.05) !important;
+  }
+  [data-theme="dark"] html body .tabs {
+    background: oklch(0.09 0.006 270 / 0.78) !important;
+    border-color: oklch(0.96 0.005 270 / 0.08) !important;
+    box-shadow:
+      inset 0 1px 0 oklch(1 0 0 / 0.04),
+      0 1px 2px oklch(0 0 0 / 0.28) !important;
+  }
+  html body .tab {
+    min-height: 34px !important;
+    padding: 0 var(--s-3) !important;
+    border-radius: var(--r-2) !important;
+    color: var(--ink-secondary) !important;
+    transition:
+      color var(--dur-instant) var(--ease-standard),
+      background-color var(--dur-instant) var(--ease-standard),
+      box-shadow var(--dur-fast) var(--ease-standard),
+      transform var(--dur-instant) var(--ease-standard) !important;
+  }
+  html body .tab:hover {
+    background: color-mix(in oklch, var(--bg-leaf) 68%, transparent) !important;
+    color: var(--ink-pure) !important;
+  }
+  html body .tab.active {
+    background: var(--bg-leaf) !important;
+    color: var(--ink-pure) !important;
+    box-shadow:
+      0 1px 2px oklch(0 0 0 / 0.08),
+      inset 0 0 0 1px var(--line-default),
+      inset 0 1px 0 oklch(1 0 0 / 0.10) !important;
+  }
+  [data-theme="dark"] html body .tab.active {
+    background:
+      linear-gradient(180deg, oklch(0.24 0.012 270), oklch(0.18 0.010 270)) !important;
+    box-shadow:
+      0 8px 18px oklch(0 0 0 / 0.24),
+      inset 0 0 0 1px oklch(0.96 0.005 270 / 0.13),
+      inset 0 1px 0 oklch(1 0 0 / 0.09) !important;
+  }
+  html body .tab-indicator {
+    display: none !important;
+  }
+  html body .theme-toggle[data-docked="header"],
+  html body .btn.logout-btn,
+  html body button.btn.logout-btn {
+    background: color-mix(in oklch, var(--bg-overlay) 70%, transparent) !important;
+    border-color: var(--line-default) !important;
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.06) !important;
+  }
+  [data-theme="dark"] html body .theme-toggle[data-docked="header"],
+  [data-theme="dark"] html body .btn.logout-btn,
+  [data-theme="dark"] html body button.btn.logout-btn {
+    background:
+      linear-gradient(180deg, oklch(0.22 0.010 270), oklch(0.15 0.008 270)) !important;
+    border-color: oklch(0.96 0.005 270 / 0.12) !important;
+    color: var(--ink-secondary) !important;
+  }
+}
+
 /* ============================================================
  * 滚动 fade
  * ============================================================ */

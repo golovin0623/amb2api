@@ -23,10 +23,15 @@ class PreviewRequest(BaseModel):
     messages: list = Field(..., description="消息列表")
     temperature: Optional[float] = Field(None, description="温度")
     max_tokens: Optional[int] = Field(None, description="最大 token 数")
+    max_completion_tokens: Optional[int] = Field(None, description="最大 completion token 数")
     top_p: Optional[float] = Field(None, description="Top P")
     stream: Optional[bool] = Field(None, description="是否流式")
+    stream_options: Optional[Dict[str, Any]] = Field(None, description="流式选项")
     tools: Optional[list] = Field(None, description="工具列表")
     tool_choice: Optional[Any] = Field(None, description="工具选择")
+    parallel_tool_calls: Optional[bool] = Field(None, description="是否允许并行工具调用")
+    reasoning_effort: Optional[str] = Field(None, description="推理强度")
+    verbosity: Optional[str] = Field(None, description="输出详略")
     cache_control: Optional[Dict[str, Any]] = Field(None, description="顶层缓存控制")
     prompt_cache_retention: Optional[str] = Field(None, description="OpenAI prompt cache retention")
     prompt_cache_key: Optional[str] = Field(None, description="OpenAI prompt cache key")
@@ -89,14 +94,24 @@ async def generate_request_preview(request: PreviewRequest):
             params["temperature"] = request.temperature
         if request.max_tokens is not None:
             params["max_tokens"] = request.max_tokens
+        if request.max_completion_tokens is not None:
+            params["max_completion_tokens"] = request.max_completion_tokens
         if request.top_p is not None:
             params["top_p"] = request.top_p
         if request.stream is not None:
             params["stream"] = request.stream
+        if request.stream_options is not None:
+            params["stream_options"] = request.stream_options
         if request.tools is not None:
             params["tools"] = request.tools
         if request.tool_choice is not None:
             params["tool_choice"] = request.tool_choice
+        if request.parallel_tool_calls is not None:
+            params["parallel_tool_calls"] = request.parallel_tool_calls
+        if request.reasoning_effort is not None:
+            params["reasoning_effort"] = request.reasoning_effort
+        if request.verbosity is not None:
+            params["verbosity"] = request.verbosity
         if request.cache_control is not None:
             params["cache_control"] = request.cache_control
         if request.prompt_cache_retention is not None:
@@ -197,14 +212,24 @@ async def generate_initial_request(request: PreviewRequest):
             params["temperature"] = request.temperature
         if request.max_tokens is not None:
             params["max_tokens"] = request.max_tokens
+        if request.max_completion_tokens is not None:
+            params["max_completion_tokens"] = request.max_completion_tokens
         if request.top_p is not None:
             params["top_p"] = request.top_p
         if request.stream is not None:
             params["stream"] = request.stream
+        if request.stream_options is not None:
+            params["stream_options"] = request.stream_options
         if request.tools is not None:
             params["tools"] = request.tools
         if request.tool_choice is not None:
             params["tool_choice"] = request.tool_choice
+        if request.parallel_tool_calls is not None:
+            params["parallel_tool_calls"] = request.parallel_tool_calls
+        if request.reasoning_effort is not None:
+            params["reasoning_effort"] = request.reasoning_effort
+        if request.verbosity is not None:
+            params["verbosity"] = request.verbosity
         if request.cache_control is not None:
             params["cache_control"] = request.cache_control
         if request.prompt_cache_retention is not None:

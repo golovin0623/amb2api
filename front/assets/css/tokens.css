@@ -48,7 +48,7 @@
   --fw-bold:     700;
 
   /* 字距 */
-  --tracking-tight:  -0.02em;
+  --tracking-tight:  0;
   --tracking-normal: 0;
   --tracking-wide:   0.02em;
   --tracking-wider:  0.06em;
@@ -256,7 +256,6 @@
   --dur-quick: var(--dur-exit);
   --dur-flow: var(--dur-standard);
   --dur-ambient: var(--dur-emphasis);
-  --bg-leaf: var(--bg-leaf);
 }
 
 /* ============================================================

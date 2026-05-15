@@ -10,6 +10,9 @@ from log import log
 
 class RequestGenerator:
     """请求生成器"""
+
+    REASONING_EFFORT_VALUES = ("none", "minimal", "low", "medium", "high", "xhigh")
+    VERBOSITY_VALUES = ("low", "medium", "high")
     
     # OpenAI 兼容的请求参数
     SUPPORTED_PARAMS = [
@@ -18,6 +21,7 @@ class RequestGenerator:
         "temperature",
         "top_p",
         "max_tokens",
+        "max_completion_tokens",
         "stop",
         "frequency_penalty",
         "presence_penalty",
@@ -30,6 +34,10 @@ class RequestGenerator:
         "prompt_cache_retention",
         "prompt_cache_key",
         "stream",
+        "stream_options",
+        "parallel_tool_calls",
+        "reasoning_effort",
+        "verbosity",
     ]
     
     def __init__(self, endpoint: str = "", api_key: str = ""):
@@ -151,6 +159,11 @@ class RequestGenerator:
             max_tokens = data["max_tokens"]
             if not isinstance(max_tokens, int) or max_tokens < 1:
                 return False, "Field 'max_tokens' must be a positive integer"
+
+        if "max_completion_tokens" in data:
+            max_completion_tokens = data["max_completion_tokens"]
+            if not isinstance(max_completion_tokens, int) or max_completion_tokens < 1:
+                return False, "Field 'max_completion_tokens' must be a positive integer"
         
         if "top_p" in data:
             top_p = data["top_p"]
@@ -165,6 +178,20 @@ class RequestGenerator:
         if "stream" in data:
             if not isinstance(data["stream"], bool):
                 return False, "Field 'stream' must be a boolean"
+
+        if "stream_options" in data and not isinstance(data["stream_options"], dict):
+            return False, "Field 'stream_options' must be an object"
+
+        if "parallel_tool_calls" in data and not isinstance(data["parallel_tool_calls"], bool):
+            return False, "Field 'parallel_tool_calls' must be a boolean"
+
+        if "reasoning_effort" in data and data["reasoning_effort"] not in self.REASONING_EFFORT_VALUES:
+            values = ", ".join(self.REASONING_EFFORT_VALUES)
+            return False, f"Field 'reasoning_effort' must be one of: {values}"
+
+        if "verbosity" in data and data["verbosity"] not in self.VERBOSITY_VALUES:
+            values = ", ".join(self.VERBOSITY_VALUES)
+            return False, f"Field 'verbosity' must be one of: {values}"
         
         if "tools" in data:
             tools = data["tools"]

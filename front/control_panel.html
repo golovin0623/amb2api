@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AMB2API 管理面板</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f172a'/%3E%3Cpath d='M16 42h32l-5 8H21zM31 12h3v28h-3zM34 16l15 20H34zM30 18L15 36h15z' fill='%23f8fafc'/%3E%3C/svg%3E">
     <style>
         /* 全局溢出修复 */
         html,
@@ -1572,7 +1573,7 @@
             margin-bottom: 8px;
             color: var(--text-color);
             text-align: center;
-            letter-spacing: -0.5px;
+            letter-spacing: 0;
         }
 
         .login-form .login-subtitle {
@@ -5508,7 +5509,7 @@
             font-feature-settings: "tnum" 1;
             font-size: 22px;
             font-weight: var(--fw-semibold);
-            letter-spacing: -0.02em;
+            letter-spacing: 0;
             line-height: 1.05;
         }
 
@@ -6807,7 +6808,18 @@
                         </div>
                         <div style="display:flex; justify-content:flex-end; margin-top:8px;">
                             <div class="col-toggle-wrap">
-                                <button class="col-toggle-btn" onclick="toggleColDropdown(event)">&#9881; 列设置</button>
+                                <button class="col-toggle-btn" onclick="toggleColDropdown(event)" aria-label="配置请求明细显示列">
+                                    <span class="col-toggle-btn__icon" aria-hidden="true">
+                                        <svg viewBox="0 0 20 20" focusable="false">
+                                            <path d="M4 5.5h12M4 10h12M4 14.5h12"></path>
+                                            <circle cx="7" cy="5.5" r="1.7"></circle>
+                                            <circle cx="13" cy="10" r="1.7"></circle>
+                                            <circle cx="9" cy="14.5" r="1.7"></circle>
+                                        </svg>
+                                    </span>
+                                    <span class="col-toggle-btn__text">列显示</span>
+                                    <span class="col-toggle-btn__count" id="traceColCount">7/7</span>
+                                </button>
                                 <div class="col-toggle-dropdown" id="traceColDropdown"></div>
                             </div>
                         </div>
@@ -6871,15 +6883,15 @@
 
                     <!-- 配置页面浮动操作按钮 -->
                     <div class="config-floating-actions" id="configFloatingActions">
-                        <button class="config-floating-btn refresh" onclick="loadConfig()">Flash</button>
-                        <button class="config-floating-btn save" onclick="saveConfig()">Save</button>
+                        <button class="config-floating-btn refresh" onclick="loadConfig()">刷新</button>
+                        <button class="config-floating-btn save" onclick="saveConfig()">保存</button>
                     </div>
 
                     <div id="configSection">
                         <div class="loading" id="configLoading">正在加载配置...</div>
                         <div id="configForm" class="hidden">
                             <!-- 面板优先配置 - 独立区块 -->
-                            <div class="config-group"
+                            <div class="config-group config-priority-group"
                                 style="background: linear-gradient(135deg, #fff9e6 0%, #fff3cd 100%); border: 1px solid #ffc107;">
                                 <h4 style="color: #856404;">⚙️ 优先级配置</h4>
                                 <div class="form-group" style="margin-bottom: 0;">
@@ -6897,13 +6909,13 @@
                                 <div class="form-group">
                                     <label for="assemblyApiKeys">密钥</label>
                                     <textarea id="assemblyApiKeys" class="config-input"
-                                        placeholder="请输入要新增的密钥，一行一个（查看现有密钥请点击右侧" 查看密钥"按钮）"
+                                        placeholder="请输入要新增的密钥，一行一个（查看现有密钥请点击右侧「查看密钥」按钮）"
                                         style="min-height: 100px; border: 2px solid #4285f4; border-radius: 8px;"></textarea>
-                                    <div
+                                    <div class="key-input-meta"
                                         style="display: flex; align-items: center; gap: 15px; margin-top: 8px; flex-wrap: wrap;">
                                         <small class="config-note"
                                             style="color: #4285f4; margin: 0;">此输入框仅用于新增密钥，不会显示现有密钥</small>
-                                        <button class="btn btn-sm" onclick="showKeyManagementModal()"
+                                        <button class="btn btn-sm key-view-btn" onclick="showKeyManagementModal()"
                                             style="background: transparent; color: #4285f4; border: 1px solid #4285f4; padding: 4px 12px;">查看密钥</button>
                                     </div>
                                 </div>
@@ -7014,20 +7026,20 @@
 
                                 <div class="form-group">
                                     <label for="configApiPassword">API访问密码:</label>
-                                    <input type="text" id="configApiPassword" class="config-input" placeholder="pwd" />
+                                    <input type="password" id="configApiPassword" class="config-input" placeholder="留空则保持不变" autocomplete="new-password" />
                                     <small class="config-note">聊天API访问密码，用于OpenAI和Gemini API端点的认证</small>
                                 </div>
 
                                 <div class="form-group">
                                     <label for="configPanelPassword">控制面板密码:</label>
-                                    <input type="text" id="configPanelPassword" class="config-input"
-                                        placeholder="pwd" />
+                                    <input type="password" id="configPanelPassword" class="config-input"
+                                        placeholder="留空则保持不变" autocomplete="new-password" />
                                     <small class="config-note">控制面板访问密码，用于web界面登录认证</small>
                                 </div>
 
                                 <div class="form-group">
                                     <label for="configPassword">通用密码:</label>
-                                    <input type="text" id="configPassword" class="config-input" placeholder="pwd" />
+                                    <input type="password" id="configPassword" class="config-input" placeholder="留空则保持不变" autocomplete="new-password" />
                                     <small class="config-note">（兼容性保留）设置后将覆盖上述两个密码，留空则使用分开的密码设置</small>
                                 </div>
                             </div>
@@ -7172,43 +7184,88 @@
                 <div id="logsTab" class="tab-content">
                     <h3>实时日志</h3>
 
-                    <div class="log-btn-group" style="margin-bottom: 16px;">
-                        <button class="log-btn log-btn-connect" onclick="connectWebSocket()">
-                            <span class="btn-icon">🔗</span>连接日志流
-                        </button>
-                        <button class="log-btn log-btn-disconnect" onclick="disconnectWebSocket()">
-                            <span class="btn-icon">⛔</span>断开连接
-                        </button>
-                        <button class="log-btn log-btn-download" onclick="downloadLogs()">
-                            <span class="btn-icon">📥</span>下载日志
-                        </button>
-                        <button class="log-btn log-btn-clear" onclick="clearLogs()">
-                            <span class="btn-icon">🗑️</span>清空日志
-                        </button>
-                    </div>
+                    <div class="logs-workspace">
+                        <div class="log-hero">
+                            <div class="log-hero__title">
+                                <span class="log-live-dot" aria-hidden="true"></span>
+                                <span>LIVE LOGS</span>
+                            </div>
+                            <div id="logConnectionStatus" class="status info">
+                                <span class="log-status-dot" aria-hidden="true"></span>
+                                <strong>连接状态</strong>
+                                <span id="connectionStatusText">未连接</span>
+                            </div>
+                        </div>
 
-                    <div class="filter-container">
-                        <label for="logLevelFilter">日志级别筛选：</label>
-                        <select id="logLevelFilter" class="filter-select" onchange="filterLogs()">
-                            <option value="all">全部</option>
-                            <option value="ERROR">错误</option>
-                            <option value="WARNING">警告</option>
-                            <option value="INFO">信息</option>
-                            <option value="DEBUG">调试</option>
-                        </select>
+                        <div class="log-stat-grid" aria-label="日志统计">
+                            <div class="log-stat-card">
+                                <span class="log-stat-label">Total</span>
+                                <strong id="logTotalCount">0</strong>
+                            </div>
+                            <div class="log-stat-card log-stat-card--error">
+                                <span class="log-stat-label">Error</span>
+                                <strong id="logErrorCount">0</strong>
+                            </div>
+                            <div class="log-stat-card log-stat-card--warning">
+                                <span class="log-stat-label">Warning</span>
+                                <strong id="logWarningCount">0</strong>
+                            </div>
+                            <div class="log-stat-card log-stat-card--info">
+                                <span class="log-stat-label">Visible</span>
+                                <strong id="logVisibleCount">0</strong>
+                            </div>
+                            <div class="log-stat-card">
+                                <span class="log-stat-label">Last</span>
+                                <strong id="logLastUpdate">--:--:--</strong>
+                            </div>
+                        </div>
 
-                        <label>
-                            <input type="checkbox" id="autoScroll" checked> 自动滚动到底部
-                        </label>
-                    </div>
+                        <div class="log-console-panel">
+                            <div class="log-console-toolbar">
+                                <div class="log-btn-group">
+                                    <button class="log-btn log-btn-connect" onclick="connectWebSocket()">
+                                        <span class="btn-icon" aria-hidden="true"></span>连接
+                                    </button>
+                                    <button class="log-btn log-btn-disconnect" onclick="disconnectWebSocket()">
+                                        <span class="btn-icon" aria-hidden="true"></span>断开
+                                    </button>
+                                    <button class="log-btn log-btn-download" onclick="downloadLogs()">
+                                        <span class="btn-icon" aria-hidden="true"></span>下载
+                                    </button>
+                                    <button class="log-btn log-btn-clear" onclick="clearLogs()">
+                                        <span class="btn-icon" aria-hidden="true"></span>清空
+                                    </button>
+                                </div>
 
-                    <div id="logConnectionStatus" class="status info">
-                        <strong>连接状态：</strong> <span id="connectionStatusText">未连接</span>
-                    </div>
+                                <div class="log-filter-strip">
+                                    <label class="log-field" for="logLevelFilter">
+                                        <span>级别</span>
+                                        <select id="logLevelFilter" class="filter-select" onchange="filterLogs()">
+                                            <option value="all">全部</option>
+                                            <option value="ERROR">错误</option>
+                                            <option value="WARNING">警告</option>
+                                            <option value="INFO">信息</option>
+                                            <option value="DEBUG">调试</option>
+                                        </select>
+                                    </label>
+                                    <label class="log-field log-field--search" for="logSearchInput">
+                                        <span>搜索</span>
+                                        <input type="search" id="logSearchInput" class="config-input" placeholder="trace / model / status"
+                                            oninput="filterLogs()" autocomplete="off" />
+                                    </label>
+                                    <label class="log-toggle">
+                                        <input type="checkbox" id="autoScroll" checked>
+                                        <span>自动滚动</span>
+                                    </label>
+                                </div>
+                            </div>
 
-                    <div id="logContainer"
-                        style="background-color: #1e1e1e; color: #ffffff; font-family: 'Courier New', monospace; font-size: 12px; height: 600px; overflow-y: auto; border: 1px solid #333; border-radius: 5px; padding: 15px; white-space: pre-wrap; word-break: break-all;">
-                        <div id="logContent">等待连接日志流...</div>
+                            <div id="logContainer" class="log-console">
+                                <div id="logContent" class="log-content">
+                                    <div class="log-empty-state">等待连接日志流...</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -7276,6 +7333,83 @@
                                     <input type="checkbox" id="playgroundStream" onchange="updateRequestPreview()" />
                                     <span class="slider"></span>
                                 </label>
+                            </div>
+
+                            <div class="playground-feature-panel">
+                                <div class="playground-feature-panel__head">
+                                    <span>Gateway Features</span>
+                                    <small>OpenAI / GPT-5 / Prompt Cache</small>
+                                </div>
+                                <div class="playground-feature-grid">
+                                    <label>
+                                        <span>Token 字段</span>
+                                        <select id="playgroundTokenFieldMode" class="config-input" onchange="updateRequestPreview()">
+                                            <option value="max_tokens">max_tokens</option>
+                                            <option value="max_completion_tokens">max_completion_tokens</option>
+                                            <option value="both">两个字段同时发送</option>
+                                        </select>
+                                    </label>
+                                    <label>
+                                        <span>Top P</span>
+                                        <input type="number" id="playgroundTopP" class="config-input" min="0" max="1" step="0.05"
+                                            placeholder="默认" onchange="updateRequestPreview()" />
+                                    </label>
+                                    <label>
+                                        <span>Reasoning</span>
+                                        <select id="playgroundReasoningEffort" class="config-input" onchange="updateRequestPreview()">
+                                            <option value="">默认</option>
+                                            <option value="none">none</option>
+                                            <option value="minimal">minimal</option>
+                                            <option value="low">low</option>
+                                            <option value="medium">medium</option>
+                                            <option value="high">high</option>
+                                            <option value="xhigh">xhigh</option>
+                                        </select>
+                                    </label>
+                                    <label>
+                                        <span>Verbosity</span>
+                                        <select id="playgroundVerbosity" class="config-input" onchange="updateRequestPreview()">
+                                            <option value="">默认</option>
+                                            <option value="low">low</option>
+                                            <option value="medium">medium</option>
+                                            <option value="high">high</option>
+                                        </select>
+                                    </label>
+                                    <label>
+                                        <span>Parallel Tools</span>
+                                        <select id="playgroundParallelToolCalls" class="config-input" onchange="updateRequestPreview()">
+                                            <option value="">默认</option>
+                                            <option value="true">true</option>
+                                            <option value="false">false</option>
+                                        </select>
+                                    </label>
+                                    <label class="playground-feature-check">
+                                        <input type="checkbox" id="playgroundStreamIncludeUsage" onchange="updateRequestPreview()">
+                                        <span>stream_options.include_usage</span>
+                                    </label>
+                                    <label>
+                                        <span>Cache Retention</span>
+                                        <select id="playgroundPromptCacheRetention" class="config-input" onchange="updateRequestPreview()">
+                                            <option value="">默认</option>
+                                            <option value="5m">5m</option>
+                                            <option value="1h">1h</option>
+                                            <option value="24h">24h</option>
+                                        </select>
+                                    </label>
+                                    <label>
+                                        <span>Cache TTL</span>
+                                        <select id="playgroundCacheControlTtl" class="config-input" onchange="updateRequestPreview()">
+                                            <option value="">不显式设置</option>
+                                            <option value="5m">ephemeral 5m</option>
+                                            <option value="1h">ephemeral 1h</option>
+                                        </select>
+                                    </label>
+                                    <label class="playground-feature-wide">
+                                        <span>Prompt Cache Key</span>
+                                        <input type="text" id="playgroundPromptCacheKey" class="config-input"
+                                            placeholder="例如 support-bot-v1" oninput="updateRequestPreview()" />
+                                    </label>
+                                </div>
                             </div>
 
                             <!-- 操作按钮 - 一排居中 -->
@@ -7494,22 +7628,39 @@
 
                     <!-- 追踪记录表格 -->
                     <div class="config-group">
-                        <h4>请求追踪记录</h4>
-                        <div style="overflow-x: auto;">
+                        <div class="perf-table-toolbar">
+                            <h4>请求追踪记录</h4>
+                            <div class="col-toggle-wrap">
+                                <button class="col-toggle-btn" onclick="togglePerfColDropdown(event)" aria-label="配置性能追踪显示列">
+                                    <span class="col-toggle-btn__icon" aria-hidden="true">
+                                        <svg viewBox="0 0 20 20" focusable="false">
+                                            <path d="M4 5.5h12M4 10h12M4 14.5h12"></path>
+                                            <circle cx="7" cy="5.5" r="1.7"></circle>
+                                            <circle cx="13" cy="10" r="1.7"></circle>
+                                            <circle cx="9" cy="14.5" r="1.7"></circle>
+                                        </svg>
+                                    </span>
+                                    <span class="col-toggle-btn__text">列显示</span>
+                                    <span class="col-toggle-btn__count" id="perfTraceColCount">10/10</span>
+                                </button>
+                                <div class="col-toggle-dropdown" id="perfTraceColDropdown"></div>
+                            </div>
+                        </div>
+                        <div class="perf-table-wrap trace-table-wrap">
                             <table class="table" id="perfTracesTable">
                                 <thead>
                                     <tr>
                                         <th style="width: 85px;">时间</th>
-                                        <th>模型</th>
-                                        <th style="width: 65px;">TTFB</th>
-                                        <th style="width: 65px;">TTFT</th>
-                                        <th style="width: 55px;">TPS</th>
-                                        <th style="width: 70px;">总耗时</th>
-                                        <th style="width: 90px;">密钥</th>
-                                        <th style="width: 80px;">输入</th>
-                                        <th style="width: 80px;">输出</th>
-                                        <th style="width: 80px;">缓存</th>
-                                        <th style="width: 90px;">总 Tokens</th>
+                                        <th data-col="model">模型</th>
+                                        <th data-col="ttfb" style="width: 65px;">TTFB</th>
+                                        <th data-col="ttft" style="width: 65px;">TTFT</th>
+                                        <th data-col="tps" style="width: 55px;">TPS</th>
+                                        <th data-col="latency" style="width: 70px;">总耗时</th>
+                                        <th data-col="key" style="width: 90px;">密钥</th>
+                                        <th data-col="input" style="width: 80px;">输入</th>
+                                        <th data-col="output" style="width: 80px;">输出</th>
+                                        <th data-col="cache" style="width: 80px;">缓存</th>
+                                        <th data-col="total" style="width: 90px;">总 Tokens</th>
                                         <th style="width: 50px;">操作</th>
                                     </tr>
                                 </thead>
@@ -8261,48 +8412,48 @@
                 <button class="modal-close" onclick="closePerfWaterfallModal()">&times;</button>
             </div>
             <div class="modal-body">
-                <!-- 基本信息 -->
+                <div class="wf-section-label">Trace Overview</div>
                 <div class="wf-info-card">
-                    <div style="margin-bottom: 10px;">
+                    <div class="wf-trace-block">
                         <div class="wf-label">Trace ID</div>
                         <div id="wfTraceId" class="wf-trace-id"></div>
                     </div>
                     <div class="wf-info-grid wf-grid-2">
-                        <div><div class="wf-label">模型</div><div id="wfModel" class="wf-val" style="color:#4285f4;font-weight:600;"></div></div>
-                        <div><div class="wf-label">时间</div><div id="wfTime" class="wf-val"></div></div>
+                        <div class="wf-field"><div class="wf-label">模型</div><div id="wfModel" class="wf-val wf-val--model"></div></div>
+                        <div class="wf-field"><div class="wf-label">时间</div><div id="wfTime" class="wf-val"></div></div>
                     </div>
-                    <div class="wf-info-grid wf-grid-2" style="margin-top:10px;">
-                        <div><div class="wf-label">使用密钥</div><div id="wfKey" class="wf-val" style="color:#9c27b0;font-family:'SF Mono','Monaco','Consolas',monospace;">-</div></div>
-                        <div><div class="wf-label">归属账户</div><div id="wfAccount" class="wf-val">-</div></div>
+                    <div class="wf-info-grid wf-grid-2">
+                        <div class="wf-field"><div class="wf-label">使用密钥</div><div id="wfKey" class="wf-val wf-val--key">-</div></div>
+                        <div class="wf-field"><div class="wf-label">归属账户</div><div id="wfAccount" class="wf-val">-</div></div>
                     </div>
-                    <div class="wf-info-grid wf-grid-3" style="margin-top:10px;">
-                        <div><div class="wf-label">流式模式</div><div id="wfStreamMode" class="wf-val">-</div></div>
-                        <div><div class="wf-label">Keepalive</div><div id="wfKeepalive" class="wf-val">0</div></div>
-                        <div><div class="wf-label">Bootstrap</div><div id="wfBootstrap" class="wf-val">-</div></div>
+                    <div class="wf-info-grid wf-grid-3">
+                        <div class="wf-field"><div class="wf-label">流式模式</div><div id="wfStreamMode" class="wf-val wf-val--pill">-</div></div>
+                        <div class="wf-field"><div class="wf-label">Keepalive</div><div id="wfKeepalive" class="wf-val wf-val--strong">0</div></div>
+                        <div class="wf-field"><div class="wf-label">Bootstrap</div><div id="wfBootstrap" class="wf-val">-</div></div>
                     </div>
                 </div>
-                <!-- 链路瀑布图 -->
-                <div id="perfWaterfallChart" style="margin-bottom: 16px;"></div>
-                <!-- 指标汇总 -->
-                <div class="wf-metrics-grid">
-                    <div class="wf-metric-item"><div class="wf-label">TTFB</div><div id="wfTTFB" class="wf-metric-val" style="color:#4285f4;">-</div></div>
-                    <div class="wf-metric-item"><div class="wf-label">TTFT</div><div id="wfTTFT" class="wf-metric-val" style="color:#34a853;">-</div></div>
-                    <div class="wf-metric-item"><div class="wf-label">TPS</div><div id="wfTPS" class="wf-metric-val" style="color:#fbbc05;">-</div></div>
-                    <div class="wf-metric-item"><div class="wf-label">总耗时</div><div id="wfTotal" class="wf-metric-val" style="color:#ea4335;">-</div></div>
+                <div class="wf-section-label">Latency Path</div>
+                <div id="perfWaterfallChart" class="wf-waterfall-card"></div>
+                <div class="wf-section-label">Key Metrics</div>
+                <div class="wf-metrics-grid wf-metrics-grid--primary">
+                    <div class="wf-metric-item"><div class="wf-label">TTFB</div><div id="wfTTFB" class="wf-metric-val wf-tone-blue">-</div></div>
+                    <div class="wf-metric-item"><div class="wf-label">TTFT</div><div id="wfTTFT" class="wf-metric-val wf-tone-green">-</div></div>
+                    <div class="wf-metric-item"><div class="wf-label">TPS</div><div id="wfTPS" class="wf-metric-val wf-tone-amber">-</div></div>
+                    <div class="wf-metric-item"><div class="wf-label">总耗时</div><div id="wfTotal" class="wf-metric-val wf-tone-red">-</div></div>
                 </div>
-                <div class="wf-metrics-grid" style="margin-top:8px;">
+                <div class="wf-metrics-grid wf-metrics-grid--tokens">
                     <div class="wf-metric-item"><div class="wf-label">输入 Tokens</div><div id="wfPromptTokens" class="wf-metric-val">0</div></div>
                     <div class="wf-metric-item"><div class="wf-label">输出 Tokens</div><div id="wfCompletionTokens" class="wf-metric-val">0</div></div>
                     <div class="wf-metric-item"><div class="wf-label">缓存读取</div><div id="wfCachedTokens" class="wf-metric-val">0</div></div>
                     <div class="wf-metric-item"><div class="wf-label">总 Tokens</div><div id="wfTotalTokens" class="wf-metric-val">0</div></div>
                 </div>
-                <div class="wf-metrics-grid" style="margin-top:8px;">
+                <div class="wf-metrics-grid wf-metrics-grid--cache">
                     <div class="wf-metric-item" title="Anthropic ephemeral_5m_input_tokens"><div class="wf-label">缓存创建 5m</div><div id="wfCache5mTokens" class="wf-metric-val">0</div></div>
                     <div class="wf-metric-item" title="Anthropic ephemeral_1h_input_tokens"><div class="wf-label">缓存创建 1h</div><div id="wfCache1hTokens" class="wf-metric-val">0</div></div>
                 </div>
             </div>
-            <div class="modal-footer" style="justify-content: center;">
-                <button class="btn" onclick="closePerfWaterfallModal()" style="width: 120px;">关闭</button>
+            <div class="modal-footer wf-modal-footer">
+                <button class="btn" onclick="closePerfWaterfallModal()">关闭</button>
             </div>
         </div>
     </div>
@@ -8315,6 +8466,29 @@
         let credsData = {};
         let selectedModels = [];
         let queriedModels = { grouped: { Anthropic: [], OpenAI: [], Google: [], Other: [] }, models: [] };
+
+        function setModalVisibility(modal, visible) {
+            if (!modal) return;
+            modal.style.display = visible ? 'flex' : 'none';
+            if (visible) {
+                requestAnimationFrame(() => {
+                    modal.scrollTop = 0;
+                    modal.querySelector('.modal-body')?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+                    modal.querySelector('.modal-content')?.scrollIntoView({ block: 'center', inline: 'center' });
+                });
+            }
+            const hasVisibleModal = Array.from(document.querySelectorAll('.modal')).some((item) => {
+                if (item === modal) return visible;
+                return item.style.display && item.style.display !== 'none';
+            });
+            document.body.classList.toggle('modal-open', hasVisibleModal);
+        }
+
+        function resetTraceTableScroll() {
+            document.querySelectorAll('.trace-table-wrap').forEach((wrap) => {
+                wrap.scrollTo({ left: 0, behavior: 'auto' });
+            });
+        }
 
         // ==================== 列可见性管理 ====================
         const TRACE_COLS = [
@@ -8336,6 +8510,30 @@
             localStorage.setItem('traceColVisible', JSON.stringify(traceColVisible));
         }
 
+        function renderColumnToggleItems(cols, state, handlerName) {
+            return cols.map((col) => {
+                const checked = state[col.key] ? 'checked' : '';
+                return `
+                    <label class="col-toggle-item">
+                        <input type="checkbox" ${checked} onchange="${handlerName}('${col.key}', this.checked)">
+                        <span class="col-toggle-check" aria-hidden="true"></span>
+                        <span class="col-toggle-label">
+                            <strong>${escapeHtml(col.label)}</strong>
+                            <small>${escapeHtml(col.key)}</small>
+                        </span>
+                    </label>
+                `;
+            }).join('');
+        }
+
+        function updateColumnToggleCount(id, cols, state) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const visible = cols.filter((col) => state[col.key]).length;
+            el.textContent = `${visible}/${cols.length}`;
+            el.dataset.empty = visible === 0 ? 'true' : 'false';
+        }
+
         function applyTraceColVisible() {
             const table = document.getElementById('usageRequestTracesTable');
             if (!table) return;
@@ -8343,15 +8541,14 @@
                 const display = traceColVisible[col.key] ? '' : 'none';
                 table.querySelectorAll(`[data-col="${col.key}"]`).forEach(el => el.style.display = display);
             });
+            updateColumnToggleCount('traceColCount', TRACE_COLS, traceColVisible);
         }
 
         function toggleColDropdown(e) {
             e.stopPropagation();
             const dd = document.getElementById('traceColDropdown');
             if (dd.classList.contains('show')) { dd.classList.remove('show'); return; }
-            dd.innerHTML = TRACE_COLS.map(c =>
-                `<label><input type="checkbox" ${traceColVisible[c.key] ? 'checked' : ''} onchange="onTraceColToggle('${c.key}', this.checked)"> ${c.label}</label>`
-            ).join('');
+            dd.innerHTML = renderColumnToggleItems(TRACE_COLS, traceColVisible, 'onTraceColToggle');
             dd.classList.add('show');
         }
         document.addEventListener('click', () => {
@@ -8364,6 +8561,58 @@
             saveTraceColVisible();
             applyTraceColVisible();
         }
+
+        const PERF_TRACE_COLS = [
+            { key: 'model', label: '模型' },
+            { key: 'ttfb', label: 'TTFB' },
+            { key: 'ttft', label: 'TTFT' },
+            { key: 'tps', label: 'TPS' },
+            { key: 'latency', label: '总耗时' },
+            { key: 'key', label: '密钥' },
+            { key: 'input', label: '输入' },
+            { key: 'output', label: '输出' },
+            { key: 'cache', label: '缓存' },
+            { key: 'total', label: '总 Tokens' }
+        ];
+        let perfTraceColVisible = {};
+        (function initPerfTraceColVisible() {
+            try { perfTraceColVisible = JSON.parse(localStorage.getItem('perfTraceColVisible') || '{}'); } catch(e) {}
+            PERF_TRACE_COLS.forEach(c => { if (!(c.key in perfTraceColVisible)) perfTraceColVisible[c.key] = true; });
+        })();
+
+        function savePerfTraceColVisible() {
+            localStorage.setItem('perfTraceColVisible', JSON.stringify(perfTraceColVisible));
+        }
+
+        function applyPerfTraceColVisible() {
+            const table = document.getElementById('perfTracesTable');
+            if (!table) return;
+            PERF_TRACE_COLS.forEach(col => {
+                const display = perfTraceColVisible[col.key] ? '' : 'none';
+                table.querySelectorAll(`[data-col="${col.key}"]`).forEach(el => el.style.display = display);
+            });
+            updateColumnToggleCount('perfTraceColCount', PERF_TRACE_COLS, perfTraceColVisible);
+        }
+
+        function togglePerfColDropdown(e) {
+            e.stopPropagation();
+            const dd = document.getElementById('perfTraceColDropdown');
+            if (!dd) return;
+            if (dd.classList.contains('show')) { dd.classList.remove('show'); return; }
+            dd.innerHTML = renderColumnToggleItems(PERF_TRACE_COLS, perfTraceColVisible, 'onPerfTraceColToggle');
+            dd.classList.add('show');
+        }
+
+        function onPerfTraceColToggle(key, checked) {
+            perfTraceColVisible[key] = checked;
+            savePerfTraceColVisible();
+            applyPerfTraceColVisible();
+        }
+
+        document.addEventListener('click', () => {
+            const dd = document.getElementById('perfTraceColDropdown');
+            if (dd) dd.classList.remove('show');
+        });
 
         // ==================== 暗黑模式 ====================
         function toggleTheme() {
@@ -8954,7 +9203,7 @@
         // 显示密钥管理弹窗
         function showKeyManagementModal() {
             const modal = document.getElementById('keyManagementModal');
-            modal.style.display = 'block';
+            setModalVisibility(modal, true);
             // 初始化弹窗内的自定义下拉框
             initCustomSelects(modal);
             loadKeyManagementModal();
@@ -8962,7 +9211,7 @@
 
         // 关闭密钥管理弹窗
         function closeKeyManagementModal() {
-            document.getElementById('keyManagementModal').style.display = 'none';
+            setModalVisibility(document.getElementById('keyManagementModal'), false);
         }
 
         // 加载密钥管理数据（弹窗版）
@@ -9084,8 +9333,7 @@
                 const actionText = key.enabled ? '禁用' : '启用';
                 const actionColor = key.enabled ? '#dc3545' : '#28a745';
 
-                // 显示完整密钥，不隐匿
-                const fullKey = key.key || key.masked_key || '';
+                const displayKey = key.masked_key || key.display_key || key.key || '';
 
                 // 禁用原因
                 let disableReason = '-';
@@ -9110,7 +9358,7 @@
 
                 html += `<tr>
                     <td style="color: var(--text-secondary);">#${key.index}</td>
-                    <td><code style="font-size: 11px; color: var(--text-color); word-break: break-all;">${fullKey}</code></td>
+                    <td><code style="font-size: 11px; color: var(--text-color); word-break: break-all;">${displayKey}</code></td>
                     <td><span class="status-badge ${statusClass}" style="background: ${statusColor}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; display: inline-block;">${statusText}</span></td>
                     <td style="color: var(--text-muted); font-size: 12px;">${disableReason}</td>
                     <td style="color: var(--text-muted); font-size: 12px;">${disableTime}</td>
@@ -9233,7 +9481,7 @@
         // 删除单个密钥
         async function deleteKeyModal(index) {
             const key = keyManagementData.keys.find(k => k.index === index);
-            const keyDisplay = key ? (key.masked_key || key.key || `密钥 #${index}`) : `密钥 #${index}`;
+            const keyDisplay = key ? (key.masked_key || key.display_key || `密钥 #${index}`) : `密钥 #${index}`;
 
             if (!confirm(`确定要删除密钥吗？\n\n${keyDisplay}\n\n删除后无法恢复，请谨慎操作！`)) {
                 return;
@@ -9844,6 +10092,124 @@
         let filteredLogs = [];
         let currentLogFilter = 'all';
 
+        function normalizeLogLevel(level) {
+            const normalized = String(level || 'INFO').toUpperCase();
+            if (normalized === 'WARN') return 'WARNING';
+            if (normalized === 'CRITICAL' || normalized === 'FATAL') return 'ERROR';
+            if (['ERROR', 'WARNING', 'INFO', 'DEBUG'].includes(normalized)) return normalized;
+            return 'INFO';
+        }
+
+        function getLogLevel(line) {
+            const text = String(line || '');
+            const match = text.match(/\[(ERROR|WARNING|WARN|INFO|DEBUG|CRITICAL|FATAL)\]|\b(ERROR|WARNING|WARN|INFO|DEBUG|CRITICAL|FATAL)\b/i);
+            return normalizeLogLevel(match?.[1] || match?.[2] || 'INFO');
+        }
+
+        function parseLogLine(line, displayIndex) {
+            const text = String(line || '');
+            const level = getLogLevel(text);
+            const timeMatch = text.match(/(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d{1,6})?|\d{2}:\d{2}:\d{2}(?:[.,]\d{1,6})?)/);
+            const bracketParts = Array.from(text.matchAll(/\[([^\]]{2,72})\]/g)).map((item) => item[1]);
+            const source = bracketParts.find((part) => {
+                const value = String(part || '').trim();
+                return value &&
+                    !/^(ERROR|WARNING|WARN|INFO|DEBUG|CRITICAL|FATAL)$/i.test(value) &&
+                    !/^\d{2,4}[-:]/.test(value) &&
+                    !value.includes(' ');
+            }) || '';
+            let message = text;
+            if (timeMatch) message = message.replace(timeMatch[0], '').trim();
+            message = message.replace(/\[(ERROR|WARNING|WARN|INFO|DEBUG|CRITICAL|FATAL)\]/i, '').trim();
+            if (source) message = message.replace(new RegExp(`\\[${escapeRegExp(source)}\\]`, 'i'), '').trim();
+            message = message.replace(/^[-|:]\s*/, '');
+            return {
+                index: displayIndex + 1,
+                level,
+                levelLabel: level === 'WARNING' ? 'WARN' : level,
+                time: timeMatch ? timeMatch[0].replace('T', ' ') : '--:--:--',
+                source: source || 'gateway',
+                message: message || text,
+                raw: text
+            };
+        }
+
+        function extractLogFacts(message) {
+            const text = String(message || '');
+            const matches = Array.from(text.matchAll(/\b(trace|model|status|elapsed|tokens|total|prompt|completion|cached|cost|ttl|route|region|account|prompt_cache_key)=([^\s,]+)/ig));
+            const seen = new Set();
+            return matches.reduce((items, match) => {
+                const key = match[1].toLowerCase();
+                if (seen.has(key) || items.length >= 5) return items;
+                seen.add(key);
+                items.push({ key, value: match[2] });
+                return items;
+            }, []);
+        }
+
+        function escapeRegExp(value) {
+            return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function highlightLogText(text, searchTerm) {
+            const value = String(text || '');
+            const needle = String(searchTerm || '').trim();
+            if (!needle) return escapeHtml(value);
+            const parts = value.split(new RegExp(`(${escapeRegExp(needle)})`, 'ig'));
+            return parts.map((part) => {
+                if (part.toLowerCase() === needle.toLowerCase()) {
+                    return `<mark>${escapeHtml(part)}</mark>`;
+                }
+                return escapeHtml(part);
+            }).join('');
+        }
+
+        function renderLogRow(line, index, searchTerm) {
+            const item = parseLogLine(line, index);
+            const levelClass = item.level.toLowerCase();
+            const facts = extractLogFacts(item.message);
+            const factsHtml = facts.length ? `
+                <div class="log-row__facts">
+                    ${facts.map((fact) => `<span class="log-fact"><b>${escapeHtml(fact.key)}</b>${highlightLogText(fact.value, searchTerm)}</span>`).join('')}
+                </div>
+            ` : '';
+            return `
+                <div class="log-row log-row--${levelClass}" data-level="${item.level}" title="${escapeHtml(item.raw)}">
+                    <div class="log-row__index">${item.index.toString().padStart(3, '0')}</div>
+                    <div class="log-row__time">${escapeHtml(item.time)}</div>
+                    <div class="log-row__level">${escapeHtml(item.levelLabel)}</div>
+                    <div class="log-row__body">
+                        <div class="log-row__main">
+                            <span class="log-row__source">${escapeHtml(item.source)}</span>
+                            <span class="log-row__message">${highlightLogText(item.message, searchTerm)}</span>
+                        </div>
+                        ${factsHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        function setLogMetric(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        }
+
+        function updateLogStats() {
+            const counts = allLogs.reduce((acc, line) => {
+                acc[getLogLevel(line)] += 1;
+                return acc;
+            }, { ERROR: 0, WARNING: 0, INFO: 0, DEBUG: 0 });
+            setLogMetric('logTotalCount', allLogs.length.toLocaleString());
+            setLogMetric('logErrorCount', counts.ERROR.toLocaleString());
+            setLogMetric('logWarningCount', counts.WARNING.toLocaleString());
+            setLogMetric('logVisibleCount', filteredLogs.length.toLocaleString());
+        }
+
+        function updateLogLastSeen() {
+            const el = document.getElementById('logLastUpdate');
+            if (el) el.textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+        }
+
         function connectWebSocket() {
             if (logWebSocket && logWebSocket.readyState === WebSocket.OPEN) {
                 return;
@@ -9874,6 +10240,7 @@
                             allLogs = allLogs.slice(-1000);
                         }
 
+                        updateLogLastSeen();
                         filterLogs();
 
                         // 自动滚动到底部
@@ -9915,7 +10282,7 @@
             // 只清空前端显示的日志，不清空服务器文件
             allLogs = [];
             filteredLogs = [];
-            document.getElementById('logContent').textContent = '日志已清空，等待新日志...';
+            displayLogs('日志已清空，等待新日志...');
         }
 
         async function downloadLogs() {
@@ -9993,25 +10360,29 @@
 
         function filterLogs() {
             const filter = document.getElementById('logLevelFilter').value;
+            const searchTerm = (document.getElementById('logSearchInput')?.value || '').trim().toLowerCase();
             currentLogFilter = filter;
 
-            if (filter === 'all') {
-                filteredLogs = [...allLogs];
-            } else {
-                filteredLogs = allLogs.filter(log => log.toUpperCase().includes(filter));
-            }
+            filteredLogs = allLogs.filter((log) => {
+                const matchesLevel = filter === 'all' || getLogLevel(log) === filter;
+                const matchesSearch = !searchTerm || String(log).toLowerCase().includes(searchTerm);
+                return matchesLevel && matchesSearch;
+            });
 
             displayLogs();
         }
 
-        function displayLogs() {
+        function displayLogs(emptyText) {
             const logContent = document.getElementById('logContent');
             if (filteredLogs.length === 0) {
-                logContent.textContent = currentLogFilter === 'all' ?
+                const fallback = currentLogFilter === 'all' ?
                     '暂无日志...' : `暂无${currentLogFilter}级别的日志...`;
+                logContent.innerHTML = `<div class="log-empty-state">${escapeHtml(emptyText || fallback)}</div>`;
             } else {
-                logContent.textContent = filteredLogs.join('\n');
+                const searchTerm = (document.getElementById('logSearchInput')?.value || '').trim();
+                logContent.innerHTML = filteredLogs.map((line, index) => renderLogRow(line, index, searchTerm)).join('');
             }
+            updateLogStats();
         }
 
         // 凭证文件管理相关函数
@@ -10025,8 +10396,6 @@
                     credsList.innerHTML = '';
                 }
 
-                console.log('Fetching creds status...');
-
                 const response = await fetch('/creds/status', {
                     method: 'GET',
                     headers: getAuthHeaders()
@@ -10035,8 +10404,6 @@
                 console.log('Creds status response:', response.status);
 
                 const data = await response.json();
-                console.log('Creds status data:', data);
-
                 if (response.ok) {
                     credsData = data.creds;
 
@@ -10560,8 +10927,8 @@
             const overrideEl = document.getElementById('overrideEnv');
             if (hostEl) hostEl.value = currentConfig.host || '0.0.0.0';
             if (portEl) portEl.value = currentConfig.port || 7861;
-            if (apiPwdEl) apiPwdEl.value = currentConfig.api_password || '';
-            if (panelPwdEl) panelPwdEl.value = currentConfig.panel_password || '';
+            if (apiPwdEl) apiPwdEl.value = '';
+            if (panelPwdEl) panelPwdEl.value = '';
             if (aaiKeysEl) {
                 // 密钥配置页面只用于新增，不显示现有密钥，查看密钥请使用"查看密钥"按钮
                 aaiKeysEl.value = '';
@@ -10660,10 +11027,10 @@
         }
 
         async function saveConfig() {
+            const apiPasswordValue = document.getElementById('configApiPassword').value.trim();
+            const panelPasswordValue = document.getElementById('configPanelPassword').value.trim();
             const payload = {
                 override_env: document.getElementById('overrideEnv').checked,
-                api_password: document.getElementById('configApiPassword').value.trim(),
-                panel_password: document.getElementById('configPanelPassword').value.trim(),
                 host: document.getElementById('host').value.trim(),
                 port: parseInt(document.getElementById('port').value) || 7861,
                 calls_per_rotation: parseInt(document.getElementById('callsPerRotation').value) || 100,
@@ -10679,6 +11046,8 @@
                 stream_keepalive_seconds: parseFloat(document.getElementById('streamKeepaliveSeconds')?.value) || 0,
                 stream_bootstrap_retries: parseInt(document.getElementById('streamBootstrapRetries')?.value) || 0
             };
+            if (apiPasswordValue) payload.api_password = apiPasswordValue;
+            if (panelPasswordValue) payload.panel_password = panelPasswordValue;
             const generalPwd = document.getElementById('configPassword').value.trim();
             if (generalPwd) payload.password = generalPwd;
 
@@ -10921,18 +11290,80 @@
                     return div.innerHTML;
                 };
 
+                const sensitiveConfigKeys = new Set([
+                    'api_password',
+                    'panel_password',
+                    'password',
+                    'assembly_api_key',
+                    'assembly_api_keys',
+                    'assembly_accounts_list',
+                    'assembly_current_account',
+                    'key_states',
+                    'rate_limit_info',
+                    'unified_stats'
+                ]);
+
+                const isSensitiveConfigKey = (key) => {
+                    const normalized = String(key || '').toLowerCase();
+                    return sensitiveConfigKeys.has(normalized) ||
+                        normalized.startsWith('assembly_dashboard_session:') ||
+                        normalized.startsWith('perf_traces') ||
+                        normalized.includes('secret') ||
+                        normalized.includes('credential') ||
+                        normalized.includes('private') ||
+                        normalized === 'token' ||
+                        normalized.endsWith('_token') ||
+                        normalized.endsWith('_api_key') ||
+                        normalized.includes('auth_token') ||
+                        normalized.includes('api_token') ||
+                        normalized.endsWith('_dsn') ||
+                        normalized.endsWith('_uri') ||
+                        normalized === 'proxy';
+                };
+
+                const getDisplayConfigKey = (key, sensitive) => {
+                    if (sensitive && String(key || '').toLowerCase().startsWith('assembly_dashboard_session:')) {
+                        return 'assembly_dashboard_session:*';
+                    }
+                    return key;
+                };
+
+                const getSensitiveSummary = (value) => {
+                    if (Array.isArray(value)) {
+                        return `已隐藏敏感列表（${value.length} 项）`;
+                    }
+                    if (value && typeof value === 'object') {
+                        return `已隐藏敏感对象（${Object.keys(value).length} 项）`;
+                    }
+                    return '已隐藏敏感值';
+                };
+
                 const rows = Object.keys(cfg).sort().map((k, idx) => {
                     const v = cfg[k];
+                    const sensitive = isSensitiveConfigKey(k);
+                    const displayValue = sensitive ? getSensitiveSummary(v) : v;
                     // 折叠时显示单行，展开时显示格式化
-                    const vsCompact = typeof v === 'object' ? JSON.stringify(v) : String(v);
-                    const vsFull = typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v);
+                    const vsCompact = typeof displayValue === 'object' ? JSON.stringify(displayValue) : String(displayValue);
+                    const vsFull = typeof displayValue === 'object' ? JSON.stringify(displayValue, null, 2) : String(displayValue);
                     const displayName = getDisplayName(k);
+                    const displayKey = getDisplayConfigKey(k, sensitive);
                     const rowId = `config-row-${idx}`;
 
                     let valueCell;
                     let actionsCell;
 
-                    if (isLongContent(vsCompact)) {
+                    if (sensitive) {
+                        valueCell = `
+                            <td class="config-value-cell config-value-cell--sensitive" data-label="值">
+                                <span class="config-sensitive-value">${escapeHtml(vsCompact)}</span>
+                            </td>
+                        `;
+                        actionsCell = `
+                            <td class="config-actions-cell" data-label="操作" style="white-space:nowrap;vertical-align:top;">
+                                <span class="config-sensitive-badge">复制受限</span>
+                            </td>
+                        `;
+                    } else if (isLongContent(vsCompact)) {
                         // 长内容：折叠时显示单行预览，展开时显示格式化内容
                         const preview = escapeHtml(vsCompact.substring(0, MAX_PREVIEW_LENGTH)) + '...';
                         const fullContent = escapeHtml(vsFull);
@@ -10967,7 +11398,7 @@
 
                     return `<tr id="${rowId}">
                         <td data-label="名称" style="width:70px;color:#333;font-weight:500;font-size:13px;vertical-align:top;">${displayName}</td>
-                        <td data-label="键" style="width:180px;color:#888;font-family:monospace;font-size:11px;word-break:break-all;vertical-align:top;" title="${escapeHtml(k)}">${escapeHtml(k)}</td>
+                        <td data-label="键" style="width:180px;color:#888;font-family:monospace;font-size:11px;word-break:break-all;vertical-align:top;" title="${escapeHtml(displayKey)}">${escapeHtml(displayKey)}</td>
                         ${valueCell}
                         ${actionsCell}
                     </tr>`;
@@ -12460,7 +12891,7 @@
                             <td data-col="total" class="trace-token-cell">${total.toLocaleString()}</td>
                             <td data-col="latency" style="font-size:11px;">${latency > 0 ? formatMs(latency) : '-'}</td>
                             <td>
-                                <button class="btn btn-sm" style="background:#17a2b8; padding:2px 6px; font-size:10px;" onclick="showPerfWaterfall('${traceIdSafe}')">详情</button>
+                                <button class="btn btn-sm trace-detail-btn" style="background:#17a2b8; padding:2px 6px; font-size:10px;" onclick="showPerfWaterfall('${traceIdSafe}')">详情</button>
                             </td>
                         </tr>
                     `;
@@ -13785,6 +14216,7 @@
                 const tbody = document.getElementById('perfTracesBody');
                 if (!data.traces || data.traces.length === 0) {
                     tbody.innerHTML = '<tr><td colspan="12" style="text-align: center; color: var(--text-secondary);">暂无数据</td></tr>';
+                    applyPerfTraceColVisible();
                     document.getElementById('perfPagination').style.display = 'none';
                     return;
                 }
@@ -13807,23 +14239,25 @@
                     const completionTokens = toToken('completion_tokens');
                     const cachedTokens = toToken('cached_tokens');
                     const totalTokens = toToken('total_tokens');
+                    const traceIdSafe = String(trace.trace_id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                     return `
                         <tr>
-                            <td style="font-size: 11px; white-space: nowrap;" title="${fullTime}">${dateStr}<br/>${timeStr}</td>
-                            <td style="font-size: 11px; max-width: 150px; word-break: break-all;" title="${trace.model}">${trace.model}</td>
-                            <td style="font-size: 11px;">${metrics.ttfb ? formatMs(metrics.ttfb) : '-'}</td>
-                            <td style="font-size: 11px;">${metrics.ttft ? formatMs(metrics.ttft) : '-'}</td>
-                            <td style="font-size: 11px;">${metrics.tps ? metrics.tps.toFixed(1) : '-'}</td>
-                            <td style="font-size: 11px;">${metrics.total_latency ? formatMs(metrics.total_latency) : '-'}</td>
-                            <td style="font-size: 10px; font-family: 'SF Mono', 'Monaco', 'Consolas', monospace; color: #9c27b0;" title="${trace.account_email || ''}">${keyDisplay}</td>
-                            <td class="trace-token-cell">${promptTokens.toLocaleString()}</td>
-                            <td class="trace-token-cell">${completionTokens.toLocaleString()}</td>
-                            <td class="trace-token-cell">${cachedTokens.toLocaleString()}</td>
-                            <td class="trace-token-cell">${totalTokens.toLocaleString()}</td>
-                            <td><button class="btn btn-sm" onclick="showPerfWaterfall('${trace.trace_id}')" style="background: #17a2b8; padding: 2px 6px; font-size: 10px;">详情</button></td>
+                            <td class="perf-time-cell" style="font-size: 11px; white-space: nowrap;" title="${escapeHtml(fullTime)}">${dateStr}<br/>${timeStr}</td>
+                            <td data-col="model" data-label="模型" class="perf-model-cell" style="font-size: 11px; max-width: 150px; word-break: break-all;" title="${escapeHtml(String(trace.model || ''))}">${escapeHtml(String(trace.model || '-'))}</td>
+                            <td data-col="ttfb" data-label="TTFB" style="font-size: 11px;">${metrics.ttfb ? formatMs(metrics.ttfb) : '-'}</td>
+                            <td data-col="ttft" data-label="TTFT" style="font-size: 11px;">${metrics.ttft ? formatMs(metrics.ttft) : '-'}</td>
+                            <td data-col="tps" data-label="TPS" style="font-size: 11px;">${metrics.tps ? metrics.tps.toFixed(1) : '-'}</td>
+                            <td data-col="latency" data-label="总耗时" style="font-size: 11px;">${metrics.total_latency ? formatMs(metrics.total_latency) : '-'}</td>
+                            <td data-col="key" data-label="密钥" style="font-size: 10px; font-family: 'SF Mono', 'Monaco', 'Consolas', monospace; color: #9c27b0;" title="${escapeHtml(String(trace.account_email || ''))}">${escapeHtml(String(keyDisplay))}</td>
+                            <td data-col="input" data-label="输入" class="trace-token-cell">${promptTokens.toLocaleString()}</td>
+                            <td data-col="output" data-label="输出" class="trace-token-cell">${completionTokens.toLocaleString()}</td>
+                            <td data-col="cache" data-label="缓存" class="trace-token-cell">${cachedTokens.toLocaleString()}</td>
+                            <td data-col="total" data-label="总 Tokens" class="trace-token-cell">${totalTokens.toLocaleString()}</td>
+                            <td class="perf-action-cell"><button class="btn btn-sm trace-detail-btn" onclick="showPerfWaterfall('${traceIdSafe}')" style="background: #17a2b8; padding: 2px 6px; font-size: 10px;">详情</button></td>
                         </tr>
                     `;
                 }).join('');
+                applyPerfTraceColVisible();
 
                 // 更新分页
                 document.getElementById('perfPagination').style.display = 'flex';
@@ -13842,6 +14276,7 @@
 
         async function showPerfWaterfall(traceId) {
             try {
+                resetTraceTableScroll();
                 const res = await fetch(`/api/playground/performance/trace/${traceId}`, { headers: getAuthHeaders() });
                 if (!res.ok) {
                     throw new Error('Trace not found');
@@ -13907,7 +14342,7 @@
                 renderWaterfall(trace);
 
                 // 显示弹窗
-                document.getElementById('perfWaterfallModal').style.display = 'block';
+                setModalVisibility(document.getElementById('perfWaterfallModal'), true);
             } catch (e) {
                 console.error('加载追踪详情失败:', e);
                 alert('加载失败: ' + e.message);
@@ -13972,12 +14407,14 @@
                 const titleText = `${s.label}: ${durText} (${pctText})`;
 
                 html += `<div class="perf-waterfall-row">
-                    <div class="perf-waterfall-label">${s.label}</div>
+                    <div class="perf-waterfall-label"><span>${s.label}</span></div>
                     <div class="perf-waterfall-bar-container">
                         <div class="perf-waterfall-bar ${s.className}" style="left:0;width:${Math.max(widthPct, 1).toFixed(1)}%;" title="${titleText}"></div>
                     </div>
-                    <div class="perf-waterfall-dur">${durText}</div>
-                    <div class="perf-waterfall-pct">${pctText}</div>
+                    <div class="perf-waterfall-meta">
+                        <span class="perf-waterfall-dur">${durText}</span>
+                        <span class="perf-waterfall-pct">${pctText}</span>
+                    </div>
                 </div>`;
             }
 
@@ -13985,7 +14422,7 @@
         }
 
         function closePerfWaterfallModal() {
-            document.getElementById('perfWaterfallModal').style.display = 'none';
+            setModalVisibility(document.getElementById('perfWaterfallModal'), false);
         }
 
         async function clearPerfData() {
@@ -14160,6 +14597,90 @@
         let playgroundTestInProgress = false;
         let playgroundAbortController = null;
 
+        function getPlaygroundMessages({ placeholder = false, defaultIfEmpty = false } = {}) {
+            const rows = Array.from(document.querySelectorAll('#playgroundMessages .playground-message-row'));
+            const messages = rows.map(r => {
+                const role = r.querySelector('select')?.value || 'user';
+                const content = r.querySelector('textarea')?.value || '';
+                return { role, content };
+            }).filter(m => (m.content || '').trim().length > 0);
+            if (messages.length > 0) return messages;
+            if (defaultIfEmpty) return [{ role: 'user', content: 'Hello' }];
+            if (placeholder) return [{ role: 'user', content: '(请添加消息)' }];
+            return [];
+        }
+
+        function getOptionalNumber(id, min, max) {
+            const raw = (document.getElementById(id)?.value || '').trim();
+            if (!raw) return null;
+            const value = Number(raw);
+            if (!Number.isFinite(value)) return null;
+            if (typeof min === 'number' && value < min) return min;
+            if (typeof max === 'number' && value > max) return max;
+            return value;
+        }
+
+        function applyPlaygroundFeatureOptions(body) {
+            const topP = getOptionalNumber('playgroundTopP', 0, 1);
+            if (topP !== null) body.top_p = topP;
+
+            const reasoning = document.getElementById('playgroundReasoningEffort')?.value || '';
+            if (reasoning) body.reasoning_effort = reasoning;
+
+            const verbosity = document.getElementById('playgroundVerbosity')?.value || '';
+            if (verbosity) body.verbosity = verbosity;
+
+            const parallel = document.getElementById('playgroundParallelToolCalls')?.value || '';
+            if (parallel) body.parallel_tool_calls = parallel === 'true';
+
+            if (body.stream && document.getElementById('playgroundStreamIncludeUsage')?.checked) {
+                body.stream_options = { include_usage: true };
+            }
+
+            const retention = document.getElementById('playgroundPromptCacheRetention')?.value || '';
+            if (retention) body.prompt_cache_retention = retention;
+
+            const cacheKey = (document.getElementById('playgroundPromptCacheKey')?.value || '').trim();
+            if (cacheKey) body.prompt_cache_key = cacheKey;
+
+            const cacheTtl = document.getElementById('playgroundCacheControlTtl')?.value || '';
+            if (cacheTtl) body.cache_control = { type: 'ephemeral', ttl: cacheTtl };
+        }
+
+        function buildPlaygroundRequestBody({ placeholder = false, defaultIfEmpty = false } = {}) {
+            const sel = document.getElementById('playgroundModel');
+            const temp = getOptionalNumber('playgroundTemperatureValue') ?? getOptionalNumber('playgroundTemperature') ?? 0.5;
+            const maxT = getOptionalNumber('playgroundMaxTokensValue') ?? getOptionalNumber('playgroundMaxTokens') ?? 4096;
+            const tokenMode = document.getElementById('playgroundTokenFieldMode')?.value || 'max_tokens';
+
+            const body = {
+                model: sel?.value || '',
+                messages: getPlaygroundMessages({ placeholder, defaultIfEmpty }),
+                temperature: temp
+            };
+            if (tokenMode === 'max_completion_tokens') {
+                body.max_completion_tokens = maxT;
+            } else if (tokenMode === 'both') {
+                body.max_tokens = maxT;
+                body.max_completion_tokens = maxT;
+            } else {
+                body.max_tokens = maxT;
+            }
+
+            const toolsStr = document.getElementById('playgroundToolsJson')?.value?.trim() || '';
+            if (toolsStr) {
+                const tools = JSON.parse(toolsStr);
+                body.tools = tools;
+                body.tool_choice = 'auto';
+            }
+
+            const enableStream = !!document.getElementById('playgroundStream')?.checked;
+            if (enableStream) body.stream = true;
+
+            applyPlaygroundFeatureOptions(body);
+            return body;
+        }
+
         // 预览请求
         async function previewRequest() {
             console.log('previewRequest called');
@@ -14170,42 +14691,12 @@
                 return;
             }
 
-            const temp = parseFloat(document.getElementById('playgroundTemperature').value) || 0.5;
-            const maxT = parseInt(document.getElementById('playgroundMaxTokens').value) || 4096;
-            const stream = document.getElementById('playgroundStream')?.checked || false;
-
-            const rows = Array.from(document.querySelectorAll('#playgroundMessages .playground-message-row'));
-            let messages = rows.map(r => {
-                const selectEl = r.querySelector('select');
-                const textareaEl = r.querySelector('textarea');
-                if (!selectEl || !textareaEl) return null;
-                const role = selectEl.value;
-                const content = textareaEl.value;
-                return { role, content };
-            }).filter(m => m && (m.content || '').trim().length > 0);
-
-            // 如果没有消息，使用默认消息
-            if (messages.length === 0) {
-                messages = [{ role: 'user', content: 'Hello' }];
-            }
-
-            const requestData = {
-                model: sel.value,
-                messages: messages,
-                temperature: temp,
-                max_tokens: maxT,
-                stream: stream
-            };
-
-            // 添加工具定义
-            const toolsStr = document.getElementById('playgroundToolsJson')?.value?.trim() || '';
-            if (toolsStr) {
-                try {
-                    requestData.tools = JSON.parse(toolsStr);
-                } catch (e) {
-                    alert('工具定义 JSON 格式错误: ' + e.message);
-                    return;
-                }
+            let requestData;
+            try {
+                requestData = buildPlaygroundRequestBody({ defaultIfEmpty: true });
+            } catch (e) {
+                alert('工具定义 JSON 格式错误: ' + e.message);
+                return;
             }
 
             console.log('Request data:', requestData);
@@ -14264,60 +14755,6 @@
             }
         }
 
-        // 复制请求体
-        function copyRequestBody() {
-            const body = document.getElementById('previewBody').value;
-            navigator.clipboard.writeText(body).then(() => {
-                alert('已复制到剪贴板');
-            }).catch(err => {
-                alert('复制失败: ' + err.message);
-            });
-        }
-
-        // 编辑请求体
-        function editRequestBody() {
-            const textarea = document.getElementById('previewBody');
-            textarea.readOnly = false;
-            textarea.focus();
-            alert('现在可以编辑请求体了，编辑完成后点击"发送"按钮');
-        }
-
-        // 发送自定义请求
-        async function sendCustomRequest() {
-            const body = document.getElementById('previewBody').value;
-
-            try {
-                const requestData = JSON.parse(body);
-
-                // 使用现有的 sendPlayground 逻辑，但使用自定义的请求体
-                const sel = document.getElementById('playgroundModel');
-                const selectedKey = document.getElementById('playgroundApiKey')?.value || '';
-
-                const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
-                if (selectedKey) {
-                    headers['X-API-Key'] = selectedKey;
-                }
-
-                const response = await fetch('/v1/chat/completions', {
-                    method: 'POST',
-                    headers: headers,
-                    body: body
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    document.getElementById('playgroundOutputContent').textContent = data.choices?.[0]?.message?.content || JSON.stringify(data);
-                    document.getElementById('playgroundRawJson').textContent = JSON.stringify(data, null, 2);
-                    showStatus('请求成功', 'success');
-                } else {
-                    const error = await response.text();
-                    showStatus('请求失败: ' + error, 'error');
-                }
-            } catch (e) {
-                alert('请求体格式错误或发送失败: ' + e.message);
-            }
-        }
-
         async function sendPlayground() {
             // 如果已有测试在进行，提示用户
             if (playgroundTestInProgress) {
@@ -14330,31 +14767,16 @@
             }
 
             const sel = document.getElementById('playgroundModel');
-            const temp = parseFloat(document.getElementById('playgroundTemperatureValue')?.value || document.getElementById('playgroundTemperature').value) || 0.5;
-            const maxT = parseInt(document.getElementById('playgroundMaxTokensValue')?.value || document.getElementById('playgroundMaxTokens').value) || 4096;
             const selectedKey = document.getElementById('playgroundApiKey')?.value || '';
 
-            const rows = Array.from(document.querySelectorAll('#playgroundMessages .playground-message-row'));
-            const messages = rows.map(r => {
-                const role = r.querySelector('select').value;
-                const content = r.querySelector('textarea').value;
-                return { role, content };
-            }).filter(m => (m.content || '').trim().length > 0);
-
-            const body = { model: sel.value, messages, temperature: temp, max_tokens: maxT };
-            const toolsStr = document.getElementById('playgroundToolsJson').value.trim();
-            if (toolsStr) {
-                try {
-                    const tools = JSON.parse(toolsStr);
-                    body.tools = tools;
-                    body.tool_choice = 'auto';
-                } catch (e) {
-                    showStatus('工具JSON解析失败: ' + e.message, 'error');
-                    return;
-                }
+            let body;
+            try {
+                body = buildPlaygroundRequestBody({ defaultIfEmpty: true });
+            } catch (e) {
+                showStatus('工具JSON解析失败: ' + e.message, 'error');
+                return;
             }
-            const enableStream = !!document.getElementById('playgroundStream')?.checked;
-            if (enableStream) body.stream = true;
+            const enableStream = !!body.stream;
 
             try {
                 playgroundTestInProgress = true;
@@ -14624,40 +15046,18 @@
                 return;
             }
 
-            // 构建请求体
-            const temp = parseFloat(document.getElementById('playgroundTemperatureValue')?.value || document.getElementById('playgroundTemperature').value) || 0.5;
-            const maxT = parseInt(document.getElementById('playgroundMaxTokensValue')?.value || document.getElementById('playgroundMaxTokens').value) || 4096;
             const selectedKey = document.getElementById('playgroundApiKey')?.value || '';
 
-            const rows = Array.from(document.querySelectorAll('#playgroundMessages .playground-message-row'));
-            const messages = rows.map(r => {
-                const role = r.querySelector('select')?.value || 'user';
-                const content = r.querySelector('textarea')?.value || '';
-                return { role, content };
-            }).filter(m => (m.content || '').trim().length > 0);
-
-            const body = {
-                model: sel.value,
-                messages: messages.length > 0 ? messages : [{ role: 'user', content: '(请添加消息)' }],
-                temperature: temp,
-                max_tokens: maxT
-            };
-
-            // 添加工具定义
-            const toolsStr = document.getElementById('playgroundToolsJson')?.value?.trim();
-            if (toolsStr) {
-                try {
-                    const tools = JSON.parse(toolsStr);
-                    body.tools = tools;
-                    body.tool_choice = 'auto';
-                } catch (e) {
-                    // JSON 解析失败，不添加工具
+            let body;
+            try {
+                body = buildPlaygroundRequestBody({ placeholder: true });
+            } catch (e) {
+                const bodyEl = document.getElementById('previewBody');
+                if (bodyEl) {
+                    bodyEl.value = `// 工具定义 JSON 格式错误: ${e.message}`;
                 }
+                return;
             }
-
-            // 添加 stream 参数
-            const enableStream = !!document.getElementById('playgroundStream')?.checked;
-            if (enableStream) body.stream = true;
 
             // 更新预览
             await showRequestPreview(body, selectedKey);
