@@ -12,11 +12,13 @@ a:focus-visible,
 [role="button"]:focus-visible,
 [role="link"]:focus-visible,
 [tabindex]:focus-visible,
+.ac-btn:focus-visible {
+  box-shadow: var(--elev-focus) !important;
+  z-index: 1;
+}
 input:focus-visible,
 textarea:focus-visible,
-select:focus-visible,
-.tab:focus-visible,
-.ac-btn:focus-visible {
+select:focus-visible {
   box-shadow: var(--elev-focus) !important;
   border-color: var(--line-focus) !important;
   z-index: 1;
@@ -41,8 +43,6 @@ select:focus-visible,
     z-index: 2;
     animation: ac-theme-reveal var(--dur-emphasis) var(--ease-emphasis) forwards;
   }
-  [data-theme="dark"]::view-transition-old(root) { z-index: 2; }
-  [data-theme="dark"]::view-transition-new(root) { z-index: 1; }
 }
 @keyframes ac-theme-reveal {
   from { clip-path: circle(0% at var(--theme-x, 100%) var(--theme-y, 0%)); }
@@ -57,7 +57,6 @@ select:focus-visible,
   background: var(--sig-success);
   position: relative;
   flex-shrink: 0;
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--sig-success) 25%, transparent);
 }
 .live-dot::after {
   content: "";
@@ -115,33 +114,6 @@ select:focus-visible,
 /* Misc */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-/* ============================================================
- * 主题切换无 View-Transitions 时的兜底渐变（避免黑白突跳）
- * 浏览器支持 view-transition-name 时由 ac-theme-reveal 处理，不会重复触发。
- * ============================================================ */
-@supports not (view-transition-name: root) {
-  html body,
-  html body .fixed-header,
-  html body .modal-content,
-  html body .config-group,
-  html body .ac-card,
-  html body .ac-toast,
-  html body .v2-sidebar,
-  html body .v2-appbar,
-  html body input,
-  html body textarea,
-  html body select,
-  html body .btn,
-  html body .btn-sm,
-  html body .table thead th,
-  html body .table tbody td {
-    transition:
-      background-color var(--dur-fast) var(--ease-standard),
-      border-color var(--dur-fast) var(--ease-standard),
-      color var(--dur-fast) var(--ease-standard) !important;
-  }
-}
 
 /* ============================================================
  * 全局禁用 iOS / Android tap 高亮的紫色闪烁

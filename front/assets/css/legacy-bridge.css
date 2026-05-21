@@ -560,7 +560,6 @@ html body .modal-close:focus-visible {
 html body .modal-close svg {
   transition: transform var(--dur-fast) var(--ease-emphasis);
 }
-html body .modal-close:hover svg { transform: rotate(90deg); }
 
 /* ============================================================
  * 8. 旧 .table - 编辑体表格
@@ -833,20 +832,6 @@ html body .progress-fill {
   transition: width var(--dur-standard) var(--ease-standard);
   position: relative;
   overflow: hidden;
-}
-html body .progress-fill::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg,
-    transparent,
-    oklch(1 0 0 / 0.16),
-    transparent);
-  animation: progressShine 1.6s var(--ease-standard) infinite;
-}
-@keyframes progressShine {
-  from { transform: translateX(-100%); }
-  to   { transform: translateX(100%); }
 }
 html body .spinner {
   width: 18px;

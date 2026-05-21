@@ -125,9 +125,6 @@ body[data-shell="v2"][data-sidebar="mini"] {
   transition: transform var(--dur-fast) var(--ease-emphasis),
               box-shadow var(--dur-fast) var(--ease-standard);
 }
-.v2-sidebar__brand:hover .v2-sidebar__brand-logo {
-  transform: rotate(-3deg) scale(1.04);
-}
 .v2-sidebar__brand-name {
   font-family: var(--font-sans);
   font-size: var(--fs-caption);
@@ -221,7 +218,7 @@ body[data-sidebar="mini"] .v2-sidebar__section-label {
 .v2-nav-item:active { transform: scale(0.985); }
 .v2-nav-item:focus-visible {
   outline: 0;
-  box-shadow: var(--elev-focus);
+  box-shadow: inset 0 0 0 2px var(--line-focus);
   z-index: 1;
 }
 .v2-nav-item[data-active="true"] {

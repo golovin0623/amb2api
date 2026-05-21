@@ -68,7 +68,7 @@ a {
   text-decoration: none;
   text-underline-offset: 3px;
   text-decoration-thickness: 1px;
-  text-decoration-color: oklch(0.62 0.180 268 / 0.35);
+  text-decoration-color: color-mix(in oklch, var(--aurora-1) 35%, transparent);
   transition: color var(--dur-instant) var(--ease-standard),
               text-decoration-color var(--dur-instant) var(--ease-standard);
 }
