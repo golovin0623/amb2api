@@ -8482,6 +8482,7 @@
                 return item.style.display && item.style.display !== 'none';
             });
             document.body.classList.toggle('modal-open', hasVisibleModal);
+            window.ui?.syncModalOpenState?.();
         }
 
         function resetTraceTableScroll() {
@@ -8893,7 +8894,14 @@
             if (target) {
                 target.innerHTML = `<div class="status ${type}">${message}</div>`;
             } else {
-                alert(message);
+                const kind = type === 'warning' ? 'warn' : (type || 'info');
+                if (window.notify && typeof window.notify[kind] === 'function') {
+                    window.notify[kind](message);
+                } else if (window.toast) {
+                    window.toast({ kind: type || 'info', title: String(message || '') });
+                } else {
+                    console.log('[status]', type, message);
+                }
             }
         }
 
@@ -9437,16 +9445,20 @@
                     loadKeyManagementModal();
                 } else {
                     const error = await response.json();
-                    alert('操作失败: ' + (error.detail || '未知错误'));
+                    notify.error('操作失败: ' + (error.detail || '未知错误'));
                 }
             } catch (error) {
-                alert('操作失败: ' + error.message);
+                notify.error('操作失败: ' + error.message);
             }
         }
 
         // 启用全部密钥
         async function enableAllKeys() {
-            if (!confirm('确定要启用所有密钥吗？')) return;
+            if (!await confirmDialog({
+                title: '启用所有密钥',
+                body: '确定要启用所有密钥吗？',
+                confirmText: '启用'
+            })) return;
             try {
                 const indices = keyManagementData.keys.map(k => k.index);
                 const response = await fetch('/api/keys/batch-status', {
@@ -9458,16 +9470,21 @@
                     loadKeyManagementModal();
                 } else {
                     const error = await response.json();
-                    alert('操作失败: ' + (error.detail || '未知错误'));
+                    notify.error('操作失败: ' + (error.detail || '未知错误'));
                 }
             } catch (error) {
-                alert('操作失败: ' + error.message);
+                notify.error('操作失败: ' + error.message);
             }
         }
 
         // 禁用全部密钥
         async function disableAllKeys() {
-            if (!confirm('确定要禁用所有密钥吗？')) return;
+            if (!await confirmDialog({
+                title: '禁用所有密钥',
+                body: '确定要禁用所有密钥吗？',
+                confirmText: '禁用',
+                danger: true
+            })) return;
             try {
                 const indices = keyManagementData.keys.map(k => k.index);
                 const response = await fetch('/api/keys/batch-status', {
@@ -9479,10 +9496,10 @@
                     loadKeyManagementModal();
                 } else {
                     const error = await response.json();
-                    alert('操作失败: ' + (error.detail || '未知错误'));
+                    notify.error('操作失败: ' + (error.detail || '未知错误'));
                 }
             } catch (error) {
-                alert('操作失败: ' + error.message);
+                notify.error('操作失败: ' + error.message);
             }
         }
 
@@ -9491,7 +9508,12 @@
             const key = keyManagementData.keys.find(k => k.index === index);
             const keyDisplay = key ? (key.masked_key || key.display_key || `密钥 #${index}`) : `密钥 #${index}`;
 
-            if (!confirm(`确定要删除密钥吗？\n\n${keyDisplay}\n\n删除后无法恢复，请谨慎操作！`)) {
+            if (!await confirmDialog({
+                title: '删除密钥',
+                body: `确定要删除密钥吗？\n\n${keyDisplay}\n\n删除后无法恢复，请谨慎操作！`,
+                confirmText: '删除',
+                danger: true
+            })) {
                 return;
             }
 
@@ -9527,7 +9549,12 @@
                 return;
             }
 
-            if (!confirm(`确定要删除 ${autoDisabledKeys.length} 个自动禁用的密钥吗？\n\n删除后无法恢复，请谨慎操作！`)) {
+            if (!await confirmDialog({
+                title: '删除自动禁用密钥',
+                body: `确定要删除 ${autoDisabledKeys.length} 个自动禁用的密钥吗？\n\n删除后无法恢复，请谨慎操作！`,
+                confirmText: '删除',
+                danger: true
+            })) {
                 return;
             }
 
@@ -9568,7 +9595,12 @@
 
         // 清理过期密钥的统计数据
         async function cleanupKeyStats() {
-            if (!confirm('确定要清理过期密钥的统计数据吗？\n\n这将删除已移除密钥的历史统计记录。')) return;
+            if (!await confirmDialog({
+                title: '清理过期统计',
+                body: '确定要清理过期密钥的统计数据吗？\n\n这将删除已移除密钥的历史统计记录。',
+                confirmText: '清理',
+                danger: true
+            })) return;
             try {
                 const response = await fetch('/api/keys/cleanup-stats', {
                     method: 'POST',
@@ -10862,7 +10894,12 @@
         }
 
         async function deleteCred(filename) {
-            if (!confirm(`确定要删除凭证文件吗？\n${filename}`)) {
+            if (!await confirmDialog({
+                title: '删除凭证文件',
+                body: `确定要删除凭证文件吗？\n${filename}`,
+                confirmText: '删除',
+                danger: true
+            })) {
                 return;
             }
 
@@ -11110,14 +11147,14 @@
 
                             if (addedCount === 0) {
                                 // 所有密钥都是重复的，使用弹窗提示
-                                alert(`⚠️ 重复密钥提醒\n\n所有 ${duplicateCount} 个密钥都是重复的，未添加任何密钥。\n\n重复的密钥：\n  • ${duplicateList}`);
+                                notify.warn(`重复密钥提醒：所有 ${duplicateCount} 个密钥都是重复的，未添加任何密钥。重复密钥：${duplicateList}`);
                             } else {
                                 // 部分密钥重复，使用弹窗提示
-                                alert(`⚠️ 重复密钥提醒\n\n成功添加 ${addedCount} 个密钥，跳过 ${duplicateCount} 个重复密钥。\n\n重复的密钥：\n  • ${duplicateList}`);
+                                notify.warn(`重复密钥提醒：成功添加 ${addedCount} 个密钥，跳过 ${duplicateCount} 个重复密钥。重复密钥：${duplicateList}`);
                             }
                         } else if (duplicateCount > 0) {
                             // 有重复但列表为空（不应该发生，但作为后备）
-                            alert(`⚠️ 重复密钥提醒\n\n成功添加 ${addedCount} 个密钥，跳过 ${duplicateCount} 个重复密钥`);
+                            notify.warn(`重复密钥提醒：成功添加 ${addedCount} 个密钥，跳过 ${duplicateCount} 个重复密钥`);
                         } else if (addedCount > 0) {
                             // 没有重复，显示成功提示
                             showStatus(`成功添加 ${addedCount} 个密钥`, 'success');
@@ -11590,7 +11627,12 @@
                     break;
             }
 
-            if (!confirm(confirmMessage)) {
+            if (!await confirmDialog({
+                title: action === 'delete' ? '删除选中文件' : '批量操作确认',
+                body: confirmMessage,
+                confirmText: action === 'delete' ? '删除' : '确定',
+                danger: action === 'delete'
+            })) {
                 return;
             }
 
@@ -11658,7 +11700,11 @@
 
         async function refreshAllEmails() {
             try {
-                if (!confirm('确定要刷新所有凭证的用户邮箱吗？这可能需要一些时间。')) {
+                if (!await confirmDialog({
+                    title: '刷新所有用户邮箱',
+                    body: '确定要刷新所有凭证的用户邮箱吗？这可能需要一些时间。',
+                    confirmText: '刷新'
+                })) {
                     return;
                 }
 
@@ -12940,7 +12986,12 @@
         }
 
         async function deleteInvalidKeys() {
-            if (!confirm('确定要移除所有失效密钥的数据吗？\n\n这将：\n1. 清除失效密钥的日志记录\n2. 清除失效密钥的统计数据\n3. 将失效密钥加入忽略列表\n\n注意：配置中的有效密钥不会被移除！')) {
+            if (!await confirmDialog({
+                title: '移除失效密钥数据',
+                body: '确定要移除所有失效密钥的数据吗？\n\n这将：\n1. 清除失效密钥的日志记录\n2. 清除失效密钥的统计数据\n3. 将失效密钥加入忽略列表\n\n注意：配置中的有效密钥不会被移除！',
+                confirmText: '移除',
+                danger: true
+            })) {
                 return;
             }
             try {
@@ -12963,7 +13014,12 @@
 
         // 重置所有统计
         async function resetAllStats() {
-            if (!confirm('确定要重置所有统计数据吗？\n\n这将清除所有密钥的调用统计，包括：\n- 成功/失败次数\n- 模型调用次数\n- 排行榜数据\n\n此操作不可恢复！')) {
+            if (!await confirmDialog({
+                title: '重置所有统计',
+                body: '确定要重置所有统计数据吗？\n\n这将清除所有密钥的调用统计，包括：\n- 成功/失败次数\n- 模型调用次数\n- 排行榜数据\n\n此操作不可恢复！',
+                confirmText: '重置',
+                danger: true
+            })) {
                 return;
             }
             try {
@@ -12987,7 +13043,12 @@
 
         // 重置指定密钥的统计
         async function resetKeyStats(maskedKey) {
-            if (!confirm(`确定要清除密钥 ${maskedKey} 的统计数据吗？\n\n这将清除该密钥的所有调用统计。`)) {
+            if (!await confirmDialog({
+                title: '清除密钥统计',
+                body: `确定要清除密钥 ${maskedKey} 的统计数据吗？\n\n这将清除该密钥的所有调用统计。`,
+                confirmText: '清除',
+                danger: true
+            })) {
                 return;
             }
             try {
@@ -13786,7 +13847,7 @@
             document.getElementById('modalFilename').value = filename;
             document.getElementById('modalTotalLimit').value = stats.daily_limit_total;
             renderModelLimitRows(stats.daily_limit_models || {});
-            document.getElementById('limitsModal').style.display = 'block';
+            setModalVisibility(document.getElementById('limitsModal'), true);
         }
 
         function renderModelLimitHint(message = '') {
@@ -13961,7 +14022,7 @@
 
         // 关闭限制设置弹窗
         function closeLimitsModal() {
-            document.getElementById('limitsModal').style.display = 'none';
+            setModalVisibility(document.getElementById('limitsModal'), false);
             currentEditingFile = '';
         }
 
@@ -14353,7 +14414,7 @@
                 setModalVisibility(document.getElementById('perfWaterfallModal'), true);
             } catch (e) {
                 console.error('加载追踪详情失败:', e);
-                alert('加载失败: ' + e.message);
+                notify.error('加载失败: ' + e.message);
             }
         }
 
@@ -14434,7 +14495,12 @@
         }
 
         async function clearPerfData() {
-            if (!confirm('确定要清空所有性能追踪数据吗？此操作不可恢复。')) {
+            if (!await confirmDialog({
+                title: '清空性能追踪数据',
+                body: '确定要清空所有性能追踪数据吗？此操作不可恢复。',
+                confirmText: '清空',
+                danger: true
+            })) {
                 return;
             }
             try {
@@ -14443,16 +14509,16 @@
                     headers: getAuthHeaders()
                 });
                 if (res.ok) {
-                    alert('数据已清空');
+                    notify.success('数据已清空');
                     perfInitialized = false;
                     await initPerformanceTab();
                 } else {
                     const data = await res.json();
-                    alert('清空失败: ' + (data.detail || '未知错误'));
+                    notify.error('清空失败: ' + (data.detail || '未知错误'));
                 }
             } catch (e) {
                 console.error('清空数据失败:', e);
-                alert('清空失败: ' + e.message);
+                notify.error('清空失败: ' + e.message);
             }
         }
 
@@ -14695,7 +14761,7 @@
 
             const sel = document.getElementById('playgroundModel');
             if (!sel || !sel.value) {
-                alert('请先选择模型');
+                notify.warn('请先选择模型');
                 return;
             }
 
@@ -14703,7 +14769,7 @@
             try {
                 requestData = buildPlaygroundRequestBody({ defaultIfEmpty: true });
             } catch (e) {
-                alert('工具定义 JSON 格式错误: ' + e.message);
+                notify.error('工具定义 JSON 格式错误: ' + e.message);
                 return;
             }
 
@@ -14752,21 +14818,26 @@
                     console.error('Preview error:', errorText);
                     try {
                         const error = JSON.parse(errorText);
-                        alert('预览失败: ' + (error.detail || '未知错误'));
+                        notify.error('预览失败: ' + (error.detail || '未知错误'));
                     } catch {
-                        alert('预览失败: ' + errorText);
+                        notify.error('预览失败: ' + errorText);
                     }
                 }
             } catch (error) {
                 console.error('Preview request error:', error);
-                alert('预览失败: ' + error.message);
+                notify.error('预览失败: ' + error.message);
             }
         }
 
         async function sendPlayground() {
             // 如果已有测试在进行，提示用户
             if (playgroundTestInProgress) {
-                if (!confirm('已有测试正在进行，是否取消并开始新测试？')) {
+                if (!await confirmDialog({
+                    title: '取消当前测试',
+                    body: '已有测试正在进行，是否取消并开始新测试？',
+                    confirmText: '取消并开始',
+                    danger: true
+                })) {
                     return;
                 }
                 if (playgroundAbortController) {
@@ -14933,14 +15004,14 @@
             }
 
             if (modal) {
-                modal.style.display = 'block';
+                setModalVisibility(modal, true);
             }
         }
 
         function closePlaygroundResultModal() {
             const modal = document.getElementById('playgroundResultModal');
             if (modal) {
-                modal.style.display = 'none';
+                setModalVisibility(modal, false);
             }
         }
 
@@ -15167,7 +15238,12 @@
 
                 // 如果已有测试在进行，提示用户
                 if (playgroundTestInProgress) {
-                    if (!confirm('已有测试正在进行，是否取消并开始新测试？')) {
+                    if (!await confirmDialog({
+                        title: '取消当前测试',
+                        body: '已有测试正在进行，是否取消并开始新测试？',
+                        confirmText: '取消并开始',
+                        danger: true
+                    })) {
                         return;
                     }
                     if (playgroundAbortController) {
@@ -15418,12 +15494,12 @@
                 const selectedEl = body.querySelector('.models-modal-summary__selected');
                 if (selectedEl) selectedEl.textContent = `${selectedCount} 已选择`;
             };
-            modal.style.display = 'block';
+            setModalVisibility(modal, true);
         }
 
         function closeModelsModal() {
             const modal = document.getElementById('modelsModal');
-            if (modal) modal.style.display = 'none';
+            if (modal) setModalVisibility(modal, false);
         }
 
         function collectCheckedModels() {

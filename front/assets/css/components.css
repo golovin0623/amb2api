@@ -481,6 +481,96 @@
 }
 
 /* ========================================================
+ * Confirm dialog
+ * ======================================================== */
+.ac-confirm-content {
+  max-width: 460px !important;
+}
+.ac-confirm-copy {
+  display: grid;
+  gap: var(--s-2);
+  color: var(--ink-secondary);
+  line-height: var(--lh-relaxed);
+}
+.ac-confirm-copy p {
+  margin: 0;
+}
+.ac-confirm-copy p:first-child {
+  color: var(--ink-primary);
+}
+.ac-confirm-footer {
+  justify-content: flex-end !important;
+}
+.ac-confirm-ok--danger {
+  background: var(--sig-danger) !important;
+  border-color: var(--sig-danger) !important;
+  color: white !important;
+}
+.ac-confirm-ok--danger:hover {
+  filter: brightness(0.96);
+}
+.ac-confirm-require {
+  display: grid;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+  color: var(--ink-secondary);
+}
+.ac-confirm-require strong {
+  color: var(--sig-danger);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+}
+
+/* ========================================================
+ * Password visibility controls
+ * ======================================================== */
+.login-input-wrapper .input-icon[role="button"],
+.password-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+html body #loginSection .login-input-wrapper .input-icon[role="button"] {
+  position: relative;
+  z-index: 5 !important;
+  pointer-events: auto !important;
+}
+html body #loginSection .login-input-wrapper input {
+  z-index: 0 !important;
+}
+.login-input-wrapper .input-icon[role="button"]:focus-visible,
+.password-toggle:focus-visible {
+  outline: 0;
+  box-shadow: var(--elev-focus);
+}
+.password-toggle {
+  position: absolute;
+  right: var(--s-3);
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--r-2);
+  background: transparent;
+  color: var(--ink-muted);
+  -webkit-tap-highlight-color: transparent;
+}
+.password-toggle:hover {
+  background: var(--bg-overlay);
+  color: var(--ink-primary);
+}
+.form-group.has-password-toggle {
+  position: relative;
+}
+.form-group.has-password-toggle input[type="password"],
+.form-group.has-password-toggle input[type="text"] {
+  padding-right: calc(var(--s-6) + var(--s-3));
+}
+
+/* ========================================================
  * Section title
  * ======================================================== */
 .ac-section-title {

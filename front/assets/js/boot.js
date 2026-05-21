@@ -54,6 +54,69 @@
      */
   }
 
+  function setPasswordVisibility(input, visible, control) {
+    input.type = visible ? 'text' : 'password';
+    input.dataset.visible = visible ? '1' : '0';
+    if (control) {
+      control.setAttribute('aria-pressed', visible ? 'true' : 'false');
+      control.setAttribute('title', visible ? '隐藏密码' : '显示密码');
+      const svg = control.querySelector('svg');
+      if (svg && window.icons) {
+        svg.replaceWith(window.icons.create(visible ? 'eye-off' : 'eye', { size: 16 }));
+      }
+    }
+  }
+
+  function bindPasswordToggle(control, input) {
+    if (!control || !input || control.dataset.passwordToggleBound) return;
+    control.dataset.passwordToggleBound = '1';
+    control.setAttribute('role', 'button');
+    control.setAttribute('tabindex', '0');
+    control.setAttribute('aria-label', '切换密码可见性');
+    control.setAttribute('aria-pressed', input.type === 'text' ? 'true' : 'false');
+    control.setAttribute('title', input.type === 'text' ? '隐藏密码' : '显示密码');
+    const toggle = (event) => {
+      if (event) event.preventDefault();
+      setPasswordVisibility(input, input.type === 'password', control);
+      input.focus({ preventScroll: true });
+    };
+    control.addEventListener('click', toggle);
+    control.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') toggle(event);
+    });
+  }
+
+  function decoratePasswordToggles() {
+    document.querySelectorAll('.login-input-wrapper').forEach((wrapper) => {
+      const input = wrapper.querySelector('input[type="password"], input[type="text"]');
+      const control = wrapper.querySelector('.input-icon');
+      bindPasswordToggle(control, input);
+    });
+
+    [
+      'configApiPassword',
+      'configPanelPassword',
+      'configPassword',
+      'accountPassword',
+      'newAccountPassword',
+    ].forEach((id) => {
+      const input = document.getElementById(id);
+      if (!input || input.dataset.passwordToggleReady) return;
+      const group = input.closest('.form-group');
+      if (!group) return;
+      input.dataset.passwordToggleReady = '1';
+      group.classList.add('has-password-toggle');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'password-toggle';
+      btn.setAttribute('aria-label', '切换密码可见性');
+      if (window.icons) btn.appendChild(window.icons.create('eye', { size: 16 }));
+      else btn.textContent = '👁️';
+      input.insertAdjacentElement('afterend', btn);
+      bindPasswordToggle(btn, input);
+    });
+  }
+
   function decorateLogoutBtn() {
     const btns = document.querySelectorAll('.logout-btn');
     btns.forEach((btn) => {
@@ -260,6 +323,7 @@
     try { decorateConfigFloatingBtns(); } catch (e) { console.warn('[boot] decorateConfigFloatingBtns', e); }
     try { decorateEmojiTitles(); } catch (e) { console.warn('[boot] decorateEmojiTitles', e); }
     try { decorateTabHeaders(); } catch (e) { console.warn('[boot] decorateTabHeaders', e); }
+    try { decoratePasswordToggles(); } catch (e) { console.warn('[boot] decoratePasswordToggles', e); }
     try { relocateThemeToggle(); } catch (e) { console.warn('[boot] relocateThemeToggle', e); }
     try { bindThemeRelocateListeners(); } catch (e) { console.warn('[boot] bindThemeRelocateListeners', e); }
   }
