@@ -32,12 +32,18 @@
   transition:
     background-color var(--dur-instant) var(--ease-standard),
     color var(--dur-instant) var(--ease-standard),
-    border-color var(--dur-instant) var(--ease-standard);
+    border-color var(--dur-instant) var(--ease-standard),
+    box-shadow var(--dur-instant) var(--ease-standard),
+    transform var(--dur-instant) var(--ease-standard);
   white-space: nowrap;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .ac-btn:focus-visible { outline: 0; box-shadow: var(--elev-focus); }
-.ac-btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+.ac-btn:active:not(:disabled) { transform: translateY(0.5px) scale(0.99); }
+.ac-btn:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+.ac-btn > svg { flex-shrink: 0; transition: transform var(--dur-fast) var(--ease-emphasis); }
 
 .ac-btn--primary {
   background: var(--ink-pure);
@@ -87,6 +93,7 @@
   color: var(--ink-secondary);
 }
 .ac-btn--icon:hover { background: var(--bg-overlay); color: var(--ink-primary); }
+.ac-btn--icon:active:not(:disabled) { transform: scale(0.92); }
 
 .ac-btn--sm { height: 28px; padding: 0 var(--s-3); font-size: var(--fs-micro); }
 .ac-btn--lg { height: 44px; padding: 0 var(--s-5); font-size: var(--fs-body); }
@@ -149,38 +156,56 @@
 .ac-input-group .ac-input { padding-left: 36px; }
 
 /* ========================================================
- * Switch
+ * Switch - 编辑体开关，带克制的 hover/active 反馈
  * ======================================================== */
 .ac-switch {
   position: relative;
   display: inline-flex;
-  width: 32px;
-  height: 18px;
+  width: 34px;
+  height: 20px;
   background: var(--ink-subtle);
   border: 1px solid transparent;
   border-radius: var(--r-full);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background-color var(--dur-instant) var(--ease-standard);
+  transition: background-color var(--dur-instant) var(--ease-standard),
+              box-shadow var(--dur-instant) var(--ease-standard);
+  -webkit-tap-highlight-color: transparent;
 }
+.ac-switch:hover { background: color-mix(in oklch, var(--ink-subtle) 60%, var(--ink-muted)); }
+.ac-switch:focus-visible { outline: 0; box-shadow: var(--elev-focus); }
 .ac-switch::before {
   content: "";
   position: absolute;
   left: 2px;
   top: 2px;
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   background: var(--bg-leaf);
   border-radius: 50%;
-  box-shadow: var(--elev-1);
-  transition: transform var(--dur-fast) var(--ease-emphasis);
+  box-shadow:
+    0 1px 2px oklch(0.20 0.008 270 / 0.18),
+    inset 0 -1px 0 oklch(0.20 0.008 270 / 0.04);
+  transition: transform var(--dur-fast) var(--ease-emphasis),
+              width var(--dur-fast) var(--ease-standard);
 }
+.ac-switch:active::before { width: 17px; }
 .ac-switch[data-on="true"],
 .ac-switch.checked {
   background: var(--ink-pure);
 }
+.ac-switch[data-on="true"]:hover,
+.ac-switch.checked:hover {
+  background: color-mix(in oklch, var(--ink-pure) 88%, var(--ink-secondary));
+}
 .ac-switch[data-on="true"]::before,
 .ac-switch.checked::before { transform: translateX(14px); }
+.ac-switch[data-on="true"]:active::before,
+.ac-switch.checked:active::before { transform: translateX(11px); width: 17px; }
+[data-theme="dark"] .ac-switch[data-on="true"]::before,
+[data-theme="dark"] .ac-switch.checked::before {
+  background: oklch(0.10 0.005 270);
+}
 
 /* ========================================================
  * Card - 编辑体卡片
@@ -438,8 +463,13 @@
   border: 0;
   cursor: pointer;
   flex-shrink: 0;
+  transition: background-color var(--dur-instant) var(--ease-standard),
+              color var(--dur-instant) var(--ease-standard),
+              transform var(--dur-instant) var(--ease-standard);
 }
 .ac-toast__close:hover { background: var(--bg-overlay); color: var(--ink-primary); }
+.ac-toast__close:active { transform: scale(0.88); }
+.ac-toast__close:focus-visible { outline: 0; box-shadow: var(--elev-focus); }
 .ac-toast.ac-toast--out { animation: ac-toast-out var(--dur-exit) var(--ease-exit) forwards; }
 
 @keyframes ac-toast-in {
@@ -529,6 +559,17 @@
  * ======================================================== */
 .icon { flex-shrink: 0; vertical-align: middle; color: currentColor; }
 [data-icon].with-icon .icon { margin-right: var(--s-1); }
+/* 所有 inline-svg 图标默认对齐文字 baseline，避免「下沉」 */
+button svg,
+a svg,
+.tab svg,
+.v2-nav-item svg,
+.v2-appbar__btn svg,
+[role="button"] svg {
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.icon svg, span.icon > svg { display: block; }
 
 /* ========================================================
  * Aurora text / signature moment only

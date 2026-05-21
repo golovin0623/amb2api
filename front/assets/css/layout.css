@@ -196,12 +196,29 @@ html body .tab {
   cursor: pointer;
   white-space: nowrap;
   z-index: 1;
+  -webkit-tap-highlight-color: transparent;
   transition: color var(--dur-instant) var(--ease-standard);
 }
 html body .tab:hover { color: var(--ink-primary) !important; background: transparent !important; }
 html body .tab.active { color: var(--ink-pure) !important; background: transparent !important; }
-html body .tab.active .icon { color: var(--aurora-1) !important; }
-html body .tab .icon { color: inherit; opacity: 0.7; }
+html body .tab.active .icon,
+html body .tab.active svg { color: var(--aurora-1) !important; }
+html body .tab .icon,
+html body .tab svg { color: inherit; opacity: 0.75; transition: opacity var(--dur-instant) var(--ease-standard); }
+html body .tab:hover .icon,
+html body .tab:hover svg { opacity: 1; }
+html body .tab:focus-visible {
+  outline: 0;
+  color: var(--ink-pure) !important;
+}
+html body .tab:focus-visible::before {
+  content: "";
+  position: absolute;
+  inset: 4px -4px;
+  border-radius: var(--r-2);
+  box-shadow: var(--elev-focus);
+  pointer-events: none;
+}
 
 /* tab-indicator: 编辑体下划线 */
 html body .tab-indicator {

@@ -95,11 +95,23 @@ html body .btn-sm:hover {
   color: var(--ink-inverse) !important;
 }
 html body .btn:active,
-html body .btn-sm:active { transform: translateY(0.5px); }
+html body .btn-sm:active { transform: translateY(0.5px) scale(0.99); }
+html body .btn:focus-visible,
+html body .btn-sm:focus-visible {
+  outline: 0 !important;
+  box-shadow: var(--elev-focus) !important;
+}
 html body .btn:disabled,
 html body .btn-sm:disabled {
-  opacity: 0.4 !important;
+  opacity: 0.45 !important;
   cursor: not-allowed !important;
+  pointer-events: none !important;
+  transform: none !important;
+}
+html body .btn > svg,
+html body .btn-sm > svg {
+  flex-shrink: 0;
+  transition: transform var(--dur-fast) var(--ease-emphasis);
 }
 [data-theme="dark"] html body .btn,
 [data-theme="dark"] html body .btn-sm {
@@ -165,6 +177,7 @@ html body .btn-outline-info,
 html body .btn-outline-success {
   display: inline-flex !important;
   align-items: center;
+  justify-content: center;
   gap: var(--s-1);
   height: 28px;
   padding: 0 var(--s-3) !important;
@@ -178,7 +191,30 @@ html body .btn-outline-success {
   cursor: pointer;
   box-shadow: none !important;
   white-space: nowrap;
-  transition: all var(--dur-instant) var(--ease-standard);
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    color var(--dur-instant) var(--ease-standard),
+    border-color var(--dur-instant) var(--ease-standard),
+    box-shadow var(--dur-instant) var(--ease-standard),
+    transform var(--dur-instant) var(--ease-standard) !important;
+}
+html body .btn-outline-primary:active,
+html body .btn-outline-secondary:active,
+html body .btn-outline-danger:active,
+html body .btn-outline-warning:active,
+html body .btn-outline-info:active,
+html body .btn-outline-success:active {
+  transform: translateY(0.5px) scale(0.98);
+}
+html body .btn-outline-primary:focus-visible,
+html body .btn-outline-secondary:focus-visible,
+html body .btn-outline-danger:focus-visible,
+html body .btn-outline-warning:focus-visible,
+html body .btn-outline-info:focus-visible,
+html body .btn-outline-success:focus-visible {
+  outline: 0 !important;
+  box-shadow: var(--elev-focus) !important;
 }
 html body .btn-outline-primary { color: var(--aurora-1) !important; border-color: var(--line-aurora) !important; }
 html body .btn-outline-primary:hover { background: oklch(0.62 0.180 268 / 0.08) !important; }
@@ -190,7 +226,23 @@ html body .btn-outline-info { color: var(--sig-info) !important; border-color: o
 html body .btn-outline-info:hover { background: var(--sig-info-soft) !important; }
 html body .btn-outline-success { color: var(--sig-success) !important; border-color: oklch(0.62 0.165 145 / 0.30) !important; }
 html body .btn-outline-success:hover { background: var(--sig-success-soft) !important; }
-html body .btn-outline-secondary:hover { background: var(--bg-overlay) !important; color: var(--ink-primary) !important; }
+html body .btn-outline-secondary:hover {
+  background: var(--bg-overlay) !important;
+  color: var(--ink-primary) !important;
+  border-color: var(--line-strong) !important;
+}
+
+/* dark 模式下 outline 系列底层从 var(--bg-leaf) 改为更浅的 raised，避免和 page 背景融合 */
+[data-theme="dark"] html body .btn-outline-primary,
+[data-theme="dark"] html body .btn-outline-secondary,
+[data-theme="dark"] html body .btn-outline-danger,
+[data-theme="dark"] html body .btn-outline-warning,
+[data-theme="dark"] html body .btn-outline-info,
+[data-theme="dark"] html body .btn-outline-success {
+  background: oklch(0.18 0.008 270 / 0.85) !important;
+  border-color: oklch(0.96 0.005 270 / 0.13) !important;
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.05) !important;
+}
 
 /* 旧 inline style 颜色覆盖 */
 html body .btn[style*="4285f4"],
@@ -284,6 +336,13 @@ html body textarea.config-input {
   line-height: var(--lh-normal) !important;
   resize: vertical;
 }
+html body input:hover:not(:focus):not(:disabled),
+html body textarea:hover:not(:focus):not(:disabled),
+html body select:hover:not(:focus):not(:disabled),
+html body .config-input:hover:not(:focus):not(:disabled),
+html body .filter-select:hover:not(:focus):not(:disabled) {
+  border-color: var(--line-strong) !important;
+}
 html body input:focus,
 html body textarea:focus,
 html body select:focus,
@@ -292,8 +351,17 @@ html body .filter-select:focus {
   border-color: var(--line-focus) !important;
   box-shadow: var(--elev-focus) !important;
 }
+html body input:disabled,
+html body textarea:disabled,
+html body select:disabled {
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+  background: var(--bg-overlay) !important;
+}
 html body input::placeholder,
 html body textarea::placeholder { color: var(--ink-muted) !important; opacity: 1; }
+html body input:disabled::placeholder,
+html body textarea:disabled::placeholder { color: var(--ink-subtle) !important; }
 
 /* select 原生箭头略 */
 html body select,
@@ -443,6 +511,21 @@ html body .modal-body { padding: var(--s-5); overflow-y: auto; }
 [data-theme="dark"] html body .modal-body {
   background: transparent !important;
 }
+[data-theme="dark"] html body input[type="text"],
+[data-theme="dark"] html body input[type="number"],
+[data-theme="dark"] html body input[type="password"],
+[data-theme="dark"] html body input[type="email"],
+[data-theme="dark"] html body input[type="search"],
+[data-theme="dark"] html body textarea,
+[data-theme="dark"] html body select {
+  background: oklch(0.12 0.008 270 / 0.92) !important;
+  border-color: oklch(0.96 0.005 270 / 0.10) !important;
+}
+[data-theme="dark"] html body input:hover:not(:focus):not(:disabled),
+[data-theme="dark"] html body textarea:hover:not(:focus):not(:disabled),
+[data-theme="dark"] html body select:hover:not(:focus):not(:disabled) {
+  border-color: oklch(0.96 0.005 270 / 0.22) !important;
+}
 html body .modal-title {
   margin: 0 !important;
   font-family: var(--font-display) !important;
@@ -462,8 +545,22 @@ html body .modal-close {
   background: transparent !important;
   border: 0 !important;
   cursor: pointer;
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    color var(--dur-instant) var(--ease-standard),
+    transform var(--dur-instant) var(--ease-standard);
+  -webkit-tap-highlight-color: transparent;
 }
 html body .modal-close:hover { background: var(--bg-overlay) !important; color: var(--ink-primary) !important; }
+html body .modal-close:active { transform: scale(0.92); }
+html body .modal-close:focus-visible {
+  outline: 0 !important;
+  box-shadow: var(--elev-focus) !important;
+}
+html body .modal-close svg {
+  transition: transform var(--dur-fast) var(--ease-emphasis);
+}
+html body .modal-close:hover svg { transform: rotate(90deg); }
 
 /* ============================================================
  * 8. 旧 .table - 编辑体表格
@@ -494,9 +591,15 @@ html body .table tbody td {
   color: var(--ink-secondary) !important;
   background: var(--bg-leaf);
   vertical-align: middle;
+  transition: background-color var(--dur-instant) var(--ease-standard);
 }
 html body .table tbody tr:hover td { background: var(--bg-overlay) !important; }
 html body .table tbody tr:last-child td { border-bottom: 0 !important; }
+/* 表格首尾单元格圆角 */
+html body .table thead th:first-child { border-top-left-radius: var(--r-3); }
+html body .table thead th:last-child  { border-top-right-radius: var(--r-3); }
+html body .table tbody tr:last-child td:first-child { border-bottom-left-radius: var(--r-3); }
+html body .table tbody tr:last-child td:last-child  { border-bottom-right-radius: var(--r-3); }
 
 /* ============================================================
  * 9. 旧 .pagination-btn
@@ -514,11 +617,27 @@ html body .pagination-btn {
   cursor: pointer;
   font-size: 0 !important;
   padding: 0 !important;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    color var(--dur-instant) var(--ease-standard),
+    border-color var(--dur-instant) var(--ease-standard),
+    transform var(--dur-instant) var(--ease-standard);
 }
 html body .pagination-btn:hover {
   background: var(--bg-overlay) !important;
   color: var(--ink-primary) !important;
   border-color: var(--line-aurora) !important;
+}
+html body .pagination-btn:active:not(:disabled) { transform: scale(0.92); }
+html body .pagination-btn:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+}
+html body .pagination-btn:focus-visible {
+  outline: 0 !important;
+  box-shadow: var(--elev-focus) !important;
 }
 
 /* ============================================================
@@ -625,9 +744,20 @@ html body .custom-select-trigger {
   font-family: var(--font-sans) !important;
   font-size: var(--fs-caption) !important;
   cursor: pointer;
-  transition: border-color var(--dur-instant) var(--ease-standard);
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color var(--dur-instant) var(--ease-standard),
+              background-color var(--dur-instant) var(--ease-standard),
+              box-shadow var(--dur-instant) var(--ease-standard);
 }
-html body .custom-select-trigger:hover { border-color: var(--line-aurora) !important; }
+html body .custom-select-trigger:hover { border-color: var(--line-strong) !important; }
+html body .custom-select-trigger:focus-visible {
+  outline: 0 !important;
+  box-shadow: var(--elev-focus) !important;
+  border-color: var(--line-focus) !important;
+}
+html body .custom-select-wrapper.open .custom-select-trigger {
+  border-color: var(--line-aurora) !important;
+}
 html body .custom-select-trigger::after {
   content: "";
   width: 8px; height: 8px;
@@ -636,6 +766,11 @@ html body .custom-select-trigger::after {
   transform: rotate(45deg) translateY(-1px);
   opacity: 0.5;
   flex-shrink: 0;
+  transition: transform var(--dur-fast) var(--ease-emphasis), opacity var(--dur-fast) var(--ease-standard);
+}
+html body .custom-select-wrapper.open .custom-select-trigger::after {
+  transform: rotate(-135deg) translateY(2px);
+  opacity: 0.8;
 }
 html body .custom-select-options {
   position: absolute;
@@ -651,8 +786,16 @@ html body .custom-select-options {
   z-index: var(--z-popover);
   padding: var(--s-1);
   display: none;
+  transform-origin: top center;
 }
-html body .custom-select-wrapper.open .custom-select-options { display: block; }
+html body .custom-select-wrapper.open .custom-select-options {
+  display: block;
+  animation: customSelectIn var(--dur-fast) var(--ease-emphasis);
+}
+@keyframes customSelectIn {
+  from { opacity: 0; transform: translateY(-4px) scaleY(0.96); }
+  to   { opacity: 1; transform: translateY(0) scaleY(1); }
+}
 html body .custom-select-option {
   padding: var(--s-2) var(--s-3) !important;
   font-family: var(--font-sans) !important;
@@ -676,25 +819,49 @@ html body .custom-select-option.selected {
  * ============================================================ */
 html body .progress-bar {
   width: 100%;
-  height: 4px;
+  height: 6px;
   background: var(--bg-overlay) !important;
+  border: 1px solid var(--line-soft);
   border-radius: var(--r-full) !important;
   overflow: hidden;
   margin-top: var(--s-2);
 }
 html body .progress-fill {
   height: 100%;
+  background: var(--ink-pure);
   border-radius: var(--r-full);
   transition: width var(--dur-standard) var(--ease-standard);
+  position: relative;
+  overflow: hidden;
+}
+html body .progress-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent,
+    oklch(1 0 0 / 0.16),
+    transparent);
+  animation: progressShine 1.6s var(--ease-standard) infinite;
+}
+@keyframes progressShine {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
 }
 html body .spinner {
   width: 18px;
   height: 18px;
-  border: 1.6px solid oklch(0.62 0.180 268 / 0.20);
+  border: 1.6px solid oklch(0.62 0.180 268 / 0.18);
   border-top-color: var(--aurora-1);
+  border-right-color: oklch(0.62 0.180 268 / 0.40);
   border-radius: var(--r-full);
   animation: spin 0.8s linear infinite;
   margin: 0 auto;
+}
+[data-theme="dark"] html body .spinner {
+  border-color: oklch(0.74 0.150 268 / 0.20);
+  border-top-color: var(--aurora-1);
+  border-right-color: oklch(0.74 0.150 268 / 0.45);
 }
 html body .spinner-text {
   margin-top: var(--s-2);
@@ -740,8 +907,17 @@ html body input[type="checkbox"].select-all-checkbox {
   margin: 0;
   padding: 0;
   flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
   transition: background-color var(--dur-instant) var(--ease-standard),
-              border-color var(--dur-instant) var(--ease-standard);
+              border-color var(--dur-instant) var(--ease-standard),
+              box-shadow var(--dur-instant) var(--ease-standard);
+}
+html body input[type="checkbox"]:not([class*="switch"]):hover:not(:disabled) {
+  border-color: var(--ink-pure) !important;
+}
+html body input[type="checkbox"]:not([class*="switch"]):focus-visible {
+  outline: 0 !important;
+  box-shadow: var(--elev-focus) !important;
 }
 html body input[type="checkbox"]:checked {
   background: var(--ink-pure) !important;
@@ -757,6 +933,24 @@ html body input[type="checkbox"]:checked::after {
   border: solid var(--ink-inverse);
   border-width: 0 1.6px 1.6px 0;
   transform: rotate(45deg);
+}
+html body input[type="checkbox"]:indeterminate {
+  background: var(--ink-pure) !important;
+  border-color: var(--ink-pure) !important;
+}
+html body input[type="checkbox"]:indeterminate::after {
+  content: "";
+  position: absolute;
+  top: 5.5px;
+  left: 2px;
+  right: 2px;
+  height: 1.6px;
+  background: var(--ink-inverse);
+  border-radius: 1px;
+}
+html body input[type="checkbox"]:disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
 }
 
 /* ============================================================

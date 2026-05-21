@@ -53,6 +53,7 @@
   --tracking-wide:   0.02em;
   --tracking-wider:  0.06em;
   --tracking-widest: 0.16em;
+  --tracking-cjk:    0.02em;     /* 中文段落微开字距，避免黏 */
 
   /* ============================================================
    * 3. 极光弧 - OKLCH 单光源（h:270→330 · c:0.150→0.102 · L:0.72→0.80）
@@ -132,7 +133,9 @@
   --elev-4: 0 16px 40px oklch(0.20 0.008 270 / 0.12),
             0 4px 8px oklch(0.20 0.008 270 / 0.05);
   --elev-aurora: 0 6px 24px oklch(0.62 0.180 268 / 0.28);
-  --elev-focus:  0 0 0 3px oklch(0.62 0.180 268 / 0.20);
+  --elev-focus:  0 0 0 3px oklch(0.62 0.180 268 / 0.22),
+                 0 0 0 1px oklch(0.62 0.180 268 / 0.55);
+  --elev-press:  inset 0 1px 2px oklch(0.20 0.008 270 / 0.10);
 
   /* ============================================================
    * 9. 间距 - 严格 8px 基线
@@ -276,12 +279,12 @@
 
   --ink-pure:     oklch(0.99 0.003 270);
   --ink-primary:  oklch(0.96 0.005 270);
-  --ink-secondary:oklch(0.78 0.010 270);
-  --ink-muted:    oklch(0.55 0.010 270);
-  --ink-subtle:   oklch(0.32 0.010 270);
-  --ink-hairline: oklch(0.32 0.010 270);
+  --ink-secondary:oklch(0.80 0.010 270);
+  --ink-muted:    oklch(0.60 0.012 270);
+  --ink-subtle:   oklch(0.34 0.010 270);
+  --ink-hairline: oklch(0.34 0.010 270);
   --ink-inverse:  oklch(0.10 0.005 270);
-  --gold-hairline:oklch(0.74 0.135 80);
+  --gold-hairline:oklch(0.78 0.130 80);
 
   --bg-page:      oklch(0.10 0.008 270);
   --bg-leaf:      oklch(0.14 0.008 270);
@@ -290,10 +293,10 @@
   --bg-luminous:  oklch(0.18 0.012 270);
   --bg-sunken:    oklch(0.08 0.006 270);
 
-  --line-soft:   oklch(0.96 0.005 270 / 0.04);
-  --line-default:oklch(0.96 0.005 270 / 0.08);
-  --line-strong: oklch(0.96 0.005 270 / 0.16);
-  --line-aurora: oklch(0.74 0.150 268 / 0.40);
+  --line-soft:   oklch(0.96 0.005 270 / 0.05);
+  --line-default:oklch(0.96 0.005 270 / 0.10);
+  --line-strong: oklch(0.96 0.005 270 / 0.20);
+  --line-aurora: oklch(0.74 0.150 268 / 0.42);
   --line-focus:  oklch(0.74 0.150 268);
 
   --sig-success: oklch(0.74 0.155 145);
@@ -313,7 +316,9 @@
   --elev-4: 0 16px 48px oklch(0 0 0 / 0.65),
             0 4px 8px oklch(0 0 0 / 0.35);
   --elev-aurora: 0 6px 24px oklch(0.74 0.150 268 / 0.32);
-  --elev-focus:  0 0 0 3px oklch(0.74 0.150 268 / 0.28);
+  --elev-focus:  0 0 0 3px oklch(0.74 0.150 268 / 0.30),
+                 0 0 0 1px oklch(0.74 0.150 268 / 0.65);
+  --elev-press:  inset 0 1px 2px oklch(0 0 0 / 0.40);
 
   --modal-overlay: oklch(0.04 0.008 270 / 0.62);
 }

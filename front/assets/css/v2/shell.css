@@ -121,6 +121,13 @@ body[data-shell="v2"][data-sidebar="mini"] {
     opacity var(--dur-fast) var(--ease-standard),
     margin-left var(--dur-fast) var(--ease-standard);
 }
+.v2-sidebar__brand-logo {
+  transition: transform var(--dur-fast) var(--ease-emphasis),
+              box-shadow var(--dur-fast) var(--ease-standard);
+}
+.v2-sidebar__brand:hover .v2-sidebar__brand-logo {
+  transform: rotate(-3deg) scale(1.04);
+}
 .v2-sidebar__brand-name {
   font-family: var(--font-sans);
   font-size: var(--fs-caption);
@@ -210,6 +217,12 @@ body[data-sidebar="mini"] .v2-sidebar__section-label {
 .v2-nav-item:hover {
   background: var(--bg-overlay);
   color: var(--ink-pure);
+}
+.v2-nav-item:active { transform: scale(0.985); }
+.v2-nav-item:focus-visible {
+  outline: 0;
+  box-shadow: var(--elev-focus);
+  z-index: 1;
 }
 .v2-nav-item[data-active="true"] {
   background: var(--bg-overlay);
@@ -330,12 +343,19 @@ body[data-sidebar="mini"] .v2-sidebar__footer {
   border-radius: var(--r-2);
   color: var(--ink-muted);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   transition: all var(--dur-instant) var(--ease-standard);
 }
 .v2-sidebar__collapse:hover {
   border-color: var(--line-strong);
   color: var(--ink-pure);
   background: var(--bg-overlay);
+}
+.v2-sidebar__collapse:active { transform: scale(0.92); }
+.v2-sidebar__collapse:focus-visible {
+  outline: 0;
+  box-shadow: var(--elev-focus);
+  border-color: var(--line-focus);
 }
 .v2-sidebar__collapse svg {
   width: 14px;
@@ -434,6 +454,12 @@ body[data-sidebar="mini"] .v2-sidebar__collapse svg {
   background: var(--bg-overlay);
   color: var(--ink-pure);
   border-color: var(--line-default);
+}
+.v2-appbar__btn:active { transform: scale(0.94); }
+.v2-appbar__btn:focus-visible {
+  outline: 0;
+  box-shadow: var(--elev-focus);
+  border-color: var(--line-focus);
 }
 [data-theme="dark"] .v2-appbar__btn {
   background: oklch(0.12 0.008 270 / 0.40);
