@@ -314,6 +314,8 @@
       const modal = getTopVisibleModal();
       if (!modal || modal.classList.contains('ac-confirm-modal')) return;
       if (event.key === 'Escape') {
+        const target = event.target;
+        if (target instanceof HTMLElement && target.closest('.custom-select-wrapper.open')) return;
         event.preventDefault();
         closeManagedModal(modal);
       } else if (event.key === 'Tab') {
