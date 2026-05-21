@@ -174,7 +174,6 @@ input, textarea, select {
   border-radius: var(--r-full);
   border: 2px solid transparent;
   background-clip: padding-box;
-  transition: background-color var(--dur-instant) var(--ease-standard);
 }
 *::-webkit-scrollbar-thumb:hover {
   background: var(--ink-muted);

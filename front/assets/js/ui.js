@@ -334,17 +334,31 @@
       });
       syncModalOpenState();
     });
+    const observeModal = (modal) => {
+      if (!(modal instanceof HTMLElement) || !modal.classList.contains('modal') || modal.dataset.modalObserved) return;
+      modal.dataset.modalObserved = '1';
+      observer.observe(modal, { attributes: true, attributeFilter: ['style', 'class', 'open'] });
+      if (isVisibleModal(modal)) prepareVisibleModal(modal);
+    };
     const observeAll = () => {
-      document.querySelectorAll('.modal').forEach((modal) => {
-        if (modal.dataset.modalObserved) return;
-        modal.dataset.modalObserved = '1';
-        observer.observe(modal, { attributes: true, attributeFilter: ['style', 'class', 'open'] });
-        if (isVisibleModal(modal)) prepareVisibleModal(modal);
-      });
+      document.querySelectorAll('.modal').forEach(observeModal);
       syncModalOpenState();
     };
+    const observeAddedModals = (records) => {
+      let changed = false;
+      records.forEach((record) => {
+        record.addedNodes.forEach((node) => {
+          if (!(node instanceof HTMLElement)) return;
+          if (node.classList.contains('modal')) {
+            observeModal(node);
+            changed = true;
+          }
+        });
+      });
+      if (changed) syncModalOpenState();
+    };
     observeAll();
-    new MutationObserver(observeAll).observe(document.documentElement, { childList: true, subtree: true });
+    new MutationObserver(observeAddedModals).observe(document.body, { childList: true });
   }
 
   /* -------- 兼容旧 alert / showStatus -------- */

@@ -30,6 +30,16 @@ select:focus-visible {
     outline-offset: 2px !important;
   }
 }
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px !important;
+    box-shadow: none !important;
+  }
+  :focus:not(:focus-visible) {
+    outline: 0;
+  }
+}
 
 /* View Transitions for theme switch */
 @supports (view-transition-name: root) {

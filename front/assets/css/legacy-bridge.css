@@ -88,14 +88,14 @@ html body .btn-sm {
   padding: 0 var(--s-3) !important;
   font-size: var(--fs-micro) !important;
 }
-html body .btn:hover,
-html body .btn-sm:hover {
+html body .btn:hover:not(:disabled),
+html body .btn-sm:hover:not(:disabled) {
   background: oklch(0.30 0.012 270) !important;
   border-color: oklch(0.30 0.012 270) !important;
   color: var(--ink-inverse) !important;
 }
-html body .btn:active,
-html body .btn-sm:active { transform: translateY(0.5px) scale(0.99); }
+html body .btn:active:not(:disabled),
+html body .btn-sm:active:not(:disabled) { transform: translateY(0.5px) scale(0.99); }
 html body .btn:focus-visible,
 html body .btn-sm:focus-visible {
   outline: 0 !important;
@@ -105,7 +105,6 @@ html body .btn:disabled,
 html body .btn-sm:disabled {
   opacity: 0.45 !important;
   cursor: not-allowed !important;
-  pointer-events: none !important;
   transform: none !important;
 }
 html body .btn > svg,
@@ -113,21 +112,21 @@ html body .btn-sm > svg {
   flex-shrink: 0;
   transition: transform var(--dur-fast) var(--ease-emphasis);
 }
-[data-theme="dark"] html body .btn,
-[data-theme="dark"] html body .btn-sm {
+html[data-theme="dark"] body .btn,
+html[data-theme="dark"] body .btn-sm {
   background: var(--ink-pure) !important;
   color: var(--ink-inverse) !important;
   border-color: var(--ink-hairline) !important;
 }
-[data-theme="dark"] html body .btn:hover,
-[data-theme="dark"] html body .btn-sm:hover {
+html[data-theme="dark"] body .btn:hover:not(:disabled),
+html[data-theme="dark"] body .btn-sm:hover:not(:disabled) {
   background: oklch(0.85 0.005 270) !important;
   color: oklch(0.10 0.005 270) !important;
 }
 
 /* 暗色模式下旧按钮不再统一涂成高亮白块；用低眩光层级、细边框和轻微顶光区分可点击性。 */
-[data-theme="dark"] html body .btn:not(.logout-btn),
-[data-theme="dark"] html body .btn-sm:not(.logout-btn) {
+html[data-theme="dark"] body .btn:not(.logout-btn),
+html[data-theme="dark"] body .btn-sm:not(.logout-btn) {
   background:
     linear-gradient(180deg, oklch(0.25 0.010 270 / 0.96), oklch(0.18 0.008 270 / 0.98)) !important;
   color: var(--ink-primary) !important;
@@ -136,8 +135,8 @@ html body .btn-sm > svg {
     inset 0 1px 0 oklch(1 0 0 / 0.08),
     0 1px 2px oklch(0 0 0 / 0.24) !important;
 }
-[data-theme="dark"] html body .btn:not(.logout-btn):hover,
-[data-theme="dark"] html body .btn-sm:not(.logout-btn):hover {
+html[data-theme="dark"] body .btn:not(.logout-btn):hover:not(:disabled),
+html[data-theme="dark"] body .btn-sm:not(.logout-btn):hover:not(:disabled) {
   background:
     linear-gradient(180deg, oklch(0.29 0.012 270 / 0.98), oklch(0.21 0.010 270 / 0.98)) !important;
   color: var(--ink-pure) !important;
@@ -146,22 +145,22 @@ html body .btn-sm > svg {
     inset 0 1px 0 oklch(1 0 0 / 0.11),
     0 8px 20px oklch(0 0 0 / 0.28) !important;
 }
-[data-theme="dark"] html body .btn:not(.logout-btn):active,
-[data-theme="dark"] html body .btn-sm:not(.logout-btn):active {
+html[data-theme="dark"] body .btn:not(.logout-btn):active:not(:disabled),
+html[data-theme="dark"] body .btn-sm:not(.logout-btn):active:not(:disabled) {
   transform: translateY(0.5px) scale(0.99);
   box-shadow: inset 0 1px 2px oklch(0 0 0 / 0.32) !important;
 }
-[data-theme="dark"] html body .btn[style*="#4285f4"],
-[data-theme="dark"] html body .btn-sm[style*="#4285f4"],
-[data-theme="dark"] html body .btn[style*="#17a2b8"],
-[data-theme="dark"] html body .btn-sm[style*="#17a2b8"] {
+html[data-theme="dark"] body .btn[style*="#4285f4"],
+html[data-theme="dark"] body .btn-sm[style*="#4285f4"],
+html[data-theme="dark"] body .btn[style*="#17a2b8"],
+html[data-theme="dark"] body .btn-sm[style*="#17a2b8"] {
   background:
     linear-gradient(180deg, oklch(0.34 0.055 235 / 0.92), oklch(0.22 0.035 245 / 0.96)) !important;
   color: oklch(0.90 0.050 225) !important;
   border-color: oklch(0.72 0.130 235 / 0.42) !important;
 }
-[data-theme="dark"] html body .btn[style*="#dc3545"],
-[data-theme="dark"] html body .btn-sm[style*="#dc3545"] {
+html[data-theme="dark"] body .btn[style*="#dc3545"],
+html[data-theme="dark"] body .btn-sm[style*="#dc3545"] {
   background:
     linear-gradient(180deg, oklch(0.34 0.075 25 / 0.92), oklch(0.21 0.045 25 / 0.96)) !important;
   color: oklch(0.88 0.070 25) !important;
@@ -217,28 +216,28 @@ html body .btn-outline-success:focus-visible {
   box-shadow: var(--elev-focus) !important;
 }
 html body .btn-outline-primary { color: var(--aurora-1) !important; border-color: var(--line-aurora) !important; }
-html body .btn-outline-primary:hover { background: oklch(0.62 0.180 268 / 0.08) !important; }
+html body .btn-outline-primary:hover:not(:disabled) { background: oklch(0.62 0.180 268 / 0.08) !important; }
 html body .btn-outline-danger { color: var(--sig-danger) !important; border-color: oklch(0.58 0.215 25 / 0.30) !important; }
-html body .btn-outline-danger:hover { background: var(--sig-danger-soft) !important; }
+html body .btn-outline-danger:hover:not(:disabled) { background: var(--sig-danger-soft) !important; }
 html body .btn-outline-warning { color: var(--sig-warning) !important; border-color: oklch(0.72 0.155 70 / 0.30) !important; }
-html body .btn-outline-warning:hover { background: var(--sig-warning-soft) !important; }
+html body .btn-outline-warning:hover:not(:disabled) { background: var(--sig-warning-soft) !important; }
 html body .btn-outline-info { color: var(--sig-info) !important; border-color: oklch(0.62 0.150 240 / 0.30) !important; }
-html body .btn-outline-info:hover { background: var(--sig-info-soft) !important; }
+html body .btn-outline-info:hover:not(:disabled) { background: var(--sig-info-soft) !important; }
 html body .btn-outline-success { color: var(--sig-success) !important; border-color: oklch(0.62 0.165 145 / 0.30) !important; }
-html body .btn-outline-success:hover { background: var(--sig-success-soft) !important; }
-html body .btn-outline-secondary:hover {
+html body .btn-outline-success:hover:not(:disabled) { background: var(--sig-success-soft) !important; }
+html body .btn-outline-secondary:hover:not(:disabled) {
   background: var(--bg-overlay) !important;
   color: var(--ink-primary) !important;
   border-color: var(--line-strong) !important;
 }
 
 /* dark 模式下 outline 系列底层从 var(--bg-leaf) 改为更浅的 raised，避免和 page 背景融合 */
-[data-theme="dark"] html body .btn-outline-primary,
-[data-theme="dark"] html body .btn-outline-secondary,
-[data-theme="dark"] html body .btn-outline-danger,
-[data-theme="dark"] html body .btn-outline-warning,
-[data-theme="dark"] html body .btn-outline-info,
-[data-theme="dark"] html body .btn-outline-success {
+html[data-theme="dark"] body .btn-outline-primary,
+html[data-theme="dark"] body .btn-outline-secondary,
+html[data-theme="dark"] body .btn-outline-danger,
+html[data-theme="dark"] body .btn-outline-warning,
+html[data-theme="dark"] body .btn-outline-info,
+html[data-theme="dark"] body .btn-outline-success {
   background: oklch(0.18 0.008 270 / 0.85) !important;
   border-color: oklch(0.96 0.005 270 / 0.13) !important;
   box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.05) !important;
@@ -375,8 +374,8 @@ html body .config-input[tag="select"] {
   padding-right: var(--s-7) !important;
   cursor: pointer;
 }
-[data-theme="dark"] html body select,
-[data-theme="dark"] html body .config-input[tag="select"] {
+html[data-theme="dark"] body select,
+html[data-theme="dark"] body .config-input[tag="select"] {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M1 1l4 4 4-4' stroke='%23cbd5e1' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>") !important;
 }
 
@@ -471,12 +470,12 @@ html body .modal-content {
   flex-direction: column;
   animation: modalIn var(--dur-enter) var(--ease-enter);
 }
-[data-theme="dark"] html body .modal {
+html[data-theme="dark"] body .modal {
   background:
     radial-gradient(circle at 50% 0%, oklch(0.40 0.040 255 / 0.18), transparent 36%),
     oklch(0.04 0.008 270 / 0.76) !important;
 }
-[data-theme="dark"] html body .modal-content {
+html[data-theme="dark"] body .modal-content {
   background: oklch(0.18 0.010 270) !important;
   color: var(--ink-primary) !important;
   border-color: oklch(0.96 0.005 270 / 0.13) !important;
@@ -503,35 +502,35 @@ html body .modal-footer {
 }
 html body .modal-footer { border-bottom: 0; border-top: 1px solid var(--line-default); }
 html body .modal-body { padding: var(--s-5); overflow-y: auto; }
-[data-theme="dark"] html body .modal-header,
-[data-theme="dark"] html body .modal-footer {
+html[data-theme="dark"] body .modal-header,
+html[data-theme="dark"] body .modal-footer {
   background: oklch(0.145 0.008 270 / 0.92) !important;
   border-color: oklch(0.96 0.005 270 / 0.10) !important;
 }
-[data-theme="dark"] html body .modal-body {
+html[data-theme="dark"] body .modal-body {
   background: transparent !important;
 }
-[data-theme="dark"] html body input[type="text"]:not(:disabled),
-[data-theme="dark"] html body input[type="number"]:not(:disabled),
-[data-theme="dark"] html body input[type="password"]:not(:disabled),
-[data-theme="dark"] html body input[type="email"]:not(:disabled),
-[data-theme="dark"] html body input[type="search"]:not(:disabled),
-[data-theme="dark"] html body textarea:not(:disabled),
-[data-theme="dark"] html body select:not(:disabled),
-[data-theme="dark"] html body .config-input:not(:disabled),
-[data-theme="dark"] html body .filter-select:not(:disabled),
-[data-theme="dark"] html body .page-size-select:not(:disabled) {
+html[data-theme="dark"] body input[type="text"]:not(:disabled),
+html[data-theme="dark"] body input[type="number"]:not(:disabled),
+html[data-theme="dark"] body input[type="password"]:not(:disabled),
+html[data-theme="dark"] body input[type="email"]:not(:disabled),
+html[data-theme="dark"] body input[type="search"]:not(:disabled),
+html[data-theme="dark"] body textarea:not(:disabled),
+html[data-theme="dark"] body select:not(:disabled),
+html[data-theme="dark"] body .config-input:not(:disabled),
+html[data-theme="dark"] body .filter-select:not(:disabled),
+html[data-theme="dark"] body .page-size-select:not(:disabled) {
   background: var(--input-bg) !important;
   border-color: oklch(0.96 0.005 270 / 0.10) !important;
 }
-[data-theme="dark"] html body input:disabled,
-[data-theme="dark"] html body textarea:disabled,
-[data-theme="dark"] html body select:disabled {
+html[data-theme="dark"] body input:disabled,
+html[data-theme="dark"] body textarea:disabled,
+html[data-theme="dark"] body select:disabled {
   background: var(--bg-input-disabled) !important;
 }
-[data-theme="dark"] html body input:hover:not(:focus):not(:disabled),
-[data-theme="dark"] html body textarea:hover:not(:focus):not(:disabled),
-[data-theme="dark"] html body select:hover:not(:focus):not(:disabled) {
+html[data-theme="dark"] body input:hover:not(:focus):not(:disabled),
+html[data-theme="dark"] body textarea:hover:not(:focus):not(:disabled),
+html[data-theme="dark"] body select:hover:not(:focus):not(:disabled) {
   border-color: oklch(0.96 0.005 270 / 0.22) !important;
 }
 html body .modal-title {
@@ -852,7 +851,7 @@ html body .spinner {
   animation: spin 0.8s linear infinite;
   margin: 0 auto;
 }
-[data-theme="dark"] html body .spinner {
+html[data-theme="dark"] body .spinner {
   border-color: oklch(0.74 0.150 268 / 0.20);
   border-top-color: var(--aurora-1);
   border-right-color: oklch(0.74 0.150 268 / 0.45);
@@ -935,12 +934,13 @@ html body input[type="checkbox"]:indeterminate {
 html body input[type="checkbox"]:indeterminate::after {
   content: "";
   position: absolute;
-  top: 5.5px;
+  top: 50%;
   left: 2px;
   right: 2px;
   height: 1.6px;
   background: var(--ink-inverse);
   border-radius: 1px;
+  transform: translateY(-50%);
 }
 html body input[type="checkbox"]:disabled {
   opacity: 0.45 !important;
@@ -1050,7 +1050,7 @@ html body #loginSection input[type="password"]:focus {
   border-color: #4285f4 !important;
   box-shadow: 0 0 0 4px rgba(66, 133, 244, 0.10) !important;
 }
-[data-theme="dark"] html body #loginSection input[type="password"]:focus {
+html[data-theme="dark"] body #loginSection input[type="password"]:focus {
   border-color: #4285f4 !important;
   box-shadow: 0 0 0 4px rgba(66, 133, 244, 0.15) !important;
 }
@@ -1098,8 +1098,8 @@ html body #loginSection button.btn:active {
   transform: translateY(0) !important;
   box-shadow: 0 4px 15px rgba(66, 133, 244, 0.30) !important;
 }
-[data-theme="dark"] html body #loginSection #loginBtn,
-[data-theme="dark"] html body #loginSection button.btn {
+html[data-theme="dark"] body #loginSection #loginBtn,
+html[data-theme="dark"] body #loginSection button.btn {
   background: linear-gradient(135deg, #4285f4 0%, #5b9bd5 100%) !important;
   border-color: transparent !important;
 }
@@ -1167,7 +1167,7 @@ html body #loginSection .login-card {
   margin: 0 auto;
   box-sizing: border-box;
 }
-[data-theme="dark"] html body #loginSection .login-card {
+html[data-theme="dark"] body #loginSection .login-card {
   background: var(--bg-leaf);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.40), 0 8px 24px rgba(0, 0, 0, 0.30);
 }
