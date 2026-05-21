@@ -71,6 +71,8 @@
     oklch(0.74 0.130 312) 70%,
     oklch(0.80 0.105 330) 100%
   );
+  --link-default: oklch(0.50 0.160 268);
+  --link-hover:   oklch(0.44 0.180 268);
 
   /* ============================================================
    * 4. 墨色（Ink）- 文本与边框，单一光源策略
@@ -98,6 +100,7 @@
   --bg-overlay:   oklch(0.955 0.005 85);  /* 嵌入背景 / 略沉 */
   --bg-luminous:  oklch(0.99 0.008 270);  /* 微泛极光底 */
   --bg-sunken:    oklch(0.94 0.005 85);   /* 用于 mono code 块 */
+  --bg-input-disabled: var(--bg-overlay);
 
   /* ============================================================
    * 6. 边线（Hairline）- 仅一种主线宽，由透明度区分层级
@@ -274,13 +277,15 @@
     oklch(0.84 0.105 312) 70%,
     oklch(0.90 0.080 330) 100%
   );
+  --link-default: var(--aurora-1);
+  --link-hover:   var(--aurora-2);
 
   --ink-pure:     oklch(0.99 0.003 270);
   --ink-primary:  oklch(0.96 0.005 270);
   --ink-secondary:oklch(0.80 0.010 270);
   --ink-muted:    oklch(0.60 0.012 270);
-  --ink-subtle:   oklch(0.34 0.010 270);
-  --ink-hairline: oklch(0.34 0.010 270);
+  --ink-subtle:   oklch(0.62 0.010 270);
+  --ink-hairline: oklch(0.44 0.010 270);
   --ink-inverse:  oklch(0.10 0.005 270);
   --gold-hairline:oklch(0.78 0.130 80);
 
@@ -290,6 +295,9 @@
   --bg-overlay:   oklch(0.16 0.008 270);
   --bg-luminous:  oklch(0.18 0.012 270);
   --bg-sunken:    oklch(0.08 0.006 270);
+  --bg-input-disabled-dark: oklch(0.08 0.006 270);
+  --bg-input-disabled: var(--bg-input-disabled-dark);
+  --input-bg: oklch(0.12 0.008 270);
 
   --line-soft:   oklch(0.96 0.005 270 / 0.05);
   --line-default:oklch(0.96 0.005 270 / 0.10);

@@ -316,7 +316,7 @@ html body .page-size-select {
   min-width: 0;
   height: 36px;
   padding: 0 var(--s-3) !important;
-  background: var(--bg-leaf) !important;
+  background: var(--input-bg) !important;
   color: var(--ink-primary) !important;
   font-family: var(--font-sans) !important;
   font-size: var(--fs-caption) !important;
@@ -356,7 +356,7 @@ html body textarea:disabled,
 html body select:disabled {
   opacity: 0.55 !important;
   cursor: not-allowed !important;
-  background: var(--bg-overlay) !important;
+  background: var(--bg-input-disabled) !important;
 }
 html body input::placeholder,
 html body textarea::placeholder { color: var(--ink-muted) !important; opacity: 1; }
@@ -421,7 +421,8 @@ html body .config-note {
   font-family: var(--font-editorial);
   font-style: italic;
 }
-html body .config-note a { color: var(--aurora-1) !important; font-style: normal; }
+html body .config-note a { color: var(--link-default) !important; font-style: normal; }
+html body .config-note a:hover { color: var(--link-hover) !important; }
 
 /* 警告色 inline 卡片中和（优先级配置） */
 html body .config-group[style*="fff9e6"],
@@ -476,8 +477,7 @@ html body .modal-content {
     oklch(0.04 0.008 270 / 0.76) !important;
 }
 [data-theme="dark"] html body .modal-content {
-  background:
-    linear-gradient(180deg, oklch(0.18 0.010 270 / 0.98), oklch(0.125 0.008 270 / 0.99)) !important;
+  background: oklch(0.18 0.010 270) !important;
   color: var(--ink-primary) !important;
   border-color: oklch(0.96 0.005 270 / 0.13) !important;
   box-shadow:
@@ -511,15 +511,23 @@ html body .modal-body { padding: var(--s-5); overflow-y: auto; }
 [data-theme="dark"] html body .modal-body {
   background: transparent !important;
 }
-[data-theme="dark"] html body input[type="text"],
-[data-theme="dark"] html body input[type="number"],
-[data-theme="dark"] html body input[type="password"],
-[data-theme="dark"] html body input[type="email"],
-[data-theme="dark"] html body input[type="search"],
-[data-theme="dark"] html body textarea,
-[data-theme="dark"] html body select {
-  background: oklch(0.12 0.008 270 / 0.92) !important;
+[data-theme="dark"] html body input[type="text"]:not(:disabled),
+[data-theme="dark"] html body input[type="number"]:not(:disabled),
+[data-theme="dark"] html body input[type="password"]:not(:disabled),
+[data-theme="dark"] html body input[type="email"]:not(:disabled),
+[data-theme="dark"] html body input[type="search"]:not(:disabled),
+[data-theme="dark"] html body textarea:not(:disabled),
+[data-theme="dark"] html body select:not(:disabled),
+[data-theme="dark"] html body .config-input:not(:disabled),
+[data-theme="dark"] html body .filter-select:not(:disabled),
+[data-theme="dark"] html body .page-size-select:not(:disabled) {
+  background: var(--input-bg) !important;
   border-color: oklch(0.96 0.005 270 / 0.10) !important;
+}
+[data-theme="dark"] html body input:disabled,
+[data-theme="dark"] html body textarea:disabled,
+[data-theme="dark"] html body select:disabled {
+  background: var(--bg-input-disabled) !important;
 }
 [data-theme="dark"] html body input:hover:not(:focus):not(:disabled),
 [data-theme="dark"] html body textarea:hover:not(:focus):not(:disabled),
@@ -1134,12 +1142,15 @@ html body #loginSection .login-footer p {
 html body #loginSection .login-footer a {
   font-family: inherit !important;
   font-size: 13px !important;
-  color: #4285f4 !important;
+  color: var(--link-default) !important;
   font-weight: 500 !important;
   text-decoration: none;
   white-space: nowrap;
 }
-html body #loginSection .login-footer a:hover { text-decoration: underline; }
+html body #loginSection .login-footer a:hover {
+  color: var(--link-hover) !important;
+  text-decoration: underline;
+}
 
 /* eyebrow（CONFIGURATION 等）只在已登录主面板显示，登录页不要 */
 html body #loginSection .ac-eyebrow { display: none !important; }

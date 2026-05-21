@@ -64,16 +64,16 @@ img, video, canvas, svg {
 
 /* 链接 */
 a {
-  color: var(--aurora-1);
+  color: var(--link-default);
   text-decoration: none;
   text-underline-offset: 3px;
   text-decoration-thickness: 1px;
-  text-decoration-color: color-mix(in oklch, var(--aurora-1) 35%, transparent);
+  text-decoration-color: color-mix(in oklch, var(--link-default) 35%, transparent);
   transition: color var(--dur-instant) var(--ease-standard),
               text-decoration-color var(--dur-instant) var(--ease-standard);
 }
 a:hover {
-  color: var(--aurora-2);
+  color: var(--link-hover);
   text-decoration: underline;
   text-decoration-color: currentColor;
 }
