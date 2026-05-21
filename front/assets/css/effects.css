@@ -5,7 +5,7 @@
  * ============================================================ */
 
 /* Focus visibility — 仅键盘导航时显示，鼠标点击不打扰 */
-:focus { outline: 0; }
+:focus:not(:focus-visible) { outline: 0; }
 :focus-visible { outline: 0; }
 button:focus-visible,
 a:focus-visible,
