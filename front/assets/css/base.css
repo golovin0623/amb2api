@@ -34,10 +34,15 @@ html body {
   line-height: var(--lh-normal);
   color: var(--ink-primary) !important;
   background: var(--bg-page) !important;
-  font-feature-settings: 'ss01', 'cv11', 'cv09';
+  font-feature-settings: 'ss01', 'cv11', 'cv09', 'kern', 'liga';
+  font-variant-numeric: lining-nums proportional-nums;
   letter-spacing: var(--tracking-normal);
   overflow-x: hidden;
+  /* 系统主题切换时跟随 */
+  color-scheme: light dark;
 }
+html[data-theme="light"] body { color-scheme: light; }
+html[data-theme="dark"]  body { color-scheme: dark; }
 
 /* 旧 .container 是中央 1000px 白卡片，必须解放 */
 html body > .container {
@@ -59,16 +64,27 @@ img, video, canvas, svg {
 
 /* 链接 */
 a {
-  color: var(--aurora-1);
+  color: var(--link-default);
   text-decoration: none;
-  text-underline-offset: 2px;
-  transition: color var(--dur-instant) var(--ease-standard);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in oklch, var(--link-default) 35%, transparent);
+  transition: color var(--dur-instant) var(--ease-standard),
+              text-decoration-color var(--dur-instant) var(--ease-standard);
 }
-a:hover { color: var(--aurora-2); text-decoration: underline; text-decoration-thickness: 1px; }
+a:hover {
+  color: var(--link-hover);
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+}
 
 /* 选区 */
 ::selection {
   background: oklch(0.62 0.180 268 / 0.22);
+  color: var(--ink-pure);
+}
+[data-theme="dark"] ::selection {
+  background: oklch(0.74 0.150 268 / 0.32);
   color: var(--ink-pure);
 }
 
@@ -83,6 +99,7 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--ink-pure);
   letter-spacing: var(--tracking-tight);
   font-optical-sizing: auto;
+  text-wrap: balance;
 }
 h1 { font-size: var(--fs-h1); line-height: var(--lh-tight); font-weight: var(--fw-regular); }
 h2 { font-size: var(--fs-h2); }
@@ -95,12 +112,14 @@ p {
   margin: 0;
   line-height: var(--lh-normal);
   color: var(--ink-secondary);
+  text-wrap: pretty;
 }
 
 code, kbd, samp, pre {
   font-family: var(--font-mono);
   font-size: 0.92em;
   font-feature-settings: 'ss02', 'ss03', 'ss05';
+  font-variant-numeric: tabular-nums slashed-zero;
 }
 
 kbd {
@@ -142,16 +161,33 @@ input, textarea, select {
 }
 
 /* ============================================================
- * Scrollbar - 极细
+ * Scrollbar - 极细 / 可见性：仅在 hover 时变明显
  * ============================================================ */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
 }
-*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: var(--r-full); }
-*::-webkit-scrollbar-thumb:hover { background: var(--ink-muted); }
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: var(--r-full);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-muted);
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-corner { background: transparent; }
+[data-theme="dark"] *::-webkit-scrollbar-thumb {
+  background: oklch(0.96 0.005 270 / 0.16);
+  background-clip: padding-box;
+}
+[data-theme="dark"] *::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.96 0.005 270 / 0.32);
+  background-clip: padding-box;
+}
 
 /* ============================================================
  * Visibility utilities

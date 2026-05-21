@@ -6417,6 +6417,11 @@
             background: var(--hover-bg);
         }
 
+        .custom-select-option.active {
+            background: var(--hover-bg);
+            color: var(--text-color);
+        }
+
         .custom-select-option.selected {
             background: rgba(66, 133, 244, 0.1);
             color: #4285f4;
@@ -11654,52 +11659,188 @@
             container.querySelectorAll('.custom-select-wrapper:not(.initialized)').forEach(wrapper => {
                 wrapper.classList.add('initialized');
                 const trigger = wrapper.querySelector('.custom-select-trigger');
-                const options = wrapper.querySelectorAll('.custom-select-option');
+                const options = Array.from(wrapper.querySelectorAll('.custom-select-option'));
+                const optionsContainer = wrapper.querySelector('.custom-select-options');
                 const selectId = wrapper.dataset.selectId;
                 const hiddenInput = document.getElementById(selectId);
                 const onChangeCallback = wrapper.dataset.onchange;
+                const selectKey = (selectId || wrapper.id || `custom-select-${Date.now()}-${Math.random()}`)
+                    .replace(/[^A-Za-z0-9_-]/g, '-');
+                const listboxId = optionsContainer?.id || `${selectKey}-listbox`;
+                let activeIndex = Math.max(0, options.findIndex(option => option.classList.contains('selected')));
+
+                if (!trigger || !optionsContainer || options.length === 0) return;
+
+                optionsContainer.id = listboxId;
+                optionsContainer.setAttribute('role', 'listbox');
+                trigger.setAttribute('tabindex', '0');
+                trigger.setAttribute('role', 'combobox');
+                trigger.setAttribute('aria-haspopup', 'listbox');
+                trigger.setAttribute('aria-controls', listboxId);
+                trigger.setAttribute('aria-expanded', 'false');
+
+                options.forEach((option, index) => {
+                    if (!option.id) option.id = `${selectKey}-option-${index}`;
+                    option.setAttribute('role', 'option');
+                    option.setAttribute('aria-selected', option.classList.contains('selected') ? 'true' : 'false');
+                });
+
+                function syncAria() {
+                    const isOpen = wrapper.classList.contains('open');
+                    trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                    if (isOpen && options[activeIndex]) {
+                        trigger.setAttribute('aria-activedescendant', options[activeIndex].id);
+                    } else {
+                        trigger.removeAttribute('aria-activedescendant');
+                    }
+                    options.forEach(option => {
+                        option.setAttribute('aria-selected', option.classList.contains('selected') ? 'true' : 'false');
+                    });
+                }
+
+                function setActiveOption(index, scrollIntoView = true) {
+                    if (options.length === 0) return;
+                    activeIndex = (index + options.length) % options.length;
+                    options.forEach((option, optionIndex) => {
+                        option.classList.toggle('active', optionIndex === activeIndex);
+                    });
+                    syncAria();
+                    if (scrollIntoView) {
+                        options[activeIndex].scrollIntoView({ block: 'nearest' });
+                    }
+                }
+
+                function closeSelect(focusTrigger = false) {
+                    wrapper.classList.remove('open');
+                    options.forEach(option => option.classList.remove('active'));
+                    syncAria();
+                    if (focusTrigger) trigger.focus();
+                }
+
+                function closeOtherSelects() {
+                    document.querySelectorAll('.custom-select-wrapper.open').forEach(openWrapper => {
+                        if (openWrapper === wrapper) return;
+                        openWrapper.classList.remove('open');
+                        openWrapper.querySelectorAll('.custom-select-option.active').forEach(option => {
+                            option.classList.remove('active');
+                        });
+                        const openTrigger = openWrapper.querySelector('.custom-select-trigger');
+                        if (openTrigger) {
+                            openTrigger.setAttribute('aria-expanded', 'false');
+                            openTrigger.removeAttribute('aria-activedescendant');
+                        }
+                    });
+                }
+
+                function openSelect() {
+                    closeOtherSelects();
+                    const selectedIndex = options.findIndex(option => option.classList.contains('selected'));
+                    wrapper.classList.add('open');
+                    setActiveOption(selectedIndex >= 0 ? selectedIndex : activeIndex, false);
+                }
+
+                function toggleSelect() {
+                    if (wrapper.classList.contains('open')) {
+                        closeSelect();
+                    } else {
+                        openSelect();
+                    }
+                }
+
+                function selectOption(option) {
+                    const value = option.dataset.value;
+                    const text = option.textContent;
+                    const oldValue = hiddenInput ? hiddenInput.value : null;
+
+                    // 更新显示
+                    trigger.textContent = text;
+
+                    // 更新选中状态
+                    options.forEach(o => o.classList.remove('selected'));
+                    option.classList.add('selected');
+                    activeIndex = options.indexOf(option);
+
+                    // 更新隐藏input的值
+                    if (hiddenInput) hiddenInput.value = value;
+
+                    // 关闭下拉框
+                    closeSelect();
+
+                    // 触发onchange回调
+                    if (onChangeCallback && oldValue !== value) {
+                        try {
+                            eval(onChangeCallback);
+                        } catch (err) {
+                            console.error('Custom select onchange error:', err);
+                        }
+                    }
+                }
 
                 // 点击触发器切换下拉框
                 trigger.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    // 关闭其他下拉框
-                    document.querySelectorAll('.custom-select-wrapper.open').forEach(w => {
-                        if (w !== wrapper) w.classList.remove('open');
-                    });
-                    wrapper.classList.toggle('open');
+                    toggleSelect();
+                });
+
+                trigger.addEventListener('keydown', (e) => {
+                    const isOpen = wrapper.classList.contains('open');
+
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (isOpen) {
+                            selectOption(options[activeIndex]);
+                        } else {
+                            openSelect();
+                        }
+                        return;
+                    }
+
+                    if (e.key === ' ') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleSelect();
+                        return;
+                    }
+
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (!isOpen) {
+                            openSelect();
+                        } else {
+                            setActiveOption(activeIndex + 1);
+                        }
+                        return;
+                    }
+
+                    if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (!isOpen) {
+                            openSelect();
+                        } else {
+                            setActiveOption(activeIndex - 1);
+                        }
+                        return;
+                    }
+
+                    if (e.key === 'Escape' && isOpen) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        closeSelect(true);
+                    }
                 });
 
                 // 点击选项
                 options.forEach(option => {
                     option.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        const value = option.dataset.value;
-                        const text = option.textContent;
-                        const oldValue = hiddenInput ? hiddenInput.value : null;
-
-                        // 更新显示
-                        trigger.textContent = text;
-
-                        // 更新选中状态
-                        options.forEach(o => o.classList.remove('selected'));
-                        option.classList.add('selected');
-
-                        // 更新隐藏input的值
-                        if (hiddenInput) hiddenInput.value = value;
-
-                        // 关闭下拉框
-                        wrapper.classList.remove('open');
-
-                        // 触发onchange回调
-                        if (onChangeCallback && oldValue !== value) {
-                            try {
-                                eval(onChangeCallback);
-                            } catch (err) {
-                                console.error('Custom select onchange error:', err);
-                            }
-                        }
+                        selectOption(option);
                     });
                 });
+
+                syncAria();
             });
 
             // 点击外部关闭下拉框（只绑定一次）
@@ -11708,6 +11849,14 @@
                 document.addEventListener('click', () => {
                     document.querySelectorAll('.custom-select-wrapper.open').forEach(w => {
                         w.classList.remove('open');
+                        w.querySelectorAll('.custom-select-option.active').forEach(option => {
+                            option.classList.remove('active');
+                        });
+                        const trigger = w.querySelector('.custom-select-trigger');
+                        if (trigger) {
+                            trigger.setAttribute('aria-expanded', 'false');
+                            trigger.removeAttribute('aria-activedescendant');
+                        }
                     });
                 });
             }

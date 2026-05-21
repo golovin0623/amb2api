@@ -88,34 +88,45 @@ html body .btn-sm {
   padding: 0 var(--s-3) !important;
   font-size: var(--fs-micro) !important;
 }
-html body .btn:hover,
-html body .btn-sm:hover {
+html body .btn:hover:not(:disabled),
+html body .btn-sm:hover:not(:disabled) {
   background: oklch(0.30 0.012 270) !important;
   border-color: oklch(0.30 0.012 270) !important;
   color: var(--ink-inverse) !important;
 }
-html body .btn:active,
-html body .btn-sm:active { transform: translateY(0.5px); }
+html body .btn:active:not(:disabled),
+html body .btn-sm:active:not(:disabled) { transform: translateY(0.5px) scale(0.99); }
+html body .btn:focus-visible,
+html body .btn-sm:focus-visible {
+  outline: 0 !important;
+  box-shadow: var(--elev-focus) !important;
+}
 html body .btn:disabled,
 html body .btn-sm:disabled {
-  opacity: 0.4 !important;
+  opacity: 0.45 !important;
   cursor: not-allowed !important;
+  transform: none !important;
 }
-[data-theme="dark"] html body .btn,
-[data-theme="dark"] html body .btn-sm {
+html body .btn > svg,
+html body .btn-sm > svg {
+  flex-shrink: 0;
+  transition: transform var(--dur-fast) var(--ease-emphasis);
+}
+html[data-theme="dark"] body .btn,
+html[data-theme="dark"] body .btn-sm {
   background: var(--ink-pure) !important;
   color: var(--ink-inverse) !important;
   border-color: var(--ink-hairline) !important;
 }
-[data-theme="dark"] html body .btn:hover,
-[data-theme="dark"] html body .btn-sm:hover {
+html[data-theme="dark"] body .btn:hover:not(:disabled),
+html[data-theme="dark"] body .btn-sm:hover:not(:disabled) {
   background: oklch(0.85 0.005 270) !important;
   color: oklch(0.10 0.005 270) !important;
 }
 
 /* 暗色模式下旧按钮不再统一涂成高亮白块；用低眩光层级、细边框和轻微顶光区分可点击性。 */
-[data-theme="dark"] html body .btn:not(.logout-btn),
-[data-theme="dark"] html body .btn-sm:not(.logout-btn) {
+html[data-theme="dark"] body .btn:not(.logout-btn),
+html[data-theme="dark"] body .btn-sm:not(.logout-btn) {
   background:
     linear-gradient(180deg, oklch(0.25 0.010 270 / 0.96), oklch(0.18 0.008 270 / 0.98)) !important;
   color: var(--ink-primary) !important;
@@ -124,8 +135,8 @@ html body .btn-sm:disabled {
     inset 0 1px 0 oklch(1 0 0 / 0.08),
     0 1px 2px oklch(0 0 0 / 0.24) !important;
 }
-[data-theme="dark"] html body .btn:not(.logout-btn):hover,
-[data-theme="dark"] html body .btn-sm:not(.logout-btn):hover {
+html[data-theme="dark"] body .btn:not(.logout-btn):hover:not(:disabled),
+html[data-theme="dark"] body .btn-sm:not(.logout-btn):hover:not(:disabled) {
   background:
     linear-gradient(180deg, oklch(0.29 0.012 270 / 0.98), oklch(0.21 0.010 270 / 0.98)) !important;
   color: var(--ink-pure) !important;
@@ -134,22 +145,22 @@ html body .btn-sm:disabled {
     inset 0 1px 0 oklch(1 0 0 / 0.11),
     0 8px 20px oklch(0 0 0 / 0.28) !important;
 }
-[data-theme="dark"] html body .btn:not(.logout-btn):active,
-[data-theme="dark"] html body .btn-sm:not(.logout-btn):active {
+html[data-theme="dark"] body .btn:not(.logout-btn):active:not(:disabled),
+html[data-theme="dark"] body .btn-sm:not(.logout-btn):active:not(:disabled) {
   transform: translateY(0.5px) scale(0.99);
   box-shadow: inset 0 1px 2px oklch(0 0 0 / 0.32) !important;
 }
-[data-theme="dark"] html body .btn[style*="#4285f4"],
-[data-theme="dark"] html body .btn-sm[style*="#4285f4"],
-[data-theme="dark"] html body .btn[style*="#17a2b8"],
-[data-theme="dark"] html body .btn-sm[style*="#17a2b8"] {
+html[data-theme="dark"] body .btn[style*="#4285f4"],
+html[data-theme="dark"] body .btn-sm[style*="#4285f4"],
+html[data-theme="dark"] body .btn[style*="#17a2b8"],
+html[data-theme="dark"] body .btn-sm[style*="#17a2b8"] {
   background:
     linear-gradient(180deg, oklch(0.34 0.055 235 / 0.92), oklch(0.22 0.035 245 / 0.96)) !important;
   color: oklch(0.90 0.050 225) !important;
   border-color: oklch(0.72 0.130 235 / 0.42) !important;
 }
-[data-theme="dark"] html body .btn[style*="#dc3545"],
-[data-theme="dark"] html body .btn-sm[style*="#dc3545"] {
+html[data-theme="dark"] body .btn[style*="#dc3545"],
+html[data-theme="dark"] body .btn-sm[style*="#dc3545"] {
   background:
     linear-gradient(180deg, oklch(0.34 0.075 25 / 0.92), oklch(0.21 0.045 25 / 0.96)) !important;
   color: oklch(0.88 0.070 25) !important;
@@ -165,6 +176,7 @@ html body .btn-outline-info,
 html body .btn-outline-success {
   display: inline-flex !important;
   align-items: center;
+  justify-content: center;
   gap: var(--s-1);
   height: 28px;
   padding: 0 var(--s-3) !important;
@@ -178,19 +190,58 @@ html body .btn-outline-success {
   cursor: pointer;
   box-shadow: none !important;
   white-space: nowrap;
-  transition: all var(--dur-instant) var(--ease-standard);
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    color var(--dur-instant) var(--ease-standard),
+    border-color var(--dur-instant) var(--ease-standard),
+    box-shadow var(--dur-instant) var(--ease-standard),
+    transform var(--dur-instant) var(--ease-standard) !important;
+}
+html body .btn-outline-primary:active,
+html body .btn-outline-secondary:active,
+html body .btn-outline-danger:active,
+html body .btn-outline-warning:active,
+html body .btn-outline-info:active,
+html body .btn-outline-success:active {
+  transform: translateY(0.5px) scale(0.98);
+}
+html body .btn-outline-primary:focus-visible,
+html body .btn-outline-secondary:focus-visible,
+html body .btn-outline-danger:focus-visible,
+html body .btn-outline-warning:focus-visible,
+html body .btn-outline-info:focus-visible,
+html body .btn-outline-success:focus-visible {
+  outline: 0 !important;
+  box-shadow: var(--elev-focus) !important;
 }
 html body .btn-outline-primary { color: var(--aurora-1) !important; border-color: var(--line-aurora) !important; }
-html body .btn-outline-primary:hover { background: oklch(0.62 0.180 268 / 0.08) !important; }
+html body .btn-outline-primary:hover:not(:disabled) { background: oklch(0.62 0.180 268 / 0.08) !important; }
 html body .btn-outline-danger { color: var(--sig-danger) !important; border-color: oklch(0.58 0.215 25 / 0.30) !important; }
-html body .btn-outline-danger:hover { background: var(--sig-danger-soft) !important; }
+html body .btn-outline-danger:hover:not(:disabled) { background: var(--sig-danger-soft) !important; }
 html body .btn-outline-warning { color: var(--sig-warning) !important; border-color: oklch(0.72 0.155 70 / 0.30) !important; }
-html body .btn-outline-warning:hover { background: var(--sig-warning-soft) !important; }
+html body .btn-outline-warning:hover:not(:disabled) { background: var(--sig-warning-soft) !important; }
 html body .btn-outline-info { color: var(--sig-info) !important; border-color: oklch(0.62 0.150 240 / 0.30) !important; }
-html body .btn-outline-info:hover { background: var(--sig-info-soft) !important; }
+html body .btn-outline-info:hover:not(:disabled) { background: var(--sig-info-soft) !important; }
 html body .btn-outline-success { color: var(--sig-success) !important; border-color: oklch(0.62 0.165 145 / 0.30) !important; }
-html body .btn-outline-success:hover { background: var(--sig-success-soft) !important; }
-html body .btn-outline-secondary:hover { background: var(--bg-overlay) !important; color: var(--ink-primary) !important; }
+html body .btn-outline-success:hover:not(:disabled) { background: var(--sig-success-soft) !important; }
+html body .btn-outline-secondary:hover:not(:disabled) {
+  background: var(--bg-overlay) !important;
+  color: var(--ink-primary) !important;
+  border-color: var(--line-strong) !important;
+}
+
+/* dark 模式下 outline 系列底层从 var(--bg-leaf) 改为更浅的 raised，避免和 page 背景融合 */
+html[data-theme="dark"] body .btn-outline-primary,
+html[data-theme="dark"] body .btn-outline-secondary,
+html[data-theme="dark"] body .btn-outline-danger,
+html[data-theme="dark"] body .btn-outline-warning,
+html[data-theme="dark"] body .btn-outline-info,
+html[data-theme="dark"] body .btn-outline-success {
+  background: oklch(0.18 0.008 270 / 0.85) !important;
+  border-color: oklch(0.96 0.005 270 / 0.13) !important;
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.05) !important;
+}
 
 /* 旧 inline style 颜色覆盖 */
 html body .btn[style*="4285f4"],
@@ -264,7 +315,7 @@ html body .page-size-select {
   min-width: 0;
   height: 36px;
   padding: 0 var(--s-3) !important;
-  background: var(--bg-leaf) !important;
+  background: var(--input-bg) !important;
   color: var(--ink-primary) !important;
   font-family: var(--font-sans) !important;
   font-size: var(--fs-caption) !important;
@@ -284,6 +335,13 @@ html body textarea.config-input {
   line-height: var(--lh-normal) !important;
   resize: vertical;
 }
+html body input:hover:not(:focus):not(:disabled),
+html body textarea:hover:not(:focus):not(:disabled),
+html body select:hover:not(:focus):not(:disabled),
+html body .config-input:hover:not(:focus):not(:disabled),
+html body .filter-select:hover:not(:focus):not(:disabled) {
+  border-color: var(--line-strong) !important;
+}
 html body input:focus,
 html body textarea:focus,
 html body select:focus,
@@ -292,8 +350,17 @@ html body .filter-select:focus {
   border-color: var(--line-focus) !important;
   box-shadow: var(--elev-focus) !important;
 }
+html body input:disabled,
+html body textarea:disabled,
+html body select:disabled {
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+  background: var(--bg-input-disabled) !important;
+}
 html body input::placeholder,
 html body textarea::placeholder { color: var(--ink-muted) !important; opacity: 1; }
+html body input:disabled::placeholder,
+html body textarea:disabled::placeholder { color: var(--ink-subtle) !important; }
 
 /* select 原生箭头略 */
 html body select,
@@ -307,8 +374,8 @@ html body .config-input[tag="select"] {
   padding-right: var(--s-7) !important;
   cursor: pointer;
 }
-[data-theme="dark"] html body select,
-[data-theme="dark"] html body .config-input[tag="select"] {
+html[data-theme="dark"] body select,
+html[data-theme="dark"] body .config-input[tag="select"] {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M1 1l4 4 4-4' stroke='%23cbd5e1' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>") !important;
 }
 
@@ -353,7 +420,8 @@ html body .config-note {
   font-family: var(--font-editorial);
   font-style: italic;
 }
-html body .config-note a { color: var(--aurora-1) !important; font-style: normal; }
+html body .config-note a { color: var(--link-default) !important; font-style: normal; }
+html body .config-note a:hover { color: var(--link-hover) !important; }
 
 /* 警告色 inline 卡片中和（优先级配置） */
 html body .config-group[style*="fff9e6"],
@@ -402,14 +470,13 @@ html body .modal-content {
   flex-direction: column;
   animation: modalIn var(--dur-enter) var(--ease-enter);
 }
-[data-theme="dark"] html body .modal {
+html[data-theme="dark"] body .modal {
   background:
     radial-gradient(circle at 50% 0%, oklch(0.40 0.040 255 / 0.18), transparent 36%),
     oklch(0.04 0.008 270 / 0.76) !important;
 }
-[data-theme="dark"] html body .modal-content {
-  background:
-    linear-gradient(180deg, oklch(0.18 0.010 270 / 0.98), oklch(0.125 0.008 270 / 0.99)) !important;
+html[data-theme="dark"] body .modal-content {
+  background: oklch(0.18 0.010 270) !important;
   color: var(--ink-primary) !important;
   border-color: oklch(0.96 0.005 270 / 0.13) !important;
   box-shadow:
@@ -435,13 +502,36 @@ html body .modal-footer {
 }
 html body .modal-footer { border-bottom: 0; border-top: 1px solid var(--line-default); }
 html body .modal-body { padding: var(--s-5); overflow-y: auto; }
-[data-theme="dark"] html body .modal-header,
-[data-theme="dark"] html body .modal-footer {
+html[data-theme="dark"] body .modal-header,
+html[data-theme="dark"] body .modal-footer {
   background: oklch(0.145 0.008 270 / 0.92) !important;
   border-color: oklch(0.96 0.005 270 / 0.10) !important;
 }
-[data-theme="dark"] html body .modal-body {
+html[data-theme="dark"] body .modal-body {
   background: transparent !important;
+}
+html[data-theme="dark"] body input[type="text"]:not(:disabled),
+html[data-theme="dark"] body input[type="number"]:not(:disabled),
+html[data-theme="dark"] body input[type="password"]:not(:disabled),
+html[data-theme="dark"] body input[type="email"]:not(:disabled),
+html[data-theme="dark"] body input[type="search"]:not(:disabled),
+html[data-theme="dark"] body textarea:not(:disabled),
+html[data-theme="dark"] body select:not(:disabled),
+html[data-theme="dark"] body .config-input:not(:disabled),
+html[data-theme="dark"] body .filter-select:not(:disabled),
+html[data-theme="dark"] body .page-size-select:not(:disabled) {
+  background: var(--input-bg) !important;
+  border-color: oklch(0.96 0.005 270 / 0.10) !important;
+}
+html[data-theme="dark"] body input:disabled,
+html[data-theme="dark"] body textarea:disabled,
+html[data-theme="dark"] body select:disabled {
+  background: var(--bg-input-disabled) !important;
+}
+html[data-theme="dark"] body input:hover:not(:focus):not(:disabled),
+html[data-theme="dark"] body textarea:hover:not(:focus):not(:disabled),
+html[data-theme="dark"] body select:hover:not(:focus):not(:disabled) {
+  border-color: oklch(0.96 0.005 270 / 0.22) !important;
 }
 html body .modal-title {
   margin: 0 !important;
@@ -462,8 +552,21 @@ html body .modal-close {
   background: transparent !important;
   border: 0 !important;
   cursor: pointer;
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    color var(--dur-instant) var(--ease-standard),
+    transform var(--dur-instant) var(--ease-standard);
+  -webkit-tap-highlight-color: transparent;
 }
 html body .modal-close:hover { background: var(--bg-overlay) !important; color: var(--ink-primary) !important; }
+html body .modal-close:active { transform: scale(0.92); }
+html body .modal-close:focus-visible {
+  outline: 0 !important;
+  box-shadow: var(--elev-focus) !important;
+}
+html body .modal-close svg {
+  transition: transform var(--dur-fast) var(--ease-emphasis);
+}
 
 /* ============================================================
  * 8. 旧 .table - 编辑体表格
@@ -494,9 +597,15 @@ html body .table tbody td {
   color: var(--ink-secondary) !important;
   background: var(--bg-leaf);
   vertical-align: middle;
+  transition: background-color var(--dur-instant) var(--ease-standard);
 }
 html body .table tbody tr:hover td { background: var(--bg-overlay) !important; }
 html body .table tbody tr:last-child td { border-bottom: 0 !important; }
+/* 表格首尾单元格圆角 */
+html body .table thead th:first-child { border-top-left-radius: var(--r-3); }
+html body .table thead th:last-child  { border-top-right-radius: var(--r-3); }
+html body .table tbody tr:last-child td:first-child { border-bottom-left-radius: var(--r-3); }
+html body .table tbody tr:last-child td:last-child  { border-bottom-right-radius: var(--r-3); }
 
 /* ============================================================
  * 9. 旧 .pagination-btn
@@ -514,11 +623,27 @@ html body .pagination-btn {
   cursor: pointer;
   font-size: 0 !important;
   padding: 0 !important;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--dur-instant) var(--ease-standard),
+    color var(--dur-instant) var(--ease-standard),
+    border-color var(--dur-instant) var(--ease-standard),
+    transform var(--dur-instant) var(--ease-standard);
 }
 html body .pagination-btn:hover {
   background: var(--bg-overlay) !important;
   color: var(--ink-primary) !important;
   border-color: var(--line-aurora) !important;
+}
+html body .pagination-btn:active:not(:disabled) { transform: scale(0.92); }
+html body .pagination-btn:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+}
+html body .pagination-btn:focus-visible {
+  outline: 0 !important;
+  box-shadow: var(--elev-focus) !important;
 }
 
 /* ============================================================
@@ -625,9 +750,20 @@ html body .custom-select-trigger {
   font-family: var(--font-sans) !important;
   font-size: var(--fs-caption) !important;
   cursor: pointer;
-  transition: border-color var(--dur-instant) var(--ease-standard);
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color var(--dur-instant) var(--ease-standard),
+              background-color var(--dur-instant) var(--ease-standard),
+              box-shadow var(--dur-instant) var(--ease-standard);
 }
-html body .custom-select-trigger:hover { border-color: var(--line-aurora) !important; }
+html body .custom-select-trigger:hover { border-color: var(--line-strong) !important; }
+html body .custom-select-trigger:focus-visible {
+  outline: 0 !important;
+  box-shadow: var(--elev-focus) !important;
+  border-color: var(--line-focus) !important;
+}
+html body .custom-select-wrapper.open .custom-select-trigger {
+  border-color: var(--line-aurora) !important;
+}
 html body .custom-select-trigger::after {
   content: "";
   width: 8px; height: 8px;
@@ -636,6 +772,11 @@ html body .custom-select-trigger::after {
   transform: rotate(45deg) translateY(-1px);
   opacity: 0.5;
   flex-shrink: 0;
+  transition: transform var(--dur-fast) var(--ease-emphasis), opacity var(--dur-fast) var(--ease-standard);
+}
+html body .custom-select-wrapper.open .custom-select-trigger::after {
+  transform: rotate(-135deg) translateY(2px);
+  opacity: 0.8;
 }
 html body .custom-select-options {
   position: absolute;
@@ -651,8 +792,16 @@ html body .custom-select-options {
   z-index: var(--z-popover);
   padding: var(--s-1);
   display: none;
+  transform-origin: top center;
 }
-html body .custom-select-wrapper.open .custom-select-options { display: block; }
+html body .custom-select-wrapper.open .custom-select-options {
+  display: block;
+  animation: customSelectIn var(--dur-fast) var(--ease-emphasis);
+}
+@keyframes customSelectIn {
+  from { opacity: 0; transform: translateY(-4px) scaleY(0.96); }
+  to   { opacity: 1; transform: translateY(0) scaleY(1); }
+}
 html body .custom-select-option {
   padding: var(--s-2) var(--s-3) !important;
   font-family: var(--font-sans) !important;
@@ -664,7 +813,8 @@ html body .custom-select-option {
   align-items: center;
   gap: var(--s-2);
 }
-html body .custom-select-option:hover { background: var(--bg-overlay) !important; color: var(--ink-primary) !important; }
+html body .custom-select-option:hover,
+html body .custom-select-option.active { background: var(--bg-overlay) !important; color: var(--ink-primary) !important; }
 html body .custom-select-option.selected {
   background: oklch(0.62 0.180 268 / 0.10) !important;
   color: var(--aurora-1) !important;
@@ -676,25 +826,35 @@ html body .custom-select-option.selected {
  * ============================================================ */
 html body .progress-bar {
   width: 100%;
-  height: 4px;
+  height: 6px;
   background: var(--bg-overlay) !important;
+  border: 1px solid var(--line-soft);
   border-radius: var(--r-full) !important;
   overflow: hidden;
   margin-top: var(--s-2);
 }
 html body .progress-fill {
   height: 100%;
+  background: var(--ink-pure);
   border-radius: var(--r-full);
   transition: width var(--dur-standard) var(--ease-standard);
+  position: relative;
+  overflow: hidden;
 }
 html body .spinner {
   width: 18px;
   height: 18px;
-  border: 1.6px solid oklch(0.62 0.180 268 / 0.20);
+  border: 1.6px solid oklch(0.62 0.180 268 / 0.18);
   border-top-color: var(--aurora-1);
+  border-right-color: oklch(0.62 0.180 268 / 0.40);
   border-radius: var(--r-full);
   animation: spin 0.8s linear infinite;
   margin: 0 auto;
+}
+html[data-theme="dark"] body .spinner {
+  border-color: oklch(0.74 0.150 268 / 0.20);
+  border-top-color: var(--aurora-1);
+  border-right-color: oklch(0.74 0.150 268 / 0.45);
 }
 html body .spinner-text {
   margin-top: var(--s-2);
@@ -740,8 +900,17 @@ html body input[type="checkbox"].select-all-checkbox {
   margin: 0;
   padding: 0;
   flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
   transition: background-color var(--dur-instant) var(--ease-standard),
-              border-color var(--dur-instant) var(--ease-standard);
+              border-color var(--dur-instant) var(--ease-standard),
+              box-shadow var(--dur-instant) var(--ease-standard);
+}
+html body input[type="checkbox"]:not([class*="switch"]):hover:not(:disabled) {
+  border-color: var(--ink-pure) !important;
+}
+html body input[type="checkbox"]:not([class*="switch"]):focus-visible {
+  outline: 0 !important;
+  box-shadow: var(--elev-focus) !important;
 }
 html body input[type="checkbox"]:checked {
   background: var(--ink-pure) !important;
@@ -757,6 +926,25 @@ html body input[type="checkbox"]:checked::after {
   border: solid var(--ink-inverse);
   border-width: 0 1.6px 1.6px 0;
   transform: rotate(45deg);
+}
+html body input[type="checkbox"]:indeterminate {
+  background: var(--ink-pure) !important;
+  border-color: var(--ink-pure) !important;
+}
+html body input[type="checkbox"]:indeterminate::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  right: 2px;
+  height: 1.6px;
+  background: var(--ink-inverse);
+  border-radius: 1px;
+  transform: translateY(-50%);
+}
+html body input[type="checkbox"]:disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
 }
 
 /* ============================================================
@@ -862,7 +1050,7 @@ html body #loginSection input[type="password"]:focus {
   border-color: #4285f4 !important;
   box-shadow: 0 0 0 4px rgba(66, 133, 244, 0.10) !important;
 }
-[data-theme="dark"] html body #loginSection input[type="password"]:focus {
+html[data-theme="dark"] body #loginSection input[type="password"]:focus {
   border-color: #4285f4 !important;
   box-shadow: 0 0 0 4px rgba(66, 133, 244, 0.15) !important;
 }
@@ -910,8 +1098,8 @@ html body #loginSection button.btn:active {
   transform: translateY(0) !important;
   box-shadow: 0 4px 15px rgba(66, 133, 244, 0.30) !important;
 }
-[data-theme="dark"] html body #loginSection #loginBtn,
-[data-theme="dark"] html body #loginSection button.btn {
+html[data-theme="dark"] body #loginSection #loginBtn,
+html[data-theme="dark"] body #loginSection button.btn {
   background: linear-gradient(135deg, #4285f4 0%, #5b9bd5 100%) !important;
   border-color: transparent !important;
 }
@@ -955,12 +1143,15 @@ html body #loginSection .login-footer p {
 html body #loginSection .login-footer a {
   font-family: inherit !important;
   font-size: 13px !important;
-  color: #4285f4 !important;
+  color: var(--link-default) !important;
   font-weight: 500 !important;
   text-decoration: none;
   white-space: nowrap;
 }
-html body #loginSection .login-footer a:hover { text-decoration: underline; }
+html body #loginSection .login-footer a:hover {
+  color: var(--link-hover) !important;
+  text-decoration: underline;
+}
 
 /* eyebrow（CONFIGURATION 等）只在已登录主面板显示，登录页不要 */
 html body #loginSection .ac-eyebrow { display: none !important; }
@@ -976,7 +1167,7 @@ html body #loginSection .login-card {
   margin: 0 auto;
   box-sizing: border-box;
 }
-[data-theme="dark"] html body #loginSection .login-card {
+html[data-theme="dark"] body #loginSection .login-card {
   background: var(--bg-leaf);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.40), 0 8px 24px rgba(0, 0, 0, 0.30);
 }

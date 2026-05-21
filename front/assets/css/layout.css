@@ -74,7 +74,7 @@ html body .header-title-row h1 {
   white-space: nowrap;
   position: relative;
 }
-[data-theme="dark"] html body .header-title-row h1 {
+html[data-theme="dark"] body .header-title-row h1 {
   color: var(--ink-pure) !important;
   -webkit-text-fill-color: var(--ink-pure) !important;
 }
@@ -196,12 +196,31 @@ html body .tab {
   cursor: pointer;
   white-space: nowrap;
   z-index: 1;
+  -webkit-tap-highlight-color: transparent;
   transition: color var(--dur-instant) var(--ease-standard);
 }
 html body .tab:hover { color: var(--ink-primary) !important; background: transparent !important; }
 html body .tab.active { color: var(--ink-pure) !important; background: transparent !important; }
-html body .tab.active .icon { color: var(--aurora-1) !important; }
-html body .tab .icon { color: inherit; opacity: 0.7; }
+html body .tab.active .icon,
+html body .tab.active svg { color: var(--aurora-1) !important; }
+html body .tab.active .icon,
+html body .tab.active svg { opacity: 1; }
+html body .tab .icon,
+html body .tab svg { color: inherit; opacity: 0.75; transition: opacity var(--dur-instant) var(--ease-standard); }
+html body .tab:hover .icon,
+html body .tab:hover svg { opacity: 1; }
+html body .tab:focus-visible {
+  outline: 0;
+  color: var(--ink-pure) !important;
+}
+html body .tab:focus-visible::before {
+  content: "";
+  position: absolute;
+  inset: 4px -4px;
+  border-radius: var(--r-2);
+  box-shadow: var(--elev-focus);
+  pointer-events: none;
+}
 
 /* tab-indicator: 编辑体下划线 */
 html body .tab-indicator {
@@ -359,7 +378,7 @@ html body .theme-toggle #themeText { display: none; }
       linear-gradient(180deg, color-mix(in oklch, var(--bg-leaf) 96%, transparent), color-mix(in oklch, var(--bg-leaf) 90%, transparent)) !important;
     box-shadow: 0 10px 28px oklch(0 0 0 / 0.07) !important;
   }
-  [data-theme="dark"] html body .fixed-header {
+  html[data-theme="dark"] body .fixed-header {
     background:
       linear-gradient(180deg, oklch(0.16 0.009 270 / 0.94), oklch(0.11 0.008 270 / 0.94)) !important;
     border-bottom-color: oklch(0.96 0.005 270 / 0.08) !important;
@@ -384,7 +403,7 @@ html body .theme-toggle #themeText { display: none; }
     border-radius: var(--r-3) !important;
     box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.05) !important;
   }
-  [data-theme="dark"] html body .tabs {
+  html[data-theme="dark"] body .tabs {
     background: oklch(0.09 0.006 270 / 0.78) !important;
     border-color: oklch(0.96 0.005 270 / 0.08) !important;
     box-shadow:
@@ -414,10 +433,24 @@ html body .theme-toggle #themeText { display: none; }
       inset 0 0 0 1px var(--line-default),
       inset 0 1px 0 oklch(1 0 0 / 0.10) !important;
   }
-  [data-theme="dark"] html body .tab.active {
+  html body .tab.active:focus-visible {
+    box-shadow:
+      var(--elev-focus),
+      0 1px 2px oklch(0 0 0 / 0.08),
+      inset 0 0 0 1px var(--line-default),
+      inset 0 1px 0 oklch(1 0 0 / 0.10) !important;
+  }
+  html[data-theme="dark"] body .tab.active {
     background:
       linear-gradient(180deg, oklch(0.24 0.012 270), oklch(0.18 0.010 270)) !important;
     box-shadow:
+      0 8px 18px oklch(0 0 0 / 0.24),
+      inset 0 0 0 1px oklch(0.96 0.005 270 / 0.13),
+      inset 0 1px 0 oklch(1 0 0 / 0.09) !important;
+  }
+  html[data-theme="dark"] body .tab.active:focus-visible {
+    box-shadow:
+      var(--elev-focus),
       0 8px 18px oklch(0 0 0 / 0.24),
       inset 0 0 0 1px oklch(0.96 0.005 270 / 0.13),
       inset 0 1px 0 oklch(1 0 0 / 0.09) !important;
@@ -432,9 +465,9 @@ html body .theme-toggle #themeText { display: none; }
     border-color: var(--line-default) !important;
     box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.06) !important;
   }
-  [data-theme="dark"] html body .theme-toggle[data-docked="header"],
-  [data-theme="dark"] html body .btn.logout-btn,
-  [data-theme="dark"] html body button.btn.logout-btn {
+  html[data-theme="dark"] body .theme-toggle[data-docked="header"],
+  html[data-theme="dark"] body .btn.logout-btn,
+  html[data-theme="dark"] body button.btn.logout-btn {
     background:
       linear-gradient(180deg, oklch(0.22 0.010 270), oklch(0.15 0.008 270)) !important;
     border-color: oklch(0.96 0.005 270 / 0.12) !important;
@@ -456,4 +489,12 @@ html body .tabs-wrapper {
     black var(--s-3),
     black calc(100% - var(--s-3)),
     transparent 100%);
+}
+
+@media (min-width: 1025px) {
+  html body[data-shell="v2"] .tabs-wrapper {
+    overflow: visible;
+    -webkit-mask-image: none;
+            mask-image: none;
+  }
 }
