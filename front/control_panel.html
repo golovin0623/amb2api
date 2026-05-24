@@ -10046,7 +10046,7 @@
             // 检查是否有ZIP文件，给用户提示
             const hasZipFiles = uploadSelectedFiles.some(file => file.name.endsWith('.zip'));
             if (hasZipFiles) {
-                showStatus('正在上传并解压ZIP文件...', 'info');
+                showStatus('正在上传并解压ZIP文件...', 'progress');
             }
 
             try {
@@ -11642,7 +11642,7 @@
             }
 
             try {
-                showStatus(`正在执行批量${action === 'enable' ? '启用' : action === 'disable' ? '禁用' : '删除'}操作...`, 'info');
+                showStatus(`正在执行批量${action === 'enable' ? '启用' : action === 'disable' ? '禁用' : '删除'}操作...`, 'progress');
 
                 const requestBody = {
                     action: action,
@@ -11678,7 +11678,7 @@
         // 邮箱相关函数
         async function fetchUserEmail(filename) {
             try {
-                showStatus('正在获取用户邮箱...', 'info');
+                showStatus('正在获取用户邮箱...', 'progress');
 
                 const response = await fetch(`/creds/fetch-email/${encodeURIComponent(filename)}`, {
                     method: 'POST',
@@ -11713,7 +11713,7 @@
                     return;
                 }
 
-                showStatus('正在刷新所有用户邮箱...', 'info');
+                showStatus('正在刷新所有用户邮箱...', 'progress');
 
                 const response = await fetch('/creds/refresh-all-emails', {
                     method: 'POST',
@@ -15011,7 +15011,7 @@
                 playgroundAbortController = new AbortController();
 
                 collapseAfterSend();
-                showStatus('测试进行中...（可切换标签页，测试将在后台继续）', 'info');
+                showStatus('测试进行中...（可切换标签页，测试将在后台继续）', 'progress');
 
                 // 如果配置还没有加载，先加载配置
                 if (!currentConfig || Object.keys(currentConfig).length === 0) {
@@ -15404,7 +15404,7 @@
                 playgroundAbortController = new AbortController();
 
                 collapseAfterSend();
-                showStatus('测试进行中...（使用自定义请求体）', 'info');
+                showStatus('测试进行中...（使用自定义请求体）', 'progress');
 
                 // 构建请求头
                 const headersEl = document.getElementById('previewHeaders');

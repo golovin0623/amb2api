@@ -262,6 +262,12 @@
 
   function onNotiKeydown(ev) { if (ev.key === 'Escape') closeNotiPanel(); }
 
+  function markAllRead() {
+    for (const e of notiStore) e.read = true;
+    updateNotiBadge();
+    if (notiOpen) renderNotiList();
+  }
+
   function clearNoti() {
     notiStore.length = 0;
     updateNotiBadge();
@@ -303,12 +309,22 @@
     headTitle.className = 'noti-panel__title';
     headTitle.textContent = '消息中心';
     head.appendChild(headTitle);
+
+    const actions = document.createElement('div');
+    actions.className = 'noti-panel__actions';
+    const readBtn = document.createElement('button');
+    readBtn.type = 'button';
+    readBtn.className = 'noti-panel__action';
+    readBtn.textContent = '全部已读';
+    readBtn.addEventListener('click', (ev) => { ev.stopPropagation(); markAllRead(); });
     const clearBtn = document.createElement('button');
     clearBtn.type = 'button';
     clearBtn.className = 'noti-panel__clear';
     clearBtn.textContent = '清空';
     clearBtn.addEventListener('click', (ev) => { ev.stopPropagation(); clearNoti(); });
-    head.appendChild(clearBtn);
+    actions.appendChild(readBtn);
+    actions.appendChild(clearBtn);
+    head.appendChild(actions);
     notiPanel.appendChild(head);
 
     notiListEl = document.createElement('div');
@@ -598,16 +614,22 @@
   }
 
   /* showStatus 兼容：原签名 showStatus(message, type)
-   * type 可能是 'info' | 'success' | 'error' | 'warning' */
+   * type: 'info' | 'success' | 'error' | 'warning'
+   * 另支持伪类型 'progress'/'loading'：进行中的提示，强制弹窗（不受
+   * “仅 error/warning 弹窗”策略静默），用 info 样式展示。 */
   if (!window.__originalShowStatus) {
     const origShowStatus = window.showStatus;
     window.__originalShowStatus = origShowStatus;
     window.showStatus = function (message, type) {
       try {
+        let kind = type || inferKind(message);
+        let force = false;
+        if (kind === 'progress' || kind === 'loading') { kind = 'info'; force = true; }
         toast({
-          kind: type || inferKind(message),
+          kind: kind,
           title: String(message || ''),
           duration: 4500,
+          force: force,
         });
       } catch (e) {
         if (typeof origShowStatus === 'function') {
@@ -638,6 +660,7 @@
     record: recordNotification,
     open: openNotiPanel,
     close: closeNotiPanel,
+    markAllRead: markAllRead,
     clear: clearNoti,
   };
   window.ui.confirmDialog = confirmDialog;

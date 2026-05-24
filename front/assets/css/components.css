@@ -563,6 +563,8 @@ html body .header-title-row > .noti-center { order: 3; }
   font-weight: var(--fw-semibold);
   color: var(--ink-primary);
 }
+.noti-panel__actions { display: flex; align-items: center; gap: 2px; }
+.noti-panel__action,
 .noti-panel__clear {
   border: 0;
   background: transparent;
@@ -575,6 +577,7 @@ html body .header-title-row > .noti-center { order: 3; }
   transition: background-color var(--dur-instant) var(--ease-standard),
               color var(--dur-instant) var(--ease-standard);
 }
+.noti-panel__action:hover { color: var(--ink-primary); background: var(--bg-overlay); }
 .noti-panel__clear:hover { color: var(--sig-danger); background: var(--bg-overlay); }
 
 .noti-list { overflow-y: auto; flex: 1; }
