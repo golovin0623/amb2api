@@ -621,6 +621,18 @@ html body .header-title-row > .noti-center { order: 3; }
   overflow: hidden;
 }
 .noti-item--open .noti-item__title { display: block; -webkit-line-clamp: unset; }
+.noti-item__count {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg-overlay);
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  vertical-align: middle;
+}
 .noti-item__desc {
   font-family: var(--font-editorial);
   font-size: var(--fs-caption);

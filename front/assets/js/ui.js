@@ -157,16 +157,32 @@
 
   function recordNotification(entry) {
     entry = entry || {};
+    const kind = entry.kind || 'info';
     const title = String(entry.title || '').trim();
     const desc = String(entry.desc || '').trim();
     if (!title && !desc) return null;
+    const nTitle = title || desc;
+    const nDesc = title ? desc : '';
+
+    // 合并连续重复（如反复进入“使用统计”重复触发同一条“失效密钥 0 个”）
+    const top = notiStore[0];
+    if (top && top.kind === kind && top.title === nTitle && top.desc === nDesc) {
+      top.ts = Date.now();
+      top.count = (top.count || 1) + 1;
+      top.read = false;
+      updateNotiBadge();
+      if (notiOpen) renderNotiList();
+      return top;
+    }
+
     const e = {
       id: ++notiSeq,
       ts: Date.now(),
-      kind: entry.kind || 'info',
-      title: title || desc,
-      desc: title ? desc : '',
+      kind: kind,
+      title: nTitle,
+      desc: nDesc,
       read: false,
+      count: 1,
     };
     notiStore.unshift(e);
     if (notiStore.length > NOTI_MAX) notiStore.length = NOTI_MAX;
@@ -204,6 +220,12 @@
       const titleEl = document.createElement('div');
       titleEl.className = 'noti-item__title';
       titleEl.textContent = e.title;
+      if (e.count > 1) {
+        const cnt = document.createElement('span');
+        cnt.className = 'noti-item__count';
+        cnt.textContent = '×' + e.count;
+        titleEl.appendChild(cnt);
+      }
       body.appendChild(titleEl);
 
       if (e.desc) {
