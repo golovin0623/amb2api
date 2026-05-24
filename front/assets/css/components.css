@@ -514,6 +514,9 @@ html body .header-title-row > .noti-center { order: 3; }
 .noti-bell:hover { background: var(--bg-overlay); color: var(--ink-primary); }
 .noti-bell:active { transform: scale(0.92); }
 .noti-bell:focus-visible { outline: 0; box-shadow: var(--elev-focus); }
+/* 在 V2 顶栏里与其它图标按钮（32px ghost）保持一致 */
+.v2-appbar .noti-bell { width: 32px; height: 32px; background: transparent; }
+.v2-appbar .noti-bell:hover { background: var(--bg-overlay); }
 .noti-bell__badge {
   position: absolute;
   top: -3px;

@@ -115,6 +115,7 @@
   const NOTI_MAX = 60;
   const notiStore = [];          // { id, ts, kind, title, desc, read }
   let notiSeq = 0;
+  let notiCenterEl = null;
   let notiBtn = null;
   let notiBadge = null;
   let notiPanel = null;
@@ -134,7 +135,10 @@
   function formatNotiTime(ts) {
     const d = new Date(ts);
     const pad = (n) => String(n).padStart(2, '0');
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    // 非当天的消息带上日期，避免跨天误解
+    if (d.toDateString() === new Date().toDateString()) return time;
+    return `${d.getMonth() + 1}/${d.getDate()} ${time}`;
   }
 
   function unreadCount() {
@@ -193,6 +197,7 @@
 
   function renderNotiList() {
     if (!notiListEl) return;
+    const prevScroll = notiListEl.scrollTop;
     notiListEl.textContent = '';
     if (!notiStore.length) {
       const empty = document.createElement('div');
@@ -207,7 +212,9 @@
     for (const e of notiStore) {
       const meta = notiKindMeta(e.kind);
       const item = document.createElement('div');
-      item.className = 'noti-item noti-item--' + e.kind + (e.read ? '' : ' noti-item--unread');
+      item.className = 'noti-item noti-item--' + e.kind
+        + (e.read ? '' : ' noti-item--unread')
+        + (e.expanded ? ' noti-item--open' : '');
 
       const icon = document.createElement('span');
       icon.className = 'noti-item__icon';
@@ -242,14 +249,18 @@
 
       item.appendChild(body);
 
-      // 较长内容可点击展开 / 收起
+      // 较长内容可点击展开 / 收起（展开态记录在数据上，重绘后保持）
       if (e.desc || e.title.length > 42) {
         item.classList.add('noti-item--expandable');
-        item.addEventListener('click', () => item.classList.toggle('noti-item--open'));
+        item.addEventListener('click', () => {
+          e.expanded = !e.expanded;
+          item.classList.toggle('noti-item--open', e.expanded);
+        });
       }
 
       notiListEl.appendChild(item);
     }
+    notiListEl.scrollTop = prevScroll;
   }
 
   function openNotiPanel() {
@@ -298,11 +309,10 @@
 
   function buildNotiCenter() {
     if (notiBtn) return;
-    const row = document.querySelector('.header-title-row');
-    if (!row) return;
 
     const wrap = document.createElement('div');
     wrap.className = 'noti-center';
+    notiCenterEl = wrap;
 
     notiBtn = document.createElement('button');
     notiBtn.type = 'button';
@@ -356,11 +366,45 @@
     wrap.appendChild(notiBtn);
     wrap.appendChild(notiPanel);
 
-    const logout = row.querySelector('.logout-btn');
-    if (logout) row.insertBefore(wrap, logout);
-    else row.appendChild(wrap);
-
+    placeNotiBell();
     updateNotiBadge();
+
+    // 头部会随视口/登录态切换：桌面 V2 用 .v2-appbar（旧 .fixed-header 被隐藏），
+    // 平板/移动用旧 .header-title-row。铃铛需跟随当前可见的头部。
+    window.addEventListener('resize', placeNotiBell);
+    new MutationObserver(placeNotiBell).observe(document.body, {
+      attributes: true,
+      attributeFilter: ['data-shell'],
+      childList: true,
+    });
+  }
+
+  // 把铃铛挂到当前可见的头部容器
+  function placeNotiBell() {
+    if (!notiCenterEl) return;
+    const appbarActions = document.querySelector('.v2-appbar__actions');
+    const legacyRow = document.querySelector('.header-title-row');
+    const isDesktop = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(min-width: 1025px)').matches
+      : false;
+    const desktopV2 = isDesktop
+      && document.body.getAttribute('data-shell') === 'v2'
+      && !!appbarActions;
+
+    let target = null;
+    let ref = null;
+    if (desktopV2) {
+      target = appbarActions;
+      ref = appbarActions.querySelector('#v2ThemeToggle, .v2-appbar__btn');
+    } else if (legacyRow) {
+      target = legacyRow;
+      ref = legacyRow.querySelector('.logout-btn');
+    }
+    if (!target || notiCenterEl.parentElement === target) return;
+
+    if (notiOpen) closeNotiPanel();
+    if (ref && ref.parentElement === target) target.insertBefore(notiCenterEl, ref);
+    else target.appendChild(notiCenterEl);
   }
 
   let lastInteractionTarget = null;
