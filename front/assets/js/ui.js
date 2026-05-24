@@ -29,8 +29,21 @@
    */
   function toast(opts) {
     opts = opts || {};
-    const region = ensureToastRegion();
     const kind = opts.kind || 'info';
+
+    // 所有消息都归档到消息中心，便于点开消息图标查看历史
+    recordNotification({
+      kind: kind,
+      title: opts.title || String(opts.message || ''),
+      desc: opts.description || '',
+    });
+
+    // 策略：仅 error / warning / danger 弹出顶部 toast；success / info 静默进入消息中心
+    if (!(opts.force === true || kind === 'error' || kind === 'danger' || kind === 'warning')) {
+      return { dismiss() {} };
+    }
+
+    const region = ensureToastRegion();
     const node = document.createElement('div');
     node.className = 'ac-toast toast toast--' + kind + ' ac-toast--' + kind;
     node.setAttribute('role', kind === 'error' || kind === 'danger' ? 'alert' : 'status');
@@ -97,6 +110,302 @@
     warning(message, options) { return this.warn(message, options); },
     info(message, options) { return toast({ ...(options || {}), kind: 'info', title: String(message || '') }); },
   };
+
+  /* -------- 消息中心 (Notification Center) -------- */
+  const NOTI_MAX = 60;
+  const notiStore = [];          // { id, ts, kind, title, desc, read }
+  let notiSeq = 0;
+  let notiCenterEl = null;
+  let notiBtn = null;
+  let notiBadge = null;
+  let notiPanel = null;
+  let notiListEl = null;
+  let notiOpen = false;
+
+  const NOTI_KIND_META = {
+    success: { icon: 'check-circle' },
+    error:   { icon: 'x-circle' },
+    danger:  { icon: 'x-circle' },
+    warning: { icon: 'alert-triangle' },
+    info:    { icon: 'info' },
+  };
+
+  function notiKindMeta(kind) { return NOTI_KIND_META[kind] || NOTI_KIND_META.info; }
+
+  function formatNotiTime(ts) {
+    const d = new Date(ts);
+    const pad = (n) => String(n).padStart(2, '0');
+    const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    // 非当天的消息带上日期，避免跨天误解
+    if (d.toDateString() === new Date().toDateString()) return time;
+    return `${d.getMonth() + 1}/${d.getDate()} ${time}`;
+  }
+
+  function unreadCount() {
+    let n = 0;
+    for (const e of notiStore) if (!e.read) n++;
+    return n;
+  }
+
+  function updateNotiBadge() {
+    if (!notiBadge) return;
+    const n = unreadCount();
+    if (n > 0) {
+      notiBadge.textContent = n > 99 ? '99+' : String(n);
+      notiBadge.hidden = false;
+    } else {
+      notiBadge.textContent = '';
+      notiBadge.hidden = true;
+    }
+  }
+
+  function recordNotification(entry) {
+    entry = entry || {};
+    const kind = entry.kind || 'info';
+    const title = String(entry.title || '').trim();
+    const desc = String(entry.desc || '').trim();
+    if (!title && !desc) return null;
+    const nTitle = title || desc;
+    const nDesc = title ? desc : '';
+
+    // 合并连续重复（如反复进入“使用统计”重复触发同一条“失效密钥 0 个”）
+    const top = notiStore[0];
+    if (top && top.kind === kind && top.title === nTitle && top.desc === nDesc) {
+      top.ts = Date.now();
+      top.count = (top.count || 1) + 1;
+      top.read = false;
+      updateNotiBadge();
+      if (notiOpen) renderNotiList();
+      return top;
+    }
+
+    const e = {
+      id: ++notiSeq,
+      ts: Date.now(),
+      kind: kind,
+      title: nTitle,
+      desc: nDesc,
+      read: false,
+      count: 1,
+    };
+    notiStore.unshift(e);
+    if (notiStore.length > NOTI_MAX) notiStore.length = NOTI_MAX;
+    updateNotiBadge();
+    if (notiOpen) renderNotiList();
+    return e;
+  }
+
+  function renderNotiList() {
+    if (!notiListEl) return;
+    const prevScroll = notiListEl.scrollTop;
+    notiListEl.textContent = '';
+    if (!notiStore.length) {
+      const empty = document.createElement('div');
+      empty.className = 'noti-empty';
+      if (window.icons) empty.appendChild(window.icons.create('inbox', { size: 28 }));
+      const p = document.createElement('p');
+      p.textContent = '暂无消息';
+      empty.appendChild(p);
+      notiListEl.appendChild(empty);
+      return;
+    }
+    for (const e of notiStore) {
+      const meta = notiKindMeta(e.kind);
+      const item = document.createElement('div');
+      item.className = 'noti-item noti-item--' + e.kind
+        + (e.read ? '' : ' noti-item--unread')
+        + (e.expanded ? ' noti-item--open' : '');
+
+      const icon = document.createElement('span');
+      icon.className = 'noti-item__icon';
+      if (window.icons) icon.appendChild(window.icons.create(meta.icon, { size: 16 }));
+      item.appendChild(icon);
+
+      const body = document.createElement('div');
+      body.className = 'noti-item__body';
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'noti-item__title';
+      titleEl.textContent = e.title;
+      if (e.count > 1) {
+        const cnt = document.createElement('span');
+        cnt.className = 'noti-item__count';
+        cnt.textContent = '×' + e.count;
+        titleEl.appendChild(cnt);
+      }
+      body.appendChild(titleEl);
+
+      if (e.desc) {
+        const descEl = document.createElement('div');
+        descEl.className = 'noti-item__desc';
+        descEl.textContent = e.desc;
+        body.appendChild(descEl);
+      }
+
+      const timeEl = document.createElement('div');
+      timeEl.className = 'noti-item__time';
+      timeEl.textContent = formatNotiTime(e.ts);
+      body.appendChild(timeEl);
+
+      item.appendChild(body);
+
+      // 较长内容可点击展开 / 收起（展开态记录在数据上，重绘后保持）
+      if (e.desc || e.title.length > 42) {
+        item.classList.add('noti-item--expandable');
+        item.addEventListener('click', () => {
+          e.expanded = !e.expanded;
+          item.classList.toggle('noti-item--open', e.expanded);
+        });
+      }
+
+      notiListEl.appendChild(item);
+    }
+    notiListEl.scrollTop = prevScroll;
+  }
+
+  function openNotiPanel() {
+    if (!notiPanel) return;
+    notiOpen = true;
+    renderNotiList();              // 先按当前已读状态渲染（保留未读高亮）
+    notiPanel.hidden = false;
+    if (notiBtn) notiBtn.setAttribute('aria-expanded', 'true');
+    // 打开即视为已读：清空角标，但本次查看仍保留高亮
+    for (const e of notiStore) e.read = true;
+    updateNotiBadge();
+    document.addEventListener('pointerdown', onNotiOutside, true);
+    document.addEventListener('keydown', onNotiKeydown, true);
+  }
+
+  function closeNotiPanel() {
+    if (!notiPanel) return;
+    notiOpen = false;
+    notiPanel.hidden = true;
+    if (notiBtn) notiBtn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('pointerdown', onNotiOutside, true);
+    document.removeEventListener('keydown', onNotiKeydown, true);
+  }
+
+  function toggleNotiPanel() { if (notiOpen) closeNotiPanel(); else openNotiPanel(); }
+
+  function onNotiOutside(ev) {
+    if (!notiOpen) return;
+    if (notiPanel.contains(ev.target) || (notiBtn && notiBtn.contains(ev.target))) return;
+    closeNotiPanel();
+  }
+
+  function onNotiKeydown(ev) { if (ev.key === 'Escape') closeNotiPanel(); }
+
+  function markAllRead() {
+    for (const e of notiStore) e.read = true;
+    updateNotiBadge();
+    if (notiOpen) renderNotiList();
+  }
+
+  function clearNoti() {
+    notiStore.length = 0;
+    updateNotiBadge();
+    renderNotiList();
+  }
+
+  function buildNotiCenter() {
+    if (notiBtn) return;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'noti-center';
+    notiCenterEl = wrap;
+
+    notiBtn = document.createElement('button');
+    notiBtn.type = 'button';
+    notiBtn.className = 'noti-bell';
+    notiBtn.title = '消息中心';
+    notiBtn.setAttribute('aria-label', '消息中心');
+    notiBtn.setAttribute('aria-haspopup', 'true');
+    notiBtn.setAttribute('aria-expanded', 'false');
+    if (window.icons) notiBtn.appendChild(window.icons.create('bell', { size: 18 }));
+
+    notiBadge = document.createElement('span');
+    notiBadge.className = 'noti-bell__badge';
+    notiBadge.hidden = true;
+    notiBtn.appendChild(notiBadge);
+    notiBtn.addEventListener('click', (ev) => { ev.stopPropagation(); toggleNotiPanel(); });
+
+    notiPanel = document.createElement('div');
+    notiPanel.className = 'noti-panel';
+    notiPanel.hidden = true;
+    notiPanel.setAttribute('role', 'dialog');
+    notiPanel.setAttribute('aria-label', '消息中心');
+
+    const head = document.createElement('div');
+    head.className = 'noti-panel__head';
+    const headTitle = document.createElement('span');
+    headTitle.className = 'noti-panel__title';
+    headTitle.textContent = '消息中心';
+    head.appendChild(headTitle);
+
+    const actions = document.createElement('div');
+    actions.className = 'noti-panel__actions';
+    const readBtn = document.createElement('button');
+    readBtn.type = 'button';
+    readBtn.className = 'noti-panel__action';
+    readBtn.textContent = '全部已读';
+    readBtn.addEventListener('click', (ev) => { ev.stopPropagation(); markAllRead(); });
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'noti-panel__clear';
+    clearBtn.textContent = '清空';
+    clearBtn.addEventListener('click', (ev) => { ev.stopPropagation(); clearNoti(); });
+    actions.appendChild(readBtn);
+    actions.appendChild(clearBtn);
+    head.appendChild(actions);
+    notiPanel.appendChild(head);
+
+    notiListEl = document.createElement('div');
+    notiListEl.className = 'noti-list';
+    notiPanel.appendChild(notiListEl);
+
+    wrap.appendChild(notiBtn);
+    wrap.appendChild(notiPanel);
+
+    placeNotiBell();
+    updateNotiBadge();
+
+    // 头部会随视口/登录态切换：桌面 V2 用 .v2-appbar（旧 .fixed-header 被隐藏），
+    // 平板/移动用旧 .header-title-row。铃铛需跟随当前可见的头部。
+    window.addEventListener('resize', placeNotiBell);
+    new MutationObserver(placeNotiBell).observe(document.body, {
+      attributes: true,
+      attributeFilter: ['data-shell'],
+      childList: true,
+    });
+  }
+
+  // 把铃铛挂到当前可见的头部容器
+  function placeNotiBell() {
+    if (!notiCenterEl) return;
+    const appbarActions = document.querySelector('.v2-appbar__actions');
+    const legacyRow = document.querySelector('.header-title-row');
+    const isDesktop = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(min-width: 1025px)').matches
+      : false;
+    const desktopV2 = isDesktop
+      && document.body.getAttribute('data-shell') === 'v2'
+      && !!appbarActions;
+
+    let target = null;
+    let ref = null;
+    if (desktopV2) {
+      target = appbarActions;
+      ref = appbarActions.querySelector('#v2ThemeToggle, .v2-appbar__btn');
+    } else if (legacyRow) {
+      target = legacyRow;
+      ref = legacyRow.querySelector('.logout-btn');
+    }
+    if (!target || notiCenterEl.parentElement === target) return;
+
+    if (notiOpen) closeNotiPanel();
+    if (ref && ref.parentElement === target) target.insertBefore(notiCenterEl, ref);
+    else target.appendChild(notiCenterEl);
+  }
 
   let lastInteractionTarget = null;
   function rememberInteractionTarget(event) {
@@ -371,16 +680,22 @@
   }
 
   /* showStatus 兼容：原签名 showStatus(message, type)
-   * type 可能是 'info' | 'success' | 'error' | 'warning' */
+   * type: 'info' | 'success' | 'error' | 'warning'
+   * 另支持伪类型 'progress'/'loading'：进行中的提示，强制弹窗（不受
+   * “仅 error/warning 弹窗”策略静默），用 info 样式展示。 */
   if (!window.__originalShowStatus) {
     const origShowStatus = window.showStatus;
     window.__originalShowStatus = origShowStatus;
     window.showStatus = function (message, type) {
       try {
+        let kind = type || inferKind(message);
+        let force = false;
+        if (kind === 'progress' || kind === 'loading') { kind = 'info'; force = true; }
         toast({
-          kind: type || inferKind(message),
+          kind: kind,
           title: String(message || ''),
           duration: 4500,
+          force: force,
         });
       } catch (e) {
         if (typeof origShowStatus === 'function') {
@@ -392,16 +707,28 @@
     };
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initModalInteractions, { once: true });
-  } else {
+  function initUiEnhancements() {
     initModalInteractions();
+    buildNotiCenter();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initUiEnhancements, { once: true });
+  } else {
+    initUiEnhancements();
   }
 
   /* -------- 暴露 -------- */
   window.ui = window.ui || {};
   window.ui.toast = toast;
   window.ui.notify = notify;
+  window.ui.notiCenter = {
+    record: recordNotification,
+    open: openNotiPanel,
+    close: closeNotiPanel,
+    markAllRead: markAllRead,
+    clear: clearNoti,
+  };
   window.ui.confirmDialog = confirmDialog;
   window.ui.closeModal = closeManagedModal;
   window.ui.syncModalOpenState = syncModalOpenState;
