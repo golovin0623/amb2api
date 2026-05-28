@@ -1268,7 +1268,7 @@ html body #loginSection .login-subtitle .lock-icon {
     padding: 0 var(--s-4) !important;
   }
   html body .pagination-btn {
-    width: 40px !important;
+    min-width: 40px !important;
     height: 40px !important;
   }
 }
