@@ -498,12 +498,12 @@ html body #ratelimitTab .v2-rl-card__idle-text {
 }
 
 /* 暗色模式 */
-[data-theme="dark"] html body #ratelimitTab .v2-rl-toolbar,
-[data-theme="dark"] html body #ratelimitTab .v2-rl-kpi,
-[data-theme="dark"] html body #ratelimitTab .v2-rl-card {
+html[data-theme="dark"] body #ratelimitTab .v2-rl-toolbar,
+html[data-theme="dark"] body #ratelimitTab .v2-rl-kpi,
+html[data-theme="dark"] body #ratelimitTab .v2-rl-card {
   background: var(--bg-overlay);
 }
-[data-theme="dark"] html body #ratelimitTab .v2-rl-toolbar__btn {
+html[data-theme="dark"] body #ratelimitTab .v2-rl-toolbar__btn {
   background: var(--ink-pure);
   color: var(--ink-inverse);
   border-color: var(--ink-hairline);
