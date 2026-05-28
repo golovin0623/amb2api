@@ -411,7 +411,7 @@ html body .theme-toggle #themeText { display: none; }
       0 1px 2px oklch(0 0 0 / 0.28) !important;
   }
   html body .tab {
-    min-height: 34px !important;
+    min-height: 40px !important;
     padding: 0 var(--s-3) !important;
     border-radius: var(--r-2) !important;
     color: var(--ink-secondary) !important;
