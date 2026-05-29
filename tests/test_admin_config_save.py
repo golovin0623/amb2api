@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+import config
 from src.api import admin_routes
 
 
@@ -138,27 +139,24 @@ async def test_get_all_config_redacts_sensitive_values(monkeypatch):
     assert cfg["max_tokens_mode"] == "off"
 
 
-@pytest.mark.asyncio
-async def test_get_config_enable_real_streaming_defaults_true(monkeypatch):
-    """When nothing is stored, /config/get must report the runtime default for
-    enable_real_streaming (True). A False default here caused the panel to render
-    the toggle unchecked and silently persist False on the next save, disabling
-    native streaming. Regression guard for that mismatch."""
+def _patch_config_get_isolation(monkeypatch):
+    """Make /config/get's adapter + password helpers inert so a test only
+    exercises the enable_real_streaming resolution path."""
 
     class _EmptyAdapter:
         async def get_config(self, key, default=None):
-            # Nothing stored: always fall back to the caller-provided default.
             return default
 
     async def fake_get_storage_adapter():
         return _EmptyAdapter()
 
+    # admin_routes reads its own adapter; config.get_config_value reads config's.
     monkeypatch.setattr(admin_routes, "get_storage_adapter", fake_get_storage_adapter)
+    monkeypatch.setattr(config, "get_storage_adapter", fake_get_storage_adapter)
 
     async def _empty(*args, **kwargs):
         return ""
 
-    # Isolate from real password/key resolution so we only exercise config/get defaults.
     for name in (
         "get_assembly_api_key",
         "get_assembly_api_keys",
@@ -169,9 +167,35 @@ async def test_get_config_enable_real_streaming_defaults_true(monkeypatch):
     ):
         monkeypatch.setattr(admin_routes, name, _empty)
 
+
+@pytest.mark.asyncio
+async def test_get_config_enable_real_streaming_defaults_true(monkeypatch):
+    """When nothing is stored, /config/get must report the runtime default for
+    enable_real_streaming (True). A False default here caused the panel to render
+    the toggle unchecked and silently persist False on the next save, disabling
+    native streaming. Regression guard for that mismatch."""
+
+    _patch_config_get_isolation(monkeypatch)
     monkeypatch.delenv("ENABLE_REAL_STREAMING", raising=False)
 
     response = await admin_routes.get_config(token="test-token")
     cfg = json.loads(response.body)["config"]
 
     assert cfg["enable_real_streaming"] is True
+
+
+@pytest.mark.asyncio
+async def test_get_config_enable_real_streaming_reflects_env_override(monkeypatch):
+    """/config/get must report the *effective* value, not just the storage
+    default. With ENABLE_REAL_STREAMING=false in the env and nothing persisted,
+    the runtime getter returns False, so the panel must show the toggle off —
+    otherwise operators see the opposite of runtime and could persist the wrong
+    value. Regression guard for the env-override mismatch."""
+
+    _patch_config_get_isolation(monkeypatch)
+    monkeypatch.setenv("ENABLE_REAL_STREAMING", "false")
+
+    response = await admin_routes.get_config(token="test-token")
+    cfg = json.loads(response.body)["config"]
+
+    assert cfg["enable_real_streaming"] is False

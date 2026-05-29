@@ -17,6 +17,7 @@ from config import (
     get_assembly_api_keys,
     get_server_port,
     get_server_host,
+    get_enable_real_streaming,
 )
 from ..storage.storage_adapter import get_storage_adapter
 # 统计功能已迁移到 unified_stats 模块
@@ -148,7 +149,9 @@ async def get_config(token: str = Depends(authenticate)):
         cfg["max_tokens_mode"] = await adapter.get_config("max_tokens_mode", "off")
         cfg["fake_stream_enabled"] = await adapter.get_config("fake_stream_enabled", False)
         cfg["fake_stream_speed"] = await adapter.get_config("fake_stream_speed", 100)
-        cfg["enable_real_streaming"] = await adapter.get_config("enable_real_streaming", True)
+        # Report the effective value (env override > stored > default True), not just
+        # the storage default, so the panel never shows the opposite of runtime.
+        cfg["enable_real_streaming"] = await get_enable_real_streaming()
         cfg["stream_keepalive_seconds"] = await adapter.get_config("stream_keepalive_seconds", 0)
         cfg["stream_bootstrap_retries"] = await adapter.get_config("stream_bootstrap_retries", 1)
         cfg["prompt_cache_enabled"] = await adapter.get_config("prompt_cache_enabled", True)
