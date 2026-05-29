@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AMB2API 管理面板</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f172a'/%3E%3Cpath d='M16 42h32l-5 8H21zM31 12h3v28h-3zM34 16l15 20H34zM30 18L15 36h15z' fill='%23f8fafc'/%3E%3C/svg%3E">
     <style>
@@ -2769,7 +2769,7 @@
 
         .upload-area.dragover {
             border-color: #4285f4;
-            background-color: #f0f8ff;
+            background-color: var(--hover-bg);
         }
 
         .file-list {
@@ -2777,8 +2777,8 @@
         }
 
         .file-item {
-            background-color: #f8f9fa;
-            border: 1px solid #e1e4e8;
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
             border-radius: 3px;
             padding: 10px;
             margin: 5px 0;
@@ -2789,11 +2789,11 @@
 
         .file-item .file-name {
             font-family: monospace;
-            color: #333;
+            color: var(--text-color);
         }
 
         .file-item .file-size {
-            color: #666;
+            color: var(--text-secondary);
             font-size: 12px;
         }
 
@@ -2808,8 +2808,8 @@
         }
 
         .upload-progress {
-            background-color: #f8f9fa;
-            border: 1px solid #e1e4e8;
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
             border-radius: 5px;
             padding: 15px;
             margin: 20px 0;
@@ -2841,7 +2841,7 @@
             min-width: 600px;
         }
 
-        @media (max-width: 480px) {
+        @media (max-width: 768px) {
             .cred-card {
                 min-width: auto;
             }
@@ -5960,11 +5960,12 @@
                 width: 65px !important;
             }
 
-            /* 操作按钮缩小 */
+            /* 操作按钮：移动端保持可读与可点（避免 9px 难以辨识/点击） */
             .key-table td:last-child .btn,
             .key-table td:last-child button {
-                padding: 3px 5px !important;
-                font-size: 9px !important;
+                padding: 6px 8px !important;
+                font-size: 11px !important;
+                min-height: 28px !important;
             }
 
             /* 分页更紧凑 */
@@ -7952,7 +7953,7 @@
                             <div id="accountSubCost" class="hidden">
                                 <div class="config-group">
                                     <h4>成本分析 <button class="btn btn-sm"
-                                            onclick="console.log('Refresh clicked'); loadAccountCost(true)"
+                                            onclick="loadAccountCost(true)"
                                             style="margin-left: 12px; padding: 6px 16px; font-size: 13px;">刷新</button>
                                     </h4>
 
@@ -8008,6 +8009,15 @@
                                                     class="cost-view-btn"
                                                     style="padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--card-bg); cursor: pointer; font-size: 12px;">列表</button>
                                             </div>
+                                        </div>
+
+                                        <!-- 已应用的筛选条件标签 -->
+                                        <div id="costActiveFilters" class="hidden"
+                                            style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; padding: 6px 10px; background: var(--hover-bg); border-radius: 8px;">
+                                            <span
+                                                style="font-size: 12px; color: var(--text-secondary);">已应用:</span>
+                                            <div id="costActiveFilterTags"
+                                                style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
                                         </div>
 
                                         <!-- 日期筛选面板 -->
@@ -10795,17 +10805,10 @@
 
         async function credAction(filename, action) {
             try {
-                console.log('Performing action:', action, 'on file:', filename);
-                console.log('Filename type:', typeof filename);
-                console.log('Filename length:', filename.length);
-                console.log('Ends with .json:', filename.endsWith('.json'));
-
                 const requestBody = {
                     filename: filename,
                     action: action
                 };
-
-                console.log('Request body:', requestBody);
 
                 const response = await fetch('/creds/action', {
                     method: 'POST',
@@ -15953,7 +15956,6 @@
 
                     // 使用合并的 overview API 减少请求数量（1个请求代替3个）
                     // 同时并发加载 usage、cost、rates
-                    console.log('Starting parallel data loading for account:', email);
                     const startTime = Date.now();
 
                     // 使用 Promise.allSettled 来跟踪所有请求的完成情况
@@ -16025,11 +16027,9 @@
                 if (force) params.append('force', '1');
                 params.append('account_email', currentAccountEmail);
 
-                console.log('Loading overview data for:', currentAccountEmail);
                 const res = await fetch('/api/account/overview?' + params.toString(), { headers: getAuthHeaders() });
                 if (!res.ok) throw new Error('加载概览数据失败');
                 const data = await res.json();
-                console.log('Overview data received:', data);
 
                 // 更新 info 缓存和显示
                 if (data.info) {
@@ -16155,7 +16155,6 @@
                         // 使用合并的 overview API 加载概览数据（1个请求代替3个）
                         // 同时并发加载 usage、cost、rates
                         // 首次加载不强制刷新，优先使用预加载缓存
-                        console.log('Initial load: Starting parallel data loading for account:', currentAccountEmail);
                         Promise.allSettled([
                             loadAccountOverviewData(false),  // 合并的 info + billing + apiKeys，优先使用缓存
                             loadAccountUsage(false, true),   // 优先使用缓存
@@ -16825,7 +16824,6 @@
                     params.append('_t', Date.now());  // 防止浏览器缓存
                 }
                 if (currentAccountEmail) params.append('account_email', currentAccountEmail);
-                console.log('Fetching usage data for:', currentAccountEmail, 'force:', force, 'silent:', silent);
                 const res = await fetch('/api/account/usage?' + params.toString(), { headers: getAuthHeaders() });
                 if (!res.ok) throw new Error('加载失败');
                 const data = await res.json();
@@ -19238,7 +19236,6 @@
                 params.append('region', region);
                 if (force) params.append('force', '1');
                 if (currentAccountEmail) params.append('account_email', currentAccountEmail);
-                console.log('Fetching rates data for:', currentAccountEmail, 'force:', force, 'silent:', silent);
                 const res = await fetch(`/api/account/rates?${params.toString()}`, { headers: getAuthHeaders() });
                 if (!res.ok) throw new Error('加载失败');
                 const data = await res.json();

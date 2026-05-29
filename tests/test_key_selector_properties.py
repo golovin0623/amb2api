@@ -75,7 +75,7 @@ class TestKeySelector:
                     assert selected.enabled, f"Selected key {selected.index} should be enabled"
                     assert selected.index not in valid_disabled, f"Selected key {selected.index} should not be disabled"
         
-        asyncio.get_event_loop().run_until_complete(run_test())
+        asyncio.run(run_test())
     
     # Feature: api-key-management-enhancement, Property 15: 轮询模式顺序性
     # **Validates: Requirements 5.1**
@@ -101,7 +101,7 @@ class TestKeySelector:
             for i in range(num_keys):
                 assert counts[i] == 2, f"Key {i} should be selected exactly 2 times, got {counts[i]}"
         
-        asyncio.get_event_loop().run_until_complete(run_test())
+        asyncio.run(run_test())
     
     # Feature: api-key-management-enhancement, Property 16: 随机模式分布性
     # **Validates: Requirements 5.2**
@@ -132,7 +132,7 @@ class TestKeySelector:
                 expected_min = num_selections / num_keys * 0.1
                 assert counts[i] >= expected_min, f"Key {i} selection count {counts[i]} is too low"
         
-        asyncio.get_event_loop().run_until_complete(run_test())
+        asyncio.run(run_test())
     
     # Feature: api-key-management-enhancement, Property 17: 轮询模式错误跳过
     # **Validates: Requirements 5.4**
@@ -159,7 +159,7 @@ class TestKeySelector:
                 # 验证不会选中失败的密钥
                 assert selected.index != failed_index, f"Failed key {failed_index} should not be selected"
         
-        asyncio.get_event_loop().run_until_complete(run_test())
+        asyncio.run(run_test())
     
     # Feature: api-key-management-enhancement, Property 18: 随机模式错误重试
     # **Validates: Requirements 5.5**
@@ -199,7 +199,7 @@ class TestKeySelector:
             # 验证之前失败的密钥现在可以被选中
             assert failed_index in selected_indices, f"Cleared key {failed_index} should be selectable"
         
-        asyncio.get_event_loop().run_until_complete(run_test())
+        asyncio.run(run_test())
     
     def test_exhausted_key_skip(self, selector):
         """测试已用尽密钥跳过"""
@@ -218,7 +218,7 @@ class TestKeySelector:
                 assert selected.status != KeyStatus.EXHAUSTED, "Exhausted key should not be selected"
                 assert selected.index != 1, "Key 1 (exhausted) should not be selected"
         
-        asyncio.get_event_loop().run_until_complete(run_test())
+        asyncio.run(run_test())
     
     def test_should_rotate(self, selector):
         """测试轮换判断"""
@@ -247,7 +247,7 @@ class TestKeySelector:
             selected = await selector.select_next_key(keys)
             assert selected is None, "Should return None when no keys available"
         
-        asyncio.get_event_loop().run_until_complete(run_test())
+        asyncio.run(run_test())
     
     def test_mode_change(self, selector):
         """测试模式切换"""
@@ -280,7 +280,7 @@ class TestKeySelector:
             assert selected is not None
             assert selected.index == 1
 
-        asyncio.get_event_loop().run_until_complete(run_test())
+        asyncio.run(run_test())
 
     def test_fill_first_ignores_calls_per_rotation(self):
         """测试填充优先模式忽略 calls_per_rotation，仅在配额耗尽时轮换"""
@@ -347,7 +347,7 @@ class TestKeySelectorIntegration:
                 except Exception:
                     pass
         
-        asyncio.get_event_loop().run_until_complete(run_test())
+        asyncio.run(run_test())
 
 
 if __name__ == "__main__":
