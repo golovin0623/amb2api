@@ -1,7 +1,10 @@
 services:
   amb2api:
     platform: ${PLATFORM:-linux/amd64}
-    image: golovin0623/amb2api:latest
+    # 镜像版本: 默认 latest (手动 docker compose up -d 时); CI 部署会通过
+    # IMAGE_TAG 环境变量钉到具体 commit 的 sha-<7位> 标签, 避免并发 push
+    # 时 latest 被后一次构建覆盖导致部署到错误版本.
+    image: golovin0623/amb2api:${IMAGE_TAG:-latest}
     container_name: amb2api
     restart: unless-stopped
     ports:

@@ -277,19 +277,24 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          # 钉到本次构建产出的精确镜像 tag (sha-<7位>), 而不是 latest ——
+          # 防止并发 push 时后一次 build 覆盖 latest 导致部署到错误 commit.
+          # docker-compose.yml 用 ${IMAGE_TAG:-latest} 接收, 手动部署仍回落 latest.
+          IMAGE_TAG: sha-${{ needs.docker-build-push.outputs.short_sha }}
         with:
           host: ${{ secrets.DEPLOY_SSH_HOST }}
           port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
           username: ${{ secrets.DEPLOY_SSH_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
-          envs: DEPLOY_PATH
+          envs: DEPLOY_PATH,IMAGE_TAG
           command_timeout: 10m
           script: |
             set -e
             cd "${DEPLOY_PATH:-/root/amb2api}"
             echo "==> 部署目录: $(pwd)"
-            echo "==> 拉取最新镜像..."
+            echo "==> 目标镜像 tag: ${IMAGE_TAG:-latest}"
+            echo "==> 拉取镜像..."
             docker compose pull
             echo "==> 重启服务..."
             docker compose up -d

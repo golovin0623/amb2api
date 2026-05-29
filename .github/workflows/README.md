@@ -75,10 +75,15 @@ docker compose up -d     # 用新镜像重启容器
 docker image prune -f    # 清理旧镜像
 ```
 
-因为 `docker-compose.yml` 里镜像写的是 `golovin0623/amb2api:latest`，
-而 `docker-build-push` job 每次都会把 `:latest` 指向最新 commit，所以
-服务器 `pull` 到的就是最新版本。整条链路不需要在应用里开 webhook 接口，
-也不需要把 `docker.sock` 挂进容器。
+`docker-compose.yml` 里镜像写的是 `golovin0623/amb2api:${IMAGE_TAG:-latest}`：
+CI 部署时会把 `IMAGE_TAG` 钉到本次构建的 `sha-<7位>` 精确标签，避免短时间内
+连续 push 时后一次构建覆盖 `:latest` 导致部署到错误 commit；你在服务器上手动
+`docker compose up -d`（不带该变量）时则回落到 `:latest`。整条链路不需要在应用里
+开 webhook 接口，也不需要把 `docker.sock` 挂进容器。
+
+> 服务器上的 `docker-compose.yml` 需要同样使用 `${IMAGE_TAG:-latest}` 这一行，
+> 版本钉选才会生效；如果服务器副本仍是硬编码的 `:latest`，部署不会报错，只是
+> 退回"拉 latest"的旧行为。
 
 ## 常用操作
 
