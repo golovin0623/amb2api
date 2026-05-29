@@ -15690,7 +15690,7 @@
         async function saveSelectedModels() {
             // 如果弹窗打开，优先从弹窗勾选收集
             const modal = document.getElementById('modelsModal');
-            if (modal && modal.style.display === 'block') {
+            if (modal && modal.style.display && modal.style.display !== 'none') {
                 selectedModels = collectCheckedModels();
             }
             try {
