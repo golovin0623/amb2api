@@ -248,61 +248,56 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Trigger deployment webhook
+      # 部署方式: GitHub Actions 通过 SSH 登录服务器, 在 compose 目录里执行
+      # `docker compose pull && up -d` 拉取并切换到刚 push 的新镜像.
+      # 不需要在应用里开 webhook 接口, 也不需要把 docker.sock 挂进容器.
+      #
+      # 需要在仓库 Settings → Secrets and variables → Actions 配置:
+      #   DEPLOY_SSH_HOST      服务器 IP 或域名 (必填, 缺失则本 job 直接跳过)
+      #   DEPLOY_SSH_USER      SSH 用户名 (如 root)
+      #   DEPLOY_SSH_KEY       SSH 私钥全文 (推荐) —— 与 DEPLOY_SSH_PASSWORD 二选一
+      #   DEPLOY_SSH_PASSWORD  SSH 登录密码 —— 与 DEPLOY_SSH_KEY 二选一
+      #   DEPLOY_SSH_PORT      SSH 端口 (可选, 默认 22)
+      #   DEPLOY_PATH          服务器上 docker-compose.yml 所在目录 (可选, 默认 /root/amb2api)
+      - name: Check SSH deploy config
+        id: ssh
         env:
-          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
-          DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
-          DEPLOY_WEBHOOK_TOKEN: ${{ secrets.DEPLOY_WEBHOOK_TOKEN }}
-          IMAGE_REF: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}
-          IMAGE_TAG: sha-${{ needs.docker-build-push.outputs.short_sha }}
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
         run: |
           set -euo pipefail
-
-          if [ -z "${DEPLOY_WEBHOOK_URL:-}" ]; then
-            echo "DEPLOY_WEBHOOK_URL is empty. Skip deploy webhook."
-            exit 0
-          fi
-
-          # 构造 JSON 报文 —— 签名必须基于请求体按字节一致计算
-          # (与 AetherBlog ops/webhook HMAC 验签流程兼容).
-          body=$(printf '{"image":"%s","tag":"%s","ref":"%s","sha":"%s"}' \
-            "$IMAGE_REF" "$IMAGE_TAG" "$GITHUB_REF" "$GITHUB_SHA")
-
-          auth_args=()
-          if [ -n "${DEPLOY_WEBHOOK_SECRET:-}" ]; then
-            # HMAC-SHA256 (推荐): 与 GitHub 风格 X-Hub-Signature-256 兼容.
-            sig=$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$DEPLOY_WEBHOOK_SECRET" -hex | awk '{print $NF}')
-            auth_args+=(-H "X-Hub-Signature-256: sha256=$sig")
-            echo "Using HMAC-SHA256 webhook signature"
-          elif [ -n "${DEPLOY_WEBHOOK_TOKEN:-}" ]; then
-            # Bearer Token (向后兼容现有部署 webhook).
-            auth_args+=(-H "Authorization: Bearer ${DEPLOY_WEBHOOK_TOKEN}")
-            echo "Using Bearer webhook token (legacy fallback)"
+          if [ -z "${DEPLOY_SSH_HOST:-}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::DEPLOY_SSH_HOST 未配置, 跳过自动部署. 在仓库 Settings → Secrets 里配好 SSH secrets 即可启用."
           else
-            echo "Neither DEPLOY_WEBHOOK_SECRET nor DEPLOY_WEBHOOK_TOKEN configured —— sending unsigned request"
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
-          response_file=$(mktemp)
-          http_code=$(curl -sS -X POST \
-            --max-time 900 \
-            --connect-timeout 10 \
-            --retry 2 \
-            --retry-delay 2 \
-            --retry-connrefused \
-            -H "Content-Type: application/json" \
-            "${auth_args[@]}" \
-            --data-raw "$body" \
-            -o "$response_file" \
-            -w "%{http_code}" \
-            "$DEPLOY_WEBHOOK_URL")
-
-          echo "Webhook HTTP status: $http_code"
-          echo "Webhook response:"
-          cat "$response_file"
-
-          if [ "$http_code" != "200" ]; then
-            echo "❌ Deployment failed, webhook status: $http_code"
-            exit 1
-          fi
-
-          echo "✅ Deployment completed successfully"
+      - name: Deploy over SSH
+        if: steps.ssh.outputs.enabled == 'true'
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          # 钉到本次构建产出的精确镜像 tag (sha-<7位>), 而不是 latest ——
+          # 防止并发 push 时后一次 build 覆盖 latest 导致部署到错误 commit.
+          # docker-compose.yml 用 ${IMAGE_TAG:-latest} 接收, 手动部署仍回落 latest.
+          IMAGE_TAG: sha-${{ needs.docker-build-push.outputs.short_sha }}
+        with:
+          host: ${{ secrets.DEPLOY_SSH_HOST }}
+          port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
+          username: ${{ secrets.DEPLOY_SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
+          envs: DEPLOY_PATH,IMAGE_TAG
+          command_timeout: 10m
+          script: |
+            set -e
+            cd "${DEPLOY_PATH:-/root/amb2api}"
+            echo "==> 部署目录: $(pwd)"
+            echo "==> 目标镜像 tag: ${IMAGE_TAG:-latest}"
+            echo "==> 拉取镜像..."
+            docker compose pull
+            echo "==> 重启服务..."
+            docker compose up -d
+            echo "==> 清理旧镜像..."
+            docker image prune -f
+            echo "✅ 部署完成"
