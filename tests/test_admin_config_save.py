@@ -136,3 +136,42 @@ async def test_get_all_config_redacts_sensitive_values(monkeypatch):
     assert cfg["postgres_dsn"] == "已隐藏敏感值"
     assert cfg["available_models_selected"] == ["model-a"]
     assert cfg["max_tokens_mode"] == "off"
+
+
+@pytest.mark.asyncio
+async def test_get_config_enable_real_streaming_defaults_true(monkeypatch):
+    """When nothing is stored, /config/get must report the runtime default for
+    enable_real_streaming (True). A False default here caused the panel to render
+    the toggle unchecked and silently persist False on the next save, disabling
+    native streaming. Regression guard for that mismatch."""
+
+    class _EmptyAdapter:
+        async def get_config(self, key, default=None):
+            # Nothing stored: always fall back to the caller-provided default.
+            return default
+
+    async def fake_get_storage_adapter():
+        return _EmptyAdapter()
+
+    monkeypatch.setattr(admin_routes, "get_storage_adapter", fake_get_storage_adapter)
+
+    async def _empty(*args, **kwargs):
+        return ""
+
+    # Isolate from real password/key resolution so we only exercise config/get defaults.
+    for name in (
+        "get_assembly_api_key",
+        "get_assembly_api_keys",
+        "get_api_password",
+        "get_panel_password",
+        "get_server_port",
+        "get_server_host",
+    ):
+        monkeypatch.setattr(admin_routes, name, _empty)
+
+    monkeypatch.delenv("ENABLE_REAL_STREAMING", raising=False)
+
+    response = await admin_routes.get_config(token="test-token")
+    cfg = json.loads(response.body)["config"]
+
+    assert cfg["enable_real_streaming"] is True
