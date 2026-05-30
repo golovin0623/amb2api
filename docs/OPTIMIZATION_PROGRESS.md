@@ -32,7 +32,12 @@
 | 11 | 存储层死方法移除（4 后端 + Protocol + facade） | ✅ | refactor(storage): remove dead per-file usage-stats |
 | 12 | 存储模板 gemini 残键清零（src/ 零 gemini_2_5_pro） | ✅ | refactor(storage): drop inert gemini keys |
 
-净删 ~1583 行 fork 死代码；新增回归测试：auth / shared_http_client / config_cache / log_rotation / multimodal。
+| 13 | 限流双系统统一到 RateLimiter（单一真相源） | ✅ | 8ffad4f |
+| 14 | 限流保存去抖 5s + lifespan flush | ✅ | bb6cd3e |
+| 15 | 优雅关闭刷新 unified_stats | ✅ | baeba37 |
+| 16 | 删 2 个永不服务的 HTML（21,849 行死代码） | ✅ | 0e27792 |
+
+净删 ~23,700 行（含 fork 死代码 + 死 HTML）；新增回归测试：auth / shared_http_client / config_cache / log_rotation / multimodal / graceful_flush，重写 2 个限流测试。C、E 经验证为"无需改动/架构级"（见主分析报告第十节）。
 
 ---
 
