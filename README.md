@@ -146,13 +146,15 @@ docker-compose up -d
 
 #### 安装步骤
 
-1. 安装依赖：
+1. 安装依赖（以 `pyproject.toml` 为准，无 requirements.txt）：
 ```bash
-# 使用 pip
-pip install -r requirements.txt
+# 使用 pip（运行时依赖）
+pip install -e .
+# 含开发/测试依赖（pytest + hypothesis）
+pip install -e . --group dev
 
 # 或使用 uv（更快）
-uv pip install -r requirements.txt
+uv sync
 ```
 
 2. 配置环境变量：
@@ -480,8 +482,7 @@ amb2api/
 ├── log.py                        # 日志模块
 ├── docker-compose.yml            # Docker Compose 配置
 ├── Dockerfile                    # Docker 镜像构建
-├── requirements.txt              # Python 依赖
-├── pyproject.toml               # 项目元数据
+├── pyproject.toml                # 项目元数据与依赖（单一事实源）
 └── .env.example                 # 环境变量示例
 
 ```
@@ -503,11 +504,11 @@ amb2api/
 ### 运行测试
 
 ```bash
-# 安装开发依赖
-pip install -r requirements.txt
+# 安装开发依赖（pytest + hypothesis 在 [dependency-groups].dev）
+pip install -e . --group dev
 
-# 运行测试（如果有）
-pytest
+# 运行测试
+python -m pytest -q
 ```
 
 ## 故障排查
@@ -627,22 +628,7 @@ tail -f log.txt
 
 ## 相关文档
 
-### 速率限制追踪功能 ⭐
-- **[RATE_LIMIT_INDEX.md](./RATE_LIMIT_INDEX.md)** - 📚 文档索引（推荐从这里开始）
-- [RATE_LIMIT_UI_GUIDE.md](./RATE_LIMIT_UI_GUIDE.md) - 🖥️ Web 界面使用指南
-- [RATE_LIMIT_QUICKSTART.md](./RATE_LIMIT_QUICKSTART.md) - 🚀 5分钟快速上手
-- [RATE_LIMIT_TRACKING.md](./RATE_LIMIT_TRACKING.md) - 📖 完整技术文档
-- [RATE_LIMIT_API_USAGE.md](./RATE_LIMIT_API_USAGE.md) - 💻 API 使用指南
-- [RATE_LIMIT_FEATURE_SUMMARY.md](./RATE_LIMIT_FEATURE_SUMMARY.md) - 📝 功能总结
-- [API_KEY_ROTATION_FIX.md](./API_KEY_ROTATION_FIX.md) - 🔧 Key 轮换机制优化
-- [IMPLEMENTATION_COMPLETE.md](./IMPLEMENTATION_COMPLETE.md) - ✅ 实现完成总结
-
-### 问题修复
-- [USAGE_STATS_FIX.md](./USAGE_STATS_FIX.md) - 使用统计冗余数据修复
-- [TOOL_CALLS_FIX.md](./TOOL_CALLS_FIX.md) - Tool Calls 支持修复
-- [LOGGING_IMPROVEMENTS.md](./LOGGING_IMPROVEMENTS.md) - 日志系统优化
-
-### 开发指南
-- [DEBUG_GUIDE.md](./DEBUG_GUIDE.md) - 调试指南
-- [LOGGING_GUIDE.md](./LOGGING_GUIDE.md) - 日志使用指南
-- [QUICK_REFERENCE.md](./QUICK_REFERENCE.md) - 快速参考
+- [docs/anthropic_compat_contract.md](./docs/anthropic_compat_contract.md) — Anthropic 兼容契约（v1 冻结范围）
+- [docs/PRODUCT_ANALYSIS_2026-05-30.md](./docs/PRODUCT_ANALYSIS_2026-05-30.md) — 产品深度诊断报告与优化路线图
+- [CLAUDE.md](./CLAUDE.md) / [AGENTS.md](./AGENTS.md) — 面向贡献者/代理的架构与改动约定
+- 环境变量示例见 [.env.example](./.env.example)

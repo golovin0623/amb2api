@@ -1,6 +1,7 @@
 """
-Configuration constants for the Geminicli2api proxy server.
-Centralizes all configuration to avoid duplication across modules.
+Configuration for the amb2api proxy server (AssemblyAI LLM Gateway,
+OpenAI + Anthropic compatible). Centralizes config resolution
+(env -> storage -> default) so panel-writable settings stay consistent.
 """
 import os
 import time
