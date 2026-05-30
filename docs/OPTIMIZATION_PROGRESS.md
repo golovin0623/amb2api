@@ -59,19 +59,19 @@
 
 | 项 | 状态 | 备注 |
 |----|------|------|
-| **T. per-user token 多租户** | ⏳ | token 发放/存储 + API 面鉴权按 token + 每 token 配额 + 面板管理。最大新能力 |
-| **U. 前端 V2 收尾** | ⬜ | 用户选"收尾"(非回滚)：删旧内联 CSS 的 !important 战争、localStorage→更安全、暗色/移动/a11y、统一通知。19.8k 单体，小步提交+每步验 /ui |
+| **T. per-user token 多租户** | ✅ | T1-T6 全完成：TokenManager + API 面鉴权 + 原子配额 + /api/tokens CRUD + 面板"用户令牌"页 |
+| **U. 前端 V2 收尾** | ⏳ | 用户选"收尾"(非回滚)：localStorage 口令更安全、清 console.*、统一通知、暗色/移动/a11y。19.8k 单体，小步提交+每步验 /ui + node --check |
 
 ### 多租户(T)拆解清单
 - [x] T1 数据模型 + TokenManager（quota/模型白名单/过期/启用/已用）+ 存储 (6a8280e)
 - [x] T2 鉴权：API 面支持"主口令 || user token"，identity 挂 request.state (e3ade1a)
 - [x] T3 配额：try_consume 原子 check-and-increment（无 TOCTOU），超额 429 (6a8280e/e3ade1a)
 - [x] T4 管理 API：`/api/tokens` CRUD（面板口令保护）(e3ade1a)
-- [ ] T5 面板 UI：token 管理页（列表/新建/禁用/删除/配额）— 属前端工作
+- [x] T5 面板 UI：token 管理页（列表/新建/禁用/删除/清零/复制）(71759b1)
 - [x] T6 测试：CRUD + 鉴权放行/拒绝 + 配额耗尽 + 模型白名单 (e3ade1a)
 
-> 后端多租户已可用：运营者可 `POST /api/tokens` 发 token，下游用该 token 调
-> `/v1/chat/completions` 或 `/v1/messages`，受配额/模型白名单约束。剩 T5 面板 UI。
+> ✅ 多租户已端到端可用：面板"用户令牌"页或 `POST /api/tokens` 发 token，下游用该
+> token 调 `/v1/chat/completions` 或 `/v1/messages`，受配额/模型白名单/过期约束。
 
 ## 🔒 仍延后（需单独决策）
 | 项 | 原因 |
