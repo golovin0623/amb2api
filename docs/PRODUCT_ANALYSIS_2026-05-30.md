@@ -294,13 +294,21 @@ Dockerfile 单阶段、**root 运行**、镜像内无 HEALTHCHECK、无 lockfile
 | 10 | **删 fork 死代码** | 删 `proxy_manager.py`、`anti_truncation.py`、`openai_transfer.py` 的 Gemini 死函数、config 的 Gemini 辅助；移除"名存实亡"的 `流式抗截断/` 特性 | 二·主线1、五 5.1/5.3 |
 | 11 | **删 Gemini 配额模型** | 删 `usage_stats.py`(569行) + `state_manager.py` + 死工具；admin `/rate-limits`、`/usage/aggregated` 去掉 `gemini_2_5_pro` 特例字段 | 二·主线1、五 5.5 |
 | 12 | **修复上手文档** | 补 `.env.example`；修 README 安装/测试命令（无 requirements.txt）；删 14 个失效文档链接；修 `config.py` 残留 "Geminicli2api" docstring | 二·主线3、八 P2#17 |
+| 13 | **限流双系统统一** | 删旧 `_rate_limit_info` 双写系统，统一到 `RateLimiter`（单一真相源），面板展示由其派生；重写 2 个旧测试 | 五 5.5 / 6.4 |
+| 14 | **限流保存去抖** | `RateLimiter` 每请求整块写 → 5s 窗口合并一次（`RATE_LIMIT_SAVE_INTERVAL`）+ lifespan flush | 6.4 |
+| 15 | **存储层死方法清零** | 删 `update/get/get_all_usage_stats`（4 后端+Protocol+facade）；清零所有 `gemini_2_5_pro` 残键 | 五 5.5 |
+| 16 | **优雅关闭刷新统计** | `flush_unified_stats` 接入 lifespan，SIGTERM 不丢 30s 节流窗口内的用量 | 6.9 |
 
-累计净删除 ~1900 行 fork 死代码；新增 4 个回归测试文件。
+累计净删除 ~1900 行 fork 死代码；新增回归测试：auth / shared_http_client / config_cache / log_rotation / multimodal / graceful_flush，并重写 2 个限流测试。`src/` 现零 `gemini_2_5_pro` 残留，无重复的限流/统计真相源。
 
-### ⏳ 有意延后（高风险或需产品决策，单独立项更稳妥）
+### 经验证后判定为"无需改动"或"需架构级重设计"的项
 
-- **统计/配额子系统的剩余整合**：旧 `assembly_client._rate_limit_info` 与 `RateLimiter` 双写同一存储键（6.4）、每请求写风暴合并（6.4）、配额 TOCTOU 与"连接建立即计成功"（6.6）。这些触及配额正确性与 key 选择，需配套测试单独推进。
-- **存储层 usage-stats 死方法**：`update/get/get_all_usage_stats` 已确认零调用，但分散在 4 个后端 + Protocol；其中 `STATE_FIELDS` 仍服务于**活的**凭证状态，混杂着 `gemini_2_5_pro_calls` 等惰性残键。属低风险但跨后端面广，宜单独清理。
-- **前端 V2 收尾或回滚**：CSS `!important` 战争、3 个 HTML（2 死）、localStorage 明文口令、暗色/移动端/可访问性、统一通知系统——19.8k 行单体，建议作为独立的前端专项（收尾 V2 或回滚到单一稳定版）。
-- **多上游 / 横向扩展**：进程内计数器（key 选择/限流/统计）在多 worker 下会分裂（6.7），需迁移到共享存储后再开多副本。
-- **产品方向决策（P2 #14）**：是否做 per-user token + 配额 + 货币成本核算——决定 amb2api 是"个人韧性代理"还是"对外分发平台"。需你拍板后再投入。
+- **配额 TOCTOU + 流式 success 语义（6.6）**：`record_call` 自增同步原子、无丢更新；真正的 TOCTOU 在"选 key↔记账"之间，正确修法是**预占式配额**（架构级，会改 `test_daily_usage_limits` 语义）。"连上即 success" 实为"拿到 2xx 响应头"，是合理近似。仓促改风险 > 现状收益，列为独立专项。
+- **流式 client 断连（6.6）**：已验证 Starlette 1.2.0 断连即取消流任务 → generator `finally` 释放上游连接，无需侵入式透传 Request。
+
+### 🔒 仍需你拍板 / 独立专项
+
+- **前端 V2 收尾或回滚**：CSS `!important` 战争、3 个 HTML（2 死）、localStorage 明文口令、暗色/移动/可访问性、统一通知——19.8k 行单体，建议独立前端专项。
+- **多上游 / 横向扩展**：进程内计数器多 worker 会分裂（6.7），需先迁共享存储。
+- **`anthropic_transfer.py` 的 `Task` 入参归一化是否移植进生产**：生产链路目前缺这块，671 行只被测试引用——产品取舍。
+- **产品方向（P2 #14）**：per-user token + 配额 + 货币成本核算——决定"个人韧性代理"vs"对外分发平台"。

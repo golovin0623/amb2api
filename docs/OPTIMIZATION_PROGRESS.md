@@ -44,7 +44,9 @@
 | B | 每请求写风暴合并（rate-limit save 去抖） | ✅ | 中 | RateLimiter 保存去抖 5s + lifespan flush (bb6cd3e) |
 | C | 配额 TOCTOU + "流连接建立即计 success" | 🔒 | 中高 | 见下方分析：需预占(reservation)重设计，不宜急改 |
 | D | 优雅关闭刷新 stats（不丢在途写） | ✅ | 低 | flush_unified_stats + lifespan (baeba37) |
-| E | 流式 client 断连检测（`is_disconnected`），停止空跑上游 | ⏳ | 中 | 需把 Request 透传进生成器 |
+| E | 流式 client 断连检测 | ✅ | 中 | 已验证：Starlette 1.2.0 断连即取消流任务→generator finally 释放上游连接 |
+
+> **E 的结论（经验证）**：Starlette 1.2.0 的 `StreamingResponse` 自带 `listen_for_disconnect`，客户端断连时用 anyio 取消流任务，触发我们 `upstream_stream_generator` 的 `finally: stream_ctx.__aexit__()` 释放上游连接。诊断报告 6.6 的"会一直空跑上游到结束"在此 Starlette 版本不成立。显式 `is_disconnected()` 仅是微优化，但需把 Request 侵入式透传进整条管线，性价比低，不做。
 
 > **C 的结论（经验证）**：`record_call` 的自增是同步的（await 之间无让点 → 事件循环内原子），**不存在丢更新**。真正的 TOCTOU 在"选 key"与"记账"之间（中间隔了整个上游请求），正确修法是**预占式配额**（选 key 时原子 check-and-reserve、失败再回滚），属架构级改动且会改动 `test_daily_usage_limits` 锁定的语义。"连上即 success" 实为"拿到 2xx 响应头"，是合理的成功近似。仓促改配额语义的风险高于现状（有界的轻微超计），故按独立专项延后。
 
