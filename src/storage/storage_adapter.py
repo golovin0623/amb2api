@@ -94,20 +94,6 @@ class StorageBackend(Protocol):
     async def get_all_perf(self) -> Dict[str, Any]:
         """获取所有性能追踪数据"""
         ...
-    
-    # 使用统计管理
-    async def update_usage_stats(self, filename: str, stats_updates: Dict[str, Any]) -> bool:
-        """更新使用统计"""
-        ...
-    
-    async def get_usage_stats(self, filename: str) -> Dict[str, Any]:
-        """获取使用统计"""
-        ...
-    
-    async def get_all_usage_stats(self) -> Dict[str, Dict[str, Any]]:
-        """获取所有使用统计"""
-        ...
-
 
 
 class StorageAdapter:
@@ -298,24 +284,7 @@ class StorageAdapter:
         # 回退: 从 config 中过滤出 perf 数据
         all_config = await self._backend.get_all_config()
         return {k: v for k, v in all_config.items() if k.startswith('perf_')}
-    
-    # ============ 使用统计管理 ============
-    
-    async def update_usage_stats(self, filename: str, stats_updates: Dict[str, Any]) -> bool:
-        """更新使用统计"""
-        self._ensure_initialized()
-        return await self._backend.update_usage_stats(filename, stats_updates)
-    
-    async def get_usage_stats(self, filename: str) -> Dict[str, Any]:
-        """获取使用统计"""
-        self._ensure_initialized()
-        return await self._backend.get_usage_stats(filename)
-    
-    async def get_all_usage_stats(self) -> Dict[str, Dict[str, Any]]:
-        """获取所有使用统计"""
-        self._ensure_initialized()
-        return await self._backend.get_all_usage_stats()
-    
+
     # ============ 工具方法 ============
     
     async def export_credential_to_json(self, filename: str, output_path: str = None) -> bool:
