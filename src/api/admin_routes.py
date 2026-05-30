@@ -397,25 +397,16 @@ async def usage_stats(token: str = Depends(authenticate)):
     await unified_stats.ensure_keys_exist(cfg_keys)
     stats_data = await unified_stats.get_all_stats(valid_keys=cfg_keys)
     
-    # 转换为前端使用格式（保留旧字段兼容）
+    # 转换为前端使用格式（模型无关；不再特例化 gemini-2.5-pro）
     result = {}
     for masked_key, key_data in stats_data.get("keys", {}).items():
         daily_limit_models = key_data.get("daily_limit_models", {}) or {}
-        gemini_limit = (
-            daily_limit_models.get("gemini-2.5-pro")
-            or daily_limit_models.get("gemini-2.5-pro-preview")
-            or daily_limit_models.get("gemini_2_5_pro")
-            or 100
-        )
-        gemini_calls = key_data.get("model_counts", {}).get("gemini-2.5-pro", 0)
         result[masked_key] = {
             "total_calls": key_data.get("total", 0),
             "success_calls": key_data.get("ok", 0),
             "failure_calls": key_data.get("fail", 0),
-            "gemini_2_5_pro_calls": gemini_calls,
             "daily_limit_total": key_data.get("daily_limit_total", 1000),
             "daily_limit_models": daily_limit_models,
-            "daily_limit_gemini_2_5_pro": gemini_limit,
             "model_counts": key_data.get("model_counts", {}),
             "models": key_data.get("models", {}),
             "next_reset_time": key_data.get("next_reset_time"),
@@ -551,9 +542,7 @@ async def usage_aggregated(model: str = None, key: str = None, only: str = None,
     # 构建聚合响应
     agg = {
         "total_files": len(keys),
-        "total_gemini_2_5_pro_calls": 0,  # 兼容旧字段
         "total_all_model_calls": ok_total + fail_total,
-        "avg_gemini_2_5_pro_per_file": 0,
         "avg_total_per_file": (ok_total + fail_total) / max(len(keys), 1),
         "next_reset_time": next_reset_time,
         "log_summary": {
