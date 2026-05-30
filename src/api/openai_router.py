@@ -69,17 +69,25 @@ async def authenticate(
     return token
 
 
-async def enforce_token_quota(request: Request, model: str) -> None:
-    """对 user token 强制：模型白名单 + 配额（原子消费）。master 不受限。
+async def enforce_token_quota(request: Request, model: str, consume: bool = True) -> None:
+    """对 user token 强制：模型白名单 + 禁用/过期 + 配额。master 不受限。
 
     在处理函数拿到 model 后调用。配额耗尽 → 429；模型不允许/禁用/过期 → 403。
+    consume=True 原子消费一次配额（计费端点）；consume=False 只校验访问权
+    （白名单/禁用/过期），不消费、且不因配额耗尽而拒绝（用于 count_tokens 这类免费本地端点）。
     """
     identity = getattr(request.state, "identity", None)
     if not identity or identity.get("master"):
         return
     from ..services.token_manager import get_token_manager
     tm = await get_token_manager()
-    res = await tm.try_consume(identity["token"], model)
+    if consume:
+        res = await tm.try_consume(identity["token"], model)
+    else:
+        res = await tm.validate(identity["token"], model)
+        # 免费/本地端点：不消费配额，也不因配额已用尽而拒绝；但仍强制白名单/禁用/过期
+        if not res.get("valid") and res.get("reason") == "quota_exceeded":
+            return
     if not res.get("valid"):
         reason = res.get("reason", "forbidden")
         if reason == "quota_exceeded":
@@ -622,6 +630,17 @@ async def anthropic_count_tokens(
                 400, {"message": str(e)}, fallback_message="Invalid request"
             ),
             status_code=400,
+        )
+
+    # 多租户：对 user token 强制模型白名单/禁用/过期（不消费配额——count_tokens 是免费本地估算）
+    try:
+        await enforce_token_quota(request, str(openai_payload.get("model", "")), consume=False)
+    except HTTPException as e:
+        return JSONResponse(
+            content=openai_error_to_anthropic_error(
+                e.status_code, {"message": str(e.detail)}, fallback_message=str(e.detail)
+            ),
+            status_code=e.status_code,
         )
 
     messages = openai_payload.get("messages", [])

@@ -109,7 +109,8 @@ if _cors_origins_env in ("", "*"):
     _cors_allow_credentials = False
 else:
     _cors_allow_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
-    _cors_allow_credentials = True
+    # 只要结果里含通配 "*"，就强制关闭 credentials（禁止 "*,https://x" 这类误配启用带凭证通配）
+    _cors_allow_credentials = "*" not in _cors_allow_origins
 
 app.add_middleware(
     CORSMiddleware,

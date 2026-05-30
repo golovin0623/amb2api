@@ -119,3 +119,44 @@ def test_user_token_auth_and_quota_enforcement(monkeypatch):
         assert ei2.value.status_code == 429
 
     asyncio.run(_run())
+
+
+def test_enforce_token_quota_consume_false_checks_whitelist_not_quota(monkeypatch):
+    """count_tokens 用 consume=False：强制白名单/禁用/过期，但不消费、不因配额耗尽而拒绝。"""
+    from src.api import openai_router as orouter
+    import fastapi
+
+    tm = TokenManager()
+    tm._initialized = True
+    tm._tokens = {}
+
+    async def _get_tm():
+        return tm
+
+    async def _master_pwd():
+        return "master-pw"
+
+    monkeypatch.setattr("src.services.token_manager.get_token_manager", _get_tm)
+    monkeypatch.setattr("config.get_api_password", _master_pwd)
+
+    async def _run():
+        # quota=1, 白名单=[gpt-5]
+        meta = await tm.create_token(name="ct", quota=1, allowed_models=["gpt-5"])
+        tok = meta["token"]
+        req = _FakeReq()
+        assert await orouter._resolve_identity(req, tok) is True
+
+        # 白名单外 → 403（即便不消费）
+        with pytest.raises(fastapi.HTTPException) as ei:
+            await orouter.enforce_token_quota(req, "claude-x", consume=False)
+        assert ei.value.status_code == 403
+
+        # 白名单内 → 放行，且不消费（used 不变）
+        await orouter.enforce_token_quota(req, "gpt-5", consume=False)
+        assert (await tm.get(tok))["used"] == 0
+
+        # 耗尽配额后，consume=False 仍放行（免费端点不被配额拦）
+        await tm.try_consume(tok, "gpt-5")  # used=1，达到 quota
+        await orouter.enforce_token_quota(req, "gpt-5", consume=False)  # 不抛
+
+    asyncio.run(_run())
