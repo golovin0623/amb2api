@@ -202,10 +202,8 @@ class RedisManager:
     def _get_default_stats(self) -> Dict[str, Any]:
         """获取默认统计数据"""
         return {
-            "gemini_2_5_pro_calls": 0,
             "total_calls": 0,
             "next_reset_time": None,
-            "daily_limit_gemini_2_5_pro": 100,
             "daily_limit_total": 1000
         }
     
