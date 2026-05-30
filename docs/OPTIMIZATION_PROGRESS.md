@@ -60,7 +60,17 @@
 | 项 | 状态 | 备注 |
 |----|------|------|
 | **T. per-user token 多租户** | ✅ | T1-T6 全完成：TokenManager + API 面鉴权 + 原子配额 + /api/tokens CRUD + 面板"用户令牌"页 |
-| **U. 前端 V2 收尾** | ⏳ | 用户选"收尾"(非回滚)：localStorage 口令更安全、清 console.*、统一通知、暗色/移动/a11y。19.8k 单体，小步提交+每步验 /ui + node --check |
+| **U. 前端 V2 收尾** | ⏳(部分) | 已做可验证项；CSS 大重构需浏览器可视 QA（见下） |
+
+### U 已完成（可验证：/ui 200 + node --check）
+- [x] 口令 localStorage→sessionStorage + 旧值迁移清理 (1bff40f)
+- [x] 删 29 行独立调试 console.log（保留 error/warn）(44669a3)
+- [x] 新增"用户令牌"页（T5，见上）
+
+### U 待办——**需要真实浏览器可视 QA，不能盲改**（盲改会有"看不见的破样"风险，违背验收）
+- [ ] 删 6600 行内联旧 CSS + `legacy-bridge.css` 的 !important 战争（真正迁移到 v2 而非压制）。内联 CSS 可能含**布局**规则，外部 CSS 未必全覆盖，删了无浏览器验证 = 高风险
+- [ ] emoji→SVG 图标、暗色/移动/可访问性打磨、`showStatus`(119处)→统一 toast
+- 建议：在能跑浏览器的环境里（或你本地）配合可视回归逐项推进；我可以按页面/组件出小步 PR，由你或 CI 截图验收
 
 ### 多租户(T)拆解清单
 - [x] T1 数据模型 + TokenManager（quota/模型白名单/过期/启用/已用）+ 存储 (6a8280e)
