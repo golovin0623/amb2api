@@ -9,6 +9,7 @@
 """
 import asyncio
 import hashlib
+import os
 import time
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Any, Tuple
@@ -121,6 +122,42 @@ class UnifiedStats:
         self._dirty = False
         self._last_save_time = 0
         self._save_interval = 30  # 保存间隔（秒）
+        # 配额预占：记录每个 key 的 in-flight 预占到期时间戳（仅内存）。
+        # 用 TTL 自愈：即便某些重试路径漏释放，过期后自动归还，limit 检查始终偏保守
+        #（宁可早一点拦，绝不超计），消除"选 key↔记账"之间的 TOCTOU 超计。
+        self._pending: Dict[str, list] = {}
+        self._reserve_lock = asyncio.Lock()
+        try:
+            self._pending_ttl = max(1.0, float(os.getenv("QUOTA_RESERVATION_TTL", "120")))
+        except ValueError:
+            self._pending_ttl = 120.0
+
+    def _live_pending(self, masked: str) -> int:
+        """剪除过期预占，返回当前存活的预占数。"""
+        lst = self._pending.get(masked)
+        if not lst:
+            return 0
+        now = time.time()
+        lst = [exp for exp in lst if exp > now]
+        if lst:
+            self._pending[masked] = lst
+        else:
+            self._pending.pop(masked, None)
+        return len(lst)
+
+    def _release_one_pending(self, masked: str) -> None:
+        """归还一个预占槽（弹出最早到期的一个）。"""
+        lst = self._pending.get(masked)
+        if not lst:
+            return
+        now = time.time()
+        lst = [exp for exp in lst if exp > now]
+        if lst:
+            lst.pop(0)
+        if lst:
+            self._pending[masked] = lst
+        else:
+            self._pending.pop(masked, None)
 
     def _build_default_entry(self, key_hash: str = "") -> Dict[str, Any]:
         """构建默认统计结构"""
@@ -375,6 +412,9 @@ class UnifiedStats:
 
         stats = self._touch_entry(masked, key_hash=key_hash)
 
+        # 释放本次调用对应的预占槽（若存在）
+        self._release_one_pending(masked)
+
         if success:
             stats["success_count"] = stats.get("success_count", 0) + 1
         else:
@@ -458,6 +498,74 @@ class UnifiedStats:
             "model_remaining": model_remaining,
             "effective_limit": effective_limit,
         }
+
+    async def reserve_key_for_model(self, api_key: str, model: str) -> Dict[str, Any]:
+        """原子地"预占"一个配额槽，消除选 key 与记账之间的 TOCTOU 超计。
+
+        在锁内用 (success_count + pending) 对比限额：未满则 pending+1 并返回 allowed=True，
+        已满返回 allowed=False（不预占）。返回结构与 can_use_key_for_model 一致，便于复用。
+        每次成功预占都必须由 record_call（成功/失败均可）或 release_reservation 释放。
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        masked = mask_key(api_key)
+        key_hash = get_key_hash(api_key)
+
+        async with self._reserve_lock:
+            stats = self._touch_entry(masked, key_hash=key_hash)
+            success_count = _as_non_negative_int(stats.get("success_count", 0))
+            total_limit = _as_positive_int(
+                stats.get("daily_limit_total", DEFAULT_DAILY_LIMIT_TOTAL),
+                DEFAULT_DAILY_LIMIT_TOTAL,
+            )
+            model_limits = self._normalize_model_limits(stats.get("daily_limit_models", {}))
+            model_limit = model_limits.get(model)
+            model_data = stats.get("model_counts", {}).get(model, {})
+            model_success = (
+                _as_non_negative_int(model_data.get("ok", 0))
+                if isinstance(model_data, dict) else 0
+            )
+            pending = self._live_pending(masked)
+
+            allowed = True
+            reason = ""
+            # 关键：把 in-flight 的 pending 计入，N 个并发不会同时挤过最后一个槽
+            if success_count + pending >= total_limit:
+                allowed = False
+                reason = "total_limit_reached"
+            elif model_limit is not None and model_success + pending >= model_limit:
+                allowed = False
+                reason = "model_limit_reached"
+
+            if allowed:
+                self._pending.setdefault(masked, []).append(time.time() + self._pending_ttl)
+
+            total_remaining = max(total_limit - success_count - pending, 0)
+            model_remaining = None
+            if model_limit is not None:
+                model_remaining = max(model_limit - model_success - pending, 0)
+            effective_limit = total_limit if model_limit is None else min(total_limit, model_limit)
+
+            return {
+                "allowed": allowed,
+                "reason": reason,
+                "masked_key": masked,
+                "next_reset_time": stats.get("next_reset_time"),
+                "success_count": success_count,
+                "failure_count": _as_non_negative_int(stats.get("failure_count", 0)),
+                "total_limit": total_limit,
+                "total_remaining": total_remaining,
+                "model": model,
+                "model_success_count": model_success,
+                "model_limit": model_limit,
+                "model_remaining": model_remaining,
+                "effective_limit": effective_limit,
+            }
+
+    def release_reservation(self, api_key: str) -> None:
+        """释放一个预占槽（用于预占后未走到 record_call 的兜底路径）。"""
+        self._release_one_pending(mask_key(api_key))
 
     async def update_daily_limits(
         self,

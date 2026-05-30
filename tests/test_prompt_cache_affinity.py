@@ -108,7 +108,7 @@ async def test_select_key_with_daily_quota_uses_affinity_order():
     keys = ["sk-a", "sk-b", "sk-c"]
 
     class _FakeUnified:
-        async def can_use_key_for_model(self, api_key, model):
+        async def reserve_key_for_model(self, api_key, model):
             return {"allowed": True}
 
     with patch("src.stats.unified_stats.get_unified_stats", new=AsyncMock(return_value=_FakeUnified())):
@@ -138,7 +138,7 @@ async def test_select_key_with_daily_quota_affinity_skips_quota_blocked_candidat
     keys = ["sk-a", "sk-b", "sk-c"]
 
     class _FakeUnified:
-        async def can_use_key_for_model(self, api_key, model):
+        async def reserve_key_for_model(self, api_key, model):
             if api_key == "sk-c":
                 return {
                     "allowed": False,
@@ -172,7 +172,7 @@ async def test_select_key_with_daily_quota_affinity_miss_falls_back_to_normal_se
     keys = ["sk-a", "sk-b"]
 
     class _FakeUnified:
-        async def can_use_key_for_model(self, api_key, model):
+        async def reserve_key_for_model(self, api_key, model):
             return {"allowed": True}
 
     with patch("src.stats.unified_stats.get_unified_stats", new=AsyncMock(return_value=_FakeUnified())):
@@ -200,7 +200,7 @@ async def test_select_key_with_daily_quota_affinity_quota_blocks_fall_back_to_no
     keys = ["sk-a", "sk-b", "sk-c"]
 
     class _FakeUnified:
-        async def can_use_key_for_model(self, api_key, model):
+        async def reserve_key_for_model(self, api_key, model):
             if api_key in ("sk-a", "sk-b"):
                 return {
                     "allowed": False,

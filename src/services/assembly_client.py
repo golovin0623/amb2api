@@ -1331,7 +1331,9 @@ async def _select_key_with_daily_quota(
 
     async def _check_quota_for_idx(idx: int) -> Optional[Dict[str, Any]]:
         api_key = keys[idx]
-        quota_state = await unified_stats.can_use_key_for_model(api_key, model)
+        # 原子预占：把 in-flight 请求计入限额，消除并发选 key 的 TOCTOU 超计。
+        # 预占成功后由后续 record_call（成功/失败均释放）归还。
+        quota_state = await unified_stats.reserve_key_for_model(api_key, model)
         if quota_state.get("allowed", True):
             return {
                 "idx": idx,

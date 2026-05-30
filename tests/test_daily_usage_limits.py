@@ -71,7 +71,7 @@ async def test_select_key_with_daily_quota_skips_quota_exhausted_key():
     keys = ["sk-a", "sk-b"]
 
     class _FakeUnified:
-        async def can_use_key_for_model(self, api_key, model):
+        async def reserve_key_for_model(self, api_key, model):
             if api_key == "sk-a":
                 return {
                     "allowed": False,
@@ -99,7 +99,7 @@ async def test_select_key_with_daily_quota_returns_quota_exhausted_when_all_bloc
     keys = ["sk-a", "sk-b"]
 
     class _FakeUnified:
-        async def can_use_key_for_model(self, api_key, model):
+        async def reserve_key_for_model(self, api_key, model):
             return {
                 "allowed": False,
                 "reason": "total_limit_reached",
