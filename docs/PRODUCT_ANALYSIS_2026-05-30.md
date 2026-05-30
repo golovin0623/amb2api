@@ -267,8 +267,40 @@ Dockerfile 单阶段、**root 运行**、镜像内无 HEALTHCHECK、无 lockfile
 ---
 
 ### 关键文件索引（便于跟进）
-- 安全：`src/api/key_management_api.py`、`src/api/account_api.py`、`src/api/playground_api.py`、`web.py:65-71,143-144`
-- 性能：`src/core/httpx_client.py`、`config.py:73-98`、`src/services/assembly_client.py`、`src/stats/performance_tracker.py`、`log.py`
-- 功能：`src/services/assembly_client.py:328-333`（多模态）、`src/api/openai_router.py:742-745`（抗截断）
-- fork 残留：`src/services/proxy_manager.py`、`src/transform/anti_truncation.py`、`src/transform/anthropic_transfer.py`、`src/stats/usage_stats.py`
+- 安全：`src/api/key_management_api.py`、`src/api/account_api.py`、`src/api/playground_api.py`、`web.py`
+- 性能：`src/core/httpx_client.py`、`config.py`、`src/services/assembly_client.py`、`src/stats/performance_tracker.py`、`log.py`
+- 功能：`src/services/assembly_client.py`（多模态）、`src/api/openai_router.py`（流式）
 - UI：`front/control_panel.html`、`front/assets/css/legacy-bridge.css:1-12`、`plan/UI_REFACTOR_V2_PLAN.md`
+
+---
+
+## 十、实施进展（本轮优化已落地）
+
+> 以下为本轮"从里到外换新"已完成并合入 `claude/trusting-davinci-ajESQ` 的改动；全程绿测（233 passed）。
+
+### ✅ 已完成
+
+| # | 项 | 关键改动 | 对应问题 |
+|---|----|---------|---------|
+| 1 | **整组路由鉴权** | 抽出 `src/api/auth.py`，给 keys/account/playground 三组路由加 `Depends(authenticate)`；新增回归测试 | 三 3.1 🔴 |
+| 2 | **CORS 收敛** | 禁止 `*`+credentials 组合；`CORS_ALLOW_ORIGINS` 白名单，默认不带凭证 | 三 3.2 |
+| 3 | **停止明文口令落日志** | 移除启动期口令打印，仅在用默认弱口令时告警 | 三 3.3 |
+| 4 | **健康检查** | 新增 `GET /health`（探存储），Docker healthcheck 切到 /health | 五 5.2 |
+| 5 | **XSS** | 上传文件名经 `escapeHtml` 再插入 innerHTML | 三 3.4 |
+| 6 | **共享 HTTP 连接池** | `httpx_client.py` 改进程级共享客户端 + 连接池 + HTTP/2 + **有界超时**（不再 `timeout=None`）；流式只关流不关客户端；优雅关闭 | 六 6.1 / 6.2 |
+| 7 | **配置快照缓存** | `config.py` 加短 TTL 缓存 + 写穿失效，消除每请求 12+ 次存储读 | 六 6.3 |
+| 8 | **日志轮转** | 按大小轮转（`LOG_MAX_BYTES`/`LOG_BACKUP_COUNT`）+ 持久句柄，告别无限增长 | 六 6.8 |
+| 9 | **多模态修复** | `_sanitize_messages` 透传 `image_url`，不再静默丢图 | 五 5.1 |
+| 10 | **删 fork 死代码** | 删 `proxy_manager.py`、`anti_truncation.py`、`openai_transfer.py` 的 Gemini 死函数、config 的 Gemini 辅助；移除"名存实亡"的 `流式抗截断/` 特性 | 二·主线1、五 5.1/5.3 |
+| 11 | **删 Gemini 配额模型** | 删 `usage_stats.py`(569行) + `state_manager.py` + 死工具；admin `/rate-limits`、`/usage/aggregated` 去掉 `gemini_2_5_pro` 特例字段 | 二·主线1、五 5.5 |
+| 12 | **修复上手文档** | 补 `.env.example`；修 README 安装/测试命令（无 requirements.txt）；删 14 个失效文档链接；修 `config.py` 残留 "Geminicli2api" docstring | 二·主线3、八 P2#17 |
+
+累计净删除 ~1900 行 fork 死代码；新增 4 个回归测试文件。
+
+### ⏳ 有意延后（高风险或需产品决策，单独立项更稳妥）
+
+- **统计/配额子系统的剩余整合**：旧 `assembly_client._rate_limit_info` 与 `RateLimiter` 双写同一存储键（6.4）、每请求写风暴合并（6.4）、配额 TOCTOU 与"连接建立即计成功"（6.6）。这些触及配额正确性与 key 选择，需配套测试单独推进。
+- **存储层 usage-stats 死方法**：`update/get/get_all_usage_stats` 已确认零调用，但分散在 4 个后端 + Protocol；其中 `STATE_FIELDS` 仍服务于**活的**凭证状态，混杂着 `gemini_2_5_pro_calls` 等惰性残键。属低风险但跨后端面广，宜单独清理。
+- **前端 V2 收尾或回滚**：CSS `!important` 战争、3 个 HTML（2 死）、localStorage 明文口令、暗色/移动端/可访问性、统一通知系统——19.8k 行单体，建议作为独立的前端专项（收尾 V2 或回滚到单一稳定版）。
+- **多上游 / 横向扩展**：进程内计数器（key 选择/限流/统计）在多 worker 下会分裂（6.7），需迁移到共享存储后再开多副本。
+- **产品方向决策（P2 #14）**：是否做 per-user token + 配额 + 货币成本核算——决定 amb2api 是"个人韧性代理"还是"对外分发平台"。需你拍板后再投入。
