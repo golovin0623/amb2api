@@ -6737,12 +6737,35 @@
                         <button class="tab" onclick="switchTab('playground')">操练场</button>
                         <button class="tab" onclick="switchTab('performance')">性能分析</button>
                         <button class="tab" onclick="switchTab('logs')">实时日志</button>
+                        <button class="tab" onclick="switchTab('tokens')">用户令牌</button>
                     </div>
                 </div>
             </div>
 
             <!-- 内容区域 -->
             <div class="tab-content-wrapper">
+
+                <!-- 用户令牌标签页（多租户） -->
+                <div id="tokensTab" class="tab-content">
+                    <h3>用户令牌（多租户）</h3>
+                    <p>为下游用户/客户发放独立 API 令牌，可设配额、模型白名单、过期。令牌可直接用于 <code>/v1/chat/completions</code> 与 <code>/v1/messages</code>，受其配额与模型白名单约束。</p>
+
+                    <div style="margin:16px 0; padding:16px; border:1px solid var(--line-default,#ddd); border-radius:8px;">
+                        <h4 style="margin-top:0;">新建令牌</h4>
+                        <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+                            <label>名称<br><input id="newTokenName" type="text" placeholder="如 alice" style="min-width:140px;"></label>
+                            <label>配额（总次数，留空=无限）<br><input id="newTokenQuota" type="number" min="1" placeholder="无限" style="width:140px;"></label>
+                            <label>模型白名单（逗号分隔，留空=全部）<br><input id="newTokenModels" type="text" placeholder="全部" style="min-width:220px;"></label>
+                            <button class="btn" onclick="createToken()">创建</button>
+                        </div>
+                        <div id="newTokenResult" style="margin-top:10px;"></div>
+                    </div>
+
+                    <div style="margin:10px 0;">
+                        <button class="btn" onclick="loadTokens()">刷新列表</button>
+                    </div>
+                    <div id="tokensTableWrap"><p style="color:#888;">点击"刷新列表"加载令牌。</p></div>
+                </div>
 
                 <!-- 批量上传标签页 -->
                 <div id="uploadTab" class="tab-content">
@@ -9408,6 +9431,9 @@
             if (tabName === 'logs') {
                 connectWebSocket();
             }
+            if (tabName === 'tokens') {
+                loadTokens();
+            }
             if (tabName === 'playground') {
                 initPlayground();
             }
@@ -10131,6 +10157,121 @@
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${authToken}`
             };
+        }
+
+        // ============ 用户令牌（多租户） ============
+        async function loadTokens() {
+            const wrap = document.getElementById('tokensTableWrap');
+            if (!wrap) return;
+            wrap.innerHTML = '<p style="color:#888;">加载中…</p>';
+            try {
+                const res = await fetch('/api/tokens', { headers: getAuthHeaders() });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                const tokens = (data && data.tokens) || [];
+                if (!tokens.length) {
+                    wrap.innerHTML = '<p style="color:#888;">暂无令牌，请在上方创建。</p>';
+                    return;
+                }
+                let html = '<table style="width:100%; border-collapse:collapse;">' +
+                    '<thead><tr style="text-align:left; border-bottom:2px solid #ccc;">' +
+                    '<th style="padding:8px;">名称</th><th>令牌</th><th>已用/配额</th><th>模型白名单</th><th>状态</th><th>操作</th>' +
+                    '</tr></thead><tbody>';
+                for (const t of tokens) {
+                    const used = t.used || 0;
+                    const quota = (t.quota === null || t.quota === undefined) ? '∞' : t.quota;
+                    const models = (t.allowed_models && t.allowed_models.length) ? t.allowed_models.join(', ') : '全部';
+                    const enabled = t.enabled !== false;
+                    const tok = t.token;
+                    html += '<tr style="border-bottom:1px solid #eee;">' +
+                        '<td style="padding:8px;">' + escapeHtml(t.name || '') + '</td>' +
+                        '<td style="font-family:monospace; cursor:pointer;" title="点击复制" onclick="copyTokenValue(this)" data-token="' + escapeHtml(tok) + '">' + escapeHtml(maskTokenShort(tok)) + '</td>' +
+                        '<td>' + used + ' / ' + escapeHtml(String(quota)) + '</td>' +
+                        '<td>' + escapeHtml(models) + '</td>' +
+                        '<td>' + (enabled ? '<span style="color:#22a06b;">启用</span>' : '<span style="color:#c33;">禁用</span>') + '</td>' +
+                        '<td>' +
+                        '<button class="btn" style="padding:2px 8px;" onclick="toggleToken(\'' + encodeURIComponent(tok) + '\',' + (!enabled) + ')">' + (enabled ? '禁用' : '启用') + '</button> ' +
+                        '<button class="btn" style="padding:2px 8px;" onclick="resetTokenUsage(\'' + encodeURIComponent(tok) + '\')">清零</button> ' +
+                        '<button class="btn" style="padding:2px 8px;" onclick="deleteToken(\'' + encodeURIComponent(tok) + '\')">删除</button>' +
+                        '</td></tr>';
+                }
+                html += '</tbody></table>';
+                wrap.innerHTML = html;
+            } catch (e) {
+                wrap.innerHTML = '<p style="color:#c33;">加载失败：' + escapeHtml(String(e.message || e)) + '</p>';
+            }
+        }
+
+        function maskTokenShort(t) {
+            if (!t) return '';
+            if (t.length <= 16) return t.slice(0, 6) + '***';
+            return t.slice(0, 12) + '…' + t.slice(-4);
+        }
+
+        function copyTokenValue(el) {
+            const tok = el.getAttribute('data-token');
+            if (tok && navigator.clipboard) {
+                navigator.clipboard.writeText(tok).then(() => showStatus('已复制完整令牌', 'success'),
+                    () => showStatus('复制失败', 'error'));
+            }
+        }
+
+        async function createToken() {
+            const name = (document.getElementById('newTokenName').value || '').trim();
+            const quotaRaw = (document.getElementById('newTokenQuota').value || '').trim();
+            const modelsRaw = (document.getElementById('newTokenModels').value || '').trim();
+            const body = { name: name };
+            if (quotaRaw) body.quota = parseInt(quotaRaw, 10);
+            if (modelsRaw) body.allowed_models = modelsRaw.split(',').map(s => s.trim()).filter(Boolean);
+            try {
+                const res = await fetch('/api/tokens', {
+                    method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(body)
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const meta = await res.json();
+                const rEl = document.getElementById('newTokenResult');
+                rEl.innerHTML = '令牌已创建（请立即复制，仅此一次完整显示）：<br>' +
+                    '<code style="user-select:all; word-break:break-all;">' + escapeHtml(meta.token) + '</code>';
+                document.getElementById('newTokenName').value = '';
+                document.getElementById('newTokenQuota').value = '';
+                document.getElementById('newTokenModels').value = '';
+                showStatus('令牌已创建', 'success');
+                loadTokens();
+            } catch (e) {
+                showStatus('创建失败：' + (e.message || e), 'error');
+            }
+        }
+
+        async function toggleToken(tokEnc, enable) {
+            await updateToken(tokEnc, { enabled: enable });
+        }
+        async function resetTokenUsage(tokEnc) {
+            await updateToken(tokEnc, { reset_used: true });
+        }
+        async function updateToken(tokEnc, changes) {
+            try {
+                const res = await fetch('/api/tokens/' + tokEnc, {
+                    method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(changes)
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                showStatus('已更新', 'success');
+                loadTokens();
+            } catch (e) {
+                showStatus('更新失败：' + (e.message || e), 'error');
+            }
+        }
+        async function deleteToken(tokEnc) {
+            if (!confirm('确认删除该令牌？删除后使用它的客户端将立即失效。')) return;
+            try {
+                const res = await fetch('/api/tokens/' + tokEnc, {
+                    method: 'DELETE', headers: getAuthHeaders()
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                showStatus('已删除', 'success');
+                loadTokens();
+            } catch (e) {
+                showStatus('删除失败：' + (e.message || e), 'error');
+            }
         }
 
         // 触发后台预加载账户数据（非阻塞，静默执行）
