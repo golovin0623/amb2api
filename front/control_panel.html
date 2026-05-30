@@ -6406,6 +6406,205 @@
                 gap: 12px;
             }
         }
+        /* ============================================================
+           全局按钮交互反馈 (button-feedback-animations)
+           目标: 让每个按钮在 点击 / 悬停 / 加载 / 成功 / 失败 时都有
+           清晰可见的反馈, 解决"点击后没有动画、不知道是否生效"的困惑。
+           所有新增类名以 bf- 前缀命名, 避免与既有样式冲突。
+           ============================================================ */
+
+        /* 统一过渡: 覆盖主要按钮类与原生 button 元素 */
+        .btn, .btn-sm, button,
+        .pagination-btn, .btn-icon, .refresh-btn,
+        .cost-view-btn, .cost-window-btn, .config-copy-btn,
+        .col-toggle-btn, .usage-product-btn, .trace-detail-btn,
+        .cost-date-preset, .usage-date-preset, .cred-btn, .log-btn,
+        .playground-btn, .remove-btn, .download-all-btn,
+        .config-toggle-btn, .config-floating-btn, .v2-rl-toolbar__btn,
+        .usage-btn, .ranking-legend-pager-btn {
+            transition: transform .12s cubic-bezier(.34, 1.56, .64, 1),
+                        box-shadow .2s ease,
+                        background-color .2s ease,
+                        filter .18s ease,
+                        opacity .18s ease;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* 悬停: 轻微提亮 (叠加在既有的颜色 hover 规则之上) */
+        .btn:hover:not(:disabled),
+        .btn-sm:hover:not(:disabled) {
+            filter: brightness(1.06);
+        }
+
+        /* 按下: 明确的"已点击"回弹触感 */
+        .btn:active:not(:disabled),
+        .btn-sm:active:not(:disabled),
+        .pagination-btn:active, .btn-icon:active, .refresh-btn:active,
+        .cost-view-btn:active, .cost-window-btn:active, .config-copy-btn:active,
+        .col-toggle-btn:active, .usage-product-btn:active, .trace-detail-btn:active,
+        .cost-date-preset:active, .usage-date-preset:active, .cred-btn:active,
+        .log-btn:active, .playground-btn:active, .remove-btn:active,
+        .download-all-btn:active, .config-toggle-btn:active,
+        .config-floating-btn:active, .v2-rl-toolbar__btn:active,
+        .usage-btn:active, .ranking-legend-pager-btn:active {
+            transform: scale(.94);
+        }
+
+        /* 键盘可达性: 聚焦时给出可见焦点环 */
+        .btn:focus-visible,
+        .btn-sm:focus-visible {
+            outline: 2px solid rgba(66, 133, 244, .6);
+            outline-offset: 2px;
+        }
+
+        /* 涟漪 (ripple) —— 仅作用于主操作按钮, 安全裁剪 */
+        .btn, .btn-sm {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .bf-ripple-ink {
+            position: absolute;
+            border-radius: 50%;
+            transform: scale(0);
+            background: rgba(255, 255, 255, .55);
+            pointer-events: none;
+            animation: bfRipple .6s ease-out;
+            z-index: 0;
+        }
+
+        /* 浅色背景按钮的涟漪改用深色, 保证可见 */
+        .btn.bf-ripple-dark .bf-ripple-ink,
+        .btn-sm.bf-ripple-dark .bf-ripple-ink {
+            background: rgba(0, 0, 0, .18);
+        }
+
+        @keyframes bfRipple {
+            to { transform: scale(2.6); opacity: 0; }
+        }
+
+        /* 按钮加载中 (通用): 文字隐藏 + 旋转 spinner */
+        .btn.bf-busy, .btn-sm.bf-busy {
+            pointer-events: none;
+            color: transparent !important;
+        }
+
+        .btn.bf-busy::after, .btn-sm.bf-busy::after {
+            content: '';
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            top: 50%;
+            left: 50%;
+            margin: -8px 0 0 -8px;
+            border: 2px solid rgba(255, 255, 255, .4);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: bfSpin .7s linear infinite;
+        }
+
+        /* 成功: 短暂变绿并显示 ✓ */
+        .btn.bf-success, .btn-sm.bf-success {
+            background-color: #34a853 !important;
+            color: transparent !important;
+            pointer-events: none;
+        }
+
+        .btn.bf-success::after, .btn-sm.bf-success::after {
+            content: '✓';
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 1.1em;
+            font-weight: 700;
+            animation: bfPop .3s ease;
+        }
+
+        /* 失败: 短暂变红并抖动 */
+        .btn.bf-error, .btn-sm.bf-error {
+            background-color: #ea4335 !important;
+            animation: bfShake .4s ease;
+        }
+
+        @keyframes bfSpin { to { transform: rotate(360deg); } }
+        @keyframes bfPop { 0% { transform: scale(.3); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes bfShake {
+            10%, 90% { transform: translateX(-1px); }
+            20%, 80% { transform: translateX(2px); }
+            30%, 50%, 70% { transform: translateX(-4px); }
+            40%, 60% { transform: translateX(4px); }
+        }
+
+        /* ===== 浮动 Toast 提示 (操作结果即时确认) ===== */
+        .bf-toast-stack {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 2147483600;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+            max-width: min(380px, 90vw);
+        }
+
+        .bf-toast {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 16px;
+            border-radius: 10px;
+            background: #323232;
+            color: #fff;
+            font-size: 14px;
+            line-height: 1.4;
+            box-shadow: 0 6px 24px rgba(0, 0, 0, .22);
+            pointer-events: auto;
+            cursor: pointer;
+            animation: bfToastIn .32s cubic-bezier(.21, 1.02, .73, 1);
+            word-break: break-word;
+        }
+
+        .bf-toast.bf-toast-hide {
+            animation: bfToastOut .28s ease forwards;
+        }
+
+        .bf-toast::before {
+            font-size: 16px;
+            flex-shrink: 0;
+            font-weight: 700;
+        }
+
+        .bf-toast.success { background: linear-gradient(135deg, #2e9e4f, #34a853); }
+        .bf-toast.success::before { content: '✓'; }
+        .bf-toast.error { background: linear-gradient(135deg, #d23f31, #ea4335); }
+        .bf-toast.error::before { content: '✕'; }
+        .bf-toast.info { background: linear-gradient(135deg, #3367d6, #4285f4); }
+        .bf-toast.info::before { content: 'ℹ'; }
+        .bf-toast.warning { background: linear-gradient(135deg, #e0992a, #fbbc05); color: #1a1a1a; }
+        .bf-toast.warning::before { content: '⚠'; }
+
+        @keyframes bfToastIn {
+            from { opacity: 0; transform: translateX(40px) scale(.96); }
+            to { opacity: 1; transform: translateX(0) scale(1); }
+        }
+        @keyframes bfToastOut {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(40px); }
+        }
+
+        /* 尊重"减少动态效果"无障碍偏好 */
+        @media (prefers-reduced-motion: reduce) {
+            .btn, .btn-sm, button, .bf-toast, .bf-ripple-ink {
+                animation-duration: .001ms !important;
+                transition-duration: .001ms !important;
+            }
+            .btn:active:not(:disabled),
+            .btn-sm:active:not(:disabled) { transform: none; }
+        }
     </style>
 
     <!-- ================ Aether Codex Refactor (2026-05) ================ -->
@@ -19412,6 +19611,162 @@
             checkAccountSession();
             startAccountAutoRefresh();
         }
+
+        /* ============================================================
+           全局按钮交互反馈脚本 (button-feedback-animations)
+           - 点击涟漪 (ripple): 让每次点击都有可见反馈
+           - 浮动 Toast: 保存/配置等操作结果即时、醒目地确认
+           - 按钮加载/成功/失败状态助手: window.bfButtonState / bfRunButton
+           与既有 showStatus / toast 体系叠加, 仅新增、不改写原有逻辑。
+           ============================================================ */
+        (function () {
+            'use strict';
+
+            // ---------- 点击涟漪 ----------
+            function isLightBackground(el) {
+                const bg = getComputedStyle(el).backgroundColor || '';
+                const m = bg.match(/rgba?\(([^)]+)\)/);
+                if (!m) return false;
+                const parts = m[1].split(',').map(s => parseFloat(s.trim()));
+                const r = parts[0], g = parts[1], b = parts[2], a = parts.length > 3 ? parts[3] : 1;
+                if (a === 0) return true; // 透明背景按钮通常位于浅色容器上
+                const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+                return lum > 0.7;
+            }
+
+            document.addEventListener('pointerdown', function (e) {
+                const btn = e.target.closest && e.target.closest('.btn, .btn-sm');
+                if (!btn || btn.disabled || btn.classList.contains('bf-busy')) return;
+
+                const rect = btn.getBoundingClientRect();
+                const size = Math.max(rect.width, rect.height);
+                const ink = document.createElement('span');
+                ink.className = 'bf-ripple-ink';
+                ink.style.width = ink.style.height = size + 'px';
+                ink.style.left = (e.clientX - rect.left - size / 2) + 'px';
+                ink.style.top = (e.clientY - rect.top - size / 2) + 'px';
+
+                btn.classList.toggle('bf-ripple-dark', isLightBackground(btn));
+                btn.appendChild(ink);
+                ink.addEventListener('animationend', () => ink.remove());
+                setTimeout(() => ink.remove(), 800); // 兜底清理
+            }, { passive: true });
+
+            // ---------- 浮动 Toast ----------
+            function ensureToastStack() {
+                let stack = document.getElementById('bfToastStack');
+                if (!stack) {
+                    stack = document.createElement('div');
+                    stack.id = 'bfToastStack';
+                    stack.className = 'bf-toast-stack';
+                    stack.setAttribute('aria-live', 'polite');
+                    (document.body || document.documentElement).appendChild(stack);
+                }
+                return stack;
+            }
+
+            function normalizeType(type) {
+                if (type === 'danger' || type === 'fail') return 'error';
+                if (type === 'warn') return 'warning';
+                if (['success', 'error', 'info', 'warning'].includes(type)) return type;
+                return 'info';
+            }
+
+            // 去重: 极短时间内相同文案只显示一次, 避免与既有 toast 体系重复刷屏
+            const recentToasts = new Map();
+
+            window.bfToast = function (message, type, duration) {
+                if (!message) return;
+                const t = normalizeType(type || 'info');
+                const key = t + '|' + message;
+                const now = Date.now();
+                if (recentToasts.get(key) && now - recentToasts.get(key) < 1500) return;
+                recentToasts.set(key, now);
+
+                const stack = ensureToastStack();
+                const toast = document.createElement('div');
+                toast.className = 'bf-toast ' + t;
+                toast.setAttribute('role', t === 'error' ? 'alert' : 'status');
+                toast.textContent = String(message);
+                stack.appendChild(toast);
+
+                const ttl = duration != null ? duration : (t === 'error' ? 5000 : 3000);
+                const remove = () => {
+                    if (!toast.parentNode) return;
+                    toast.classList.add('bf-toast-hide');
+                    toast.addEventListener('animationend', () => toast.remove(), { once: true });
+                    setTimeout(() => toast.remove(), 400);
+                };
+                const timer = setTimeout(remove, ttl);
+                toast.addEventListener('click', () => { clearTimeout(timer); remove(); });
+            };
+            // 向后兼容: 若页面尚未定义 showToast, 提供一个别名
+            if (typeof window.showToast !== 'function') {
+                window.showToast = window.bfToast;
+            }
+
+            // ---------- 按钮状态助手 ----------
+            // 用法: bfButtonState(btnOrSelector, 'busy'|'success'|'error'|'reset')
+            window.bfButtonState = function (btn, state) {
+                if (typeof btn === 'string') btn = document.getElementById(btn) || document.querySelector(btn);
+                if (!btn || !btn.classList) return;
+                btn.classList.remove('bf-busy', 'bf-success', 'bf-error');
+                if (state === 'busy') {
+                    btn.classList.add('bf-busy');
+                } else if (state === 'success') {
+                    btn.classList.add('bf-success');
+                    setTimeout(() => btn.classList.remove('bf-success'), 1300);
+                } else if (state === 'error') {
+                    btn.classList.add('bf-error');
+                    setTimeout(() => btn.classList.remove('bf-error'), 700);
+                }
+            };
+
+            // 包装一个异步操作, 自动驱动按钮 busy -> success/error
+            // 用法: <button onclick="bfRunButton(this, () => myAsyncFn())">
+            window.bfRunButton = async function (btnOrEvent, fn) {
+                let btn = btnOrEvent;
+                if (btnOrEvent && btnOrEvent.currentTarget) btn = btnOrEvent.currentTarget;
+                else if (btnOrEvent && btnOrEvent.target && btnOrEvent.target.closest) {
+                    btn = btnOrEvent.target.closest('.btn, .btn-sm, button') || btnOrEvent.target;
+                }
+                if (btn) window.bfButtonState(btn, 'busy');
+                try {
+                    const r = await fn();
+                    if (btn) window.bfButtonState(btn, 'success');
+                    return r;
+                } catch (err) {
+                    if (btn) window.bfButtonState(btn, 'error');
+                    throw err;
+                }
+            };
+
+            // ---------- 与既有 showStatus 联动 ----------
+            // 很多保存操作 (配置 / 模型列表 / 限额) 调用 showStatus(msg, 'success')。
+            // 既有 ui.js 已接管 showStatus, 但其策略是: error/warning 才弹顶部 toast,
+            // success/info 只静默进入"消息中心"铃铛 —— 这正是用户"点了保存却看不到
+            // 反馈"的根因。这里只为 success 补一个醒目的浮动确认, 避免与 ui.js 对
+            // error/warning 的 toast 重复。在 DOMContentLoaded 后再包装, 确保位于
+            // ui.js wrapper 之外, 必定执行。
+            function installShowStatusBridge() {
+                if (typeof window.showStatus !== 'function' || window.__bfStatusBridged) return;
+                window.__bfStatusBridged = true;
+                const prev = window.showStatus;
+                window.showStatus = function (message, type) {
+                    try { prev.apply(this, arguments); } catch (_) {}
+                    // 仅补 success: error/warning 由 ui.js 负责弹出, 不重复
+                    if (type === 'success') {
+                        window.bfToast(message, 'success');
+                    }
+                    return undefined;
+                };
+            }
+            if (document.readyState === 'loading') {
+                window.addEventListener('DOMContentLoaded', () => setTimeout(installShowStatusBridge, 0));
+            } else {
+                setTimeout(installShowStatusBridge, 0);
+            }
+        })();
     </script>
 
     <!-- ================ Aether Codex Refactor JS Modules ================ -->
