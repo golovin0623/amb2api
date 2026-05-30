@@ -324,13 +324,25 @@ def _sanitize_messages(messages) -> list:
         role = getattr(m, "role", None) or (m.get("role") if isinstance(m, dict) else "user")
         content = getattr(m, "content", None) if hasattr(m, "content") else (m.get("content") if isinstance(m, dict) else None)
 
-        # 处理多模态内容
+        # 处理多模态内容：
+        # - 保留 image_url / input_audio 等非文本块，透传为 OpenAI 多模态内容数组，
+        #   使 AssemblyAI 网关后的视觉模型（GPT-4o / Claude / Gemini）能收到图片；
+        # - 同时算出一份纯文本扁平化 content，供下游"要求字符串"的分支（工具调用等）使用。
+        multimodal_content = None
         if isinstance(content, list):
             parts_text = []
+            normalized_parts = []
+            has_non_text = False
             for part in content:
                 if isinstance(part, dict) and part.get("type") == "text" and part.get("text"):
                     parts_text.append(part["text"])
+                    normalized_parts.append({"type": "text", "text": part["text"]})
+                elif isinstance(part, dict) and part.get("type"):
+                    has_non_text = True
+                    normalized_parts.append(part)
             content = "\n".join(parts_text) if parts_text else ""
+            if has_non_text:
+                multimodal_content = normalized_parts
 
         # 确保 content 是字符串
         if content is None:
@@ -462,7 +474,11 @@ def _sanitize_messages(messages) -> list:
 
         # 情况3: 普通消息（user、assistant、system）
         else:
-            message = {"role": role, "content": content}
+            # 含图片等非文本块时透传多模态数组，否则用扁平化文本
+            message = {
+                "role": role,
+                "content": multimodal_content if multimodal_content is not None else content,
+            }
             # 保留 reasoning_content 和 thought_signature（Gemini thinking模型需要）
             if reasoning_content:
                 message["reasoning_content"] = reasoning_content
