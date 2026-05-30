@@ -8,6 +8,7 @@ import asyncio
 from typing import Dict, List, Optional, Any
 
 from log import log
+from ..core.debounced_saver import DebouncedSaver
 from ..models.models_key import RateLimitInfo, KeyStatus
 from ..storage.storage_adapter import get_storage_adapter
 
@@ -19,7 +20,7 @@ def _save_interval() -> float:
         return 5.0
 
 
-class RateLimiter:
+class RateLimiter(DebouncedSaver):
     """速率限制管理器"""
 
     def __init__(self):
@@ -27,33 +28,11 @@ class RateLimiter:
         self._initialized = False
         self._save_lock = asyncio.Lock()
         # 去抖保存：把每请求的整块写合并为窗口内一次（降低写放大）
-        self._dirty = False
-        self._save_task: Optional[asyncio.Task] = None
+        self._init_debounce(_save_interval())
 
-    def _schedule_save(self):
-        """标记脏并安排一次尾随保存（窗口内多次更新只落盘一次）。"""
-        self._dirty = True
-        interval = _save_interval()
-        if interval <= 0:
-            # 关闭去抖：立即异步保存
-            asyncio.create_task(self._flush())
-            return
-        if self._save_task is None or self._save_task.done():
-            self._save_task = asyncio.create_task(self._delayed_save(interval))
+    async def _do_save(self):
+        await self._save_rate_limits()
 
-    async def _delayed_save(self, interval: float):
-        try:
-            await asyncio.sleep(interval)
-            await self._flush()
-        except asyncio.CancelledError:
-            pass
-
-    async def _flush(self):
-        """若有未保存改动则落盘。"""
-        if self._dirty:
-            self._dirty = False
-            await self._save_rate_limits()
-    
     async def initialize(self):
         """初始化速率限制管理器"""
         if self._initialized:
@@ -143,7 +122,7 @@ class RateLimiter:
         log.debug(f"Updated rate limit for key {key_index}: limit={limit}, remaining={remaining}, reset_in={reset_in_seconds}s")
 
         # 去抖保存（窗口内合并为一次写）
-        self._schedule_save()
+        self._mark_dirty()
 
     async def is_key_exhausted(self, key_index: int) -> bool:
         """
@@ -242,7 +221,7 @@ class RateLimiter:
             log.info(f"Key {key_index} rate limit reset (limit={info.limit})")
 
             # 去抖保存
-            self._schedule_save()
+            self._mark_dirty()
             return True
         
         return False
@@ -318,9 +297,5 @@ async def get_rate_limiter() -> RateLimiter:
 
 async def flush_rate_limiter() -> None:
     """进程退出前把未落盘的限流改动刷新到存储（避免去抖窗口内丢更新）。"""
-    global _rate_limiter
     if _rate_limiter is not None:
-        task = _rate_limiter._save_task
-        if task is not None and not task.done():
-            task.cancel()
-        await _rate_limiter._flush()
+        await _rate_limiter.flush()

@@ -15,6 +15,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from log import log
+from ..core.debounced_saver import DebouncedSaver
 from ..storage.storage_adapter import get_storage_adapter
 
 _CONFIG_KEY = "user_tokens"
@@ -34,20 +35,15 @@ def mask_token(token: str) -> str:
     return t[:10] + "..." + t[-4:]
 
 
-class TokenManager:
+class TokenManager(DebouncedSaver):
     """下游 user token 的增删改查 + 配额消费。"""
 
     def __init__(self):
         self._tokens: Dict[str, Dict[str, Any]] = {}
         self._initialized = False
         self._lock = asyncio.Lock()
-        # 配额自增的去抖保存
-        self._dirty = False
-        self._save_task: Optional[asyncio.Task] = None
-        try:
-            self._save_interval = max(0.0, float(os.getenv("TOKEN_SAVE_INTERVAL", "5")))
-        except ValueError:
-            self._save_interval = 5.0
+        # 配额自增的去抖保存（共用 DebouncedSaver）
+        self._init_debounce(os.getenv("TOKEN_SAVE_INTERVAL", "5"))
 
     async def initialize(self):
         if self._initialized:
@@ -74,25 +70,8 @@ class TokenManager:
         except Exception as e:
             log.error(f"Failed to save user tokens: {e}")
 
-    def _schedule_save(self):
-        self._dirty = True
-        if self._save_interval <= 0:
-            asyncio.create_task(self._flush())
-            return
-        if self._save_task is None or self._save_task.done():
-            self._save_task = asyncio.create_task(self._delayed_save())
-
-    async def _delayed_save(self):
-        try:
-            await asyncio.sleep(self._save_interval)
-            await self._flush()
-        except asyncio.CancelledError:
-            pass
-
-    async def _flush(self):
-        if self._dirty:
-            self._dirty = False
-            await self._save()
+    async def _do_save(self):  # DebouncedSaver hook
+        await self._save()
 
     # ---- CRUD ----------------------------------------------------------------
 
@@ -204,7 +183,7 @@ class TokenManager:
                 return {"valid": False, "reason": reason, "meta": meta}
             # 消费
             meta["used"] = meta.get("used", 0) + 1
-            self._schedule_save()
+            self._mark_dirty()
             return {"valid": True, "reason": "", "meta": meta}
 
 
@@ -221,9 +200,5 @@ async def get_token_manager() -> TokenManager:
 
 async def flush_token_manager() -> None:
     """进程退出前刷新 token 配额计数。"""
-    global _token_manager
     if _token_manager is not None:
-        task = _token_manager._save_task
-        if task is not None and not task.done():
-            task.cancel()
-        await _token_manager._flush()
+        await _token_manager.flush()

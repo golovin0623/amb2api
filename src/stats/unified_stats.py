@@ -442,46 +442,32 @@ class UnifiedStats:
         # 异步保存
         asyncio.create_task(self._save_stats())
 
-    async def can_use_key_for_model(self, api_key: str, model: str) -> Dict[str, Any]:
+    def _quota_state(self, stats: Dict[str, Any], masked: str, model: str, pending: int = 0) -> Dict[str, Any]:
+        """计算配额状态字典（can_use / reserve 共用，避免两处规则漂移）。
+
+        pending = 当前 in-flight 预占数，计入限额判定（reserve 传 live pending，
+        只读检查 can_use 传 0）。
         """
-        判断密钥是否可以继续用于指定模型（仅按成功请求计数配额）
-
-        规则：
-        1. 总配额限制：success_count < daily_limit_total
-        2. 模型配额限制：model_ok < daily_limit_models[model]（如果配置了该模型）
-        """
-        if not self._initialized:
-            await self.initialize()
-
-        masked = mask_key(api_key)
-        key_hash = get_key_hash(api_key)
-        stats = self._touch_entry(masked, key_hash=key_hash)
-
         success_count = _as_non_negative_int(stats.get("success_count", 0))
-        total_limit = _as_positive_int(stats.get("daily_limit_total", DEFAULT_DAILY_LIMIT_TOTAL), DEFAULT_DAILY_LIMIT_TOTAL)
+        total_limit = _as_positive_int(
+            stats.get("daily_limit_total", DEFAULT_DAILY_LIMIT_TOTAL), DEFAULT_DAILY_LIMIT_TOTAL
+        )
         model_limits = self._normalize_model_limits(stats.get("daily_limit_models", {}))
         model_limit = model_limits.get(model)
-
         model_data = stats.get("model_counts", {}).get(model, {})
         model_success = _as_non_negative_int(model_data.get("ok", 0)) if isinstance(model_data, dict) else 0
 
-        total_remaining = max(total_limit - success_count, 0)
-        model_remaining = None
-        if model_limit is not None:
-            model_remaining = max(model_limit - model_success, 0)
-
-        if self._dirty:
-            asyncio.create_task(self._save_stats())
-
         allowed = True
         reason = ""
-        if success_count >= total_limit:
+        if success_count + pending >= total_limit:
             allowed = False
             reason = "total_limit_reached"
-        elif model_limit is not None and model_success >= model_limit:
+        elif model_limit is not None and model_success + pending >= model_limit:
             allowed = False
             reason = "model_limit_reached"
 
+        total_remaining = max(total_limit - success_count - pending, 0)
+        model_remaining = max(model_limit - model_success - pending, 0) if model_limit is not None else None
         effective_limit = total_limit if model_limit is None else min(total_limit, model_limit)
 
         return {
@@ -500,69 +486,32 @@ class UnifiedStats:
             "effective_limit": effective_limit,
         }
 
+    async def can_use_key_for_model(self, api_key: str, model: str) -> Dict[str, Any]:
+        """只读判断密钥是否可继续用于指定模型（不预占；不计 in-flight）。"""
+        if not self._initialized:
+            await self.initialize()
+        masked = mask_key(api_key)
+        stats = self._touch_entry(masked, key_hash=get_key_hash(api_key))
+        if self._dirty:
+            asyncio.create_task(self._save_stats())
+        return self._quota_state(stats, masked, model, pending=0)
+
     async def reserve_key_for_model(self, api_key: str, model: str) -> Dict[str, Any]:
         """原子地"预占"一个配额槽，消除选 key 与记账之间的 TOCTOU 超计。
 
         在锁内用 (success_count + pending) 对比限额：未满则 pending+1 并返回 allowed=True，
-        已满返回 allowed=False（不预占）。返回结构与 can_use_key_for_model 一致，便于复用。
-        每次成功预占都必须由 record_call（成功/失败均可）或 release_reservation 释放。
+        已满返回 allowed=False（不预占）。每次成功预占都由请求循环 finally 的
+        release_reservation 归还。
         """
         if not self._initialized:
             await self.initialize()
-
         masked = mask_key(api_key)
-        key_hash = get_key_hash(api_key)
-
         async with self._reserve_lock:
-            stats = self._touch_entry(masked, key_hash=key_hash)
-            success_count = _as_non_negative_int(stats.get("success_count", 0))
-            total_limit = _as_positive_int(
-                stats.get("daily_limit_total", DEFAULT_DAILY_LIMIT_TOTAL),
-                DEFAULT_DAILY_LIMIT_TOTAL,
-            )
-            model_limits = self._normalize_model_limits(stats.get("daily_limit_models", {}))
-            model_limit = model_limits.get(model)
-            model_data = stats.get("model_counts", {}).get(model, {})
-            model_success = (
-                _as_non_negative_int(model_data.get("ok", 0))
-                if isinstance(model_data, dict) else 0
-            )
-            pending = self._live_pending(masked)
-
-            allowed = True
-            reason = ""
-            # 关键：把 in-flight 的 pending 计入，N 个并发不会同时挤过最后一个槽
-            if success_count + pending >= total_limit:
-                allowed = False
-                reason = "total_limit_reached"
-            elif model_limit is not None and model_success + pending >= model_limit:
-                allowed = False
-                reason = "model_limit_reached"
-
-            if allowed:
+            stats = self._touch_entry(masked, key_hash=get_key_hash(api_key))
+            state = self._quota_state(stats, masked, model, pending=self._live_pending(masked))
+            if state["allowed"]:
                 self._pending.setdefault(masked, []).append(time.time() + self._pending_ttl)
-
-            total_remaining = max(total_limit - success_count - pending, 0)
-            model_remaining = None
-            if model_limit is not None:
-                model_remaining = max(model_limit - model_success - pending, 0)
-            effective_limit = total_limit if model_limit is None else min(total_limit, model_limit)
-
-            return {
-                "allowed": allowed,
-                "reason": reason,
-                "masked_key": masked,
-                "next_reset_time": stats.get("next_reset_time"),
-                "success_count": success_count,
-                "failure_count": _as_non_negative_int(stats.get("failure_count", 0)),
-                "total_limit": total_limit,
-                "total_remaining": total_remaining,
-                "model": model,
-                "model_success_count": model_success,
-                "model_limit": model_limit,
-                "model_remaining": model_remaining,
-                "effective_limit": effective_limit,
-            }
+            return state
 
     def release_reservation(self, api_key: str) -> None:
         """释放一个预占槽（用于预占后未走到 record_call 的兜底路径）。"""
