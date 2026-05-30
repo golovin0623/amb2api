@@ -9,6 +9,7 @@
 配额消费 `try_consume` 在锁内原子校验+自增，天然无 TOCTOU。
 """
 import asyncio
+import os
 import secrets
 import time
 from typing import Any, Dict, List, Optional
@@ -44,7 +45,7 @@ class TokenManager:
         self._dirty = False
         self._save_task: Optional[asyncio.Task] = None
         try:
-            self._save_interval = max(0.0, float(__import__("os").getenv("TOKEN_SAVE_INTERVAL", "5")))
+            self._save_interval = max(0.0, float(os.getenv("TOKEN_SAVE_INTERVAL", "5")))
         except ValueError:
             self._save_interval = 5.0
 
@@ -154,24 +155,40 @@ class TokenManager:
 
     # ---- 校验 + 配额 ---------------------------------------------------------
 
+    @staticmethod
+    def _check_meta(meta: Optional[Dict[str, Any]], model: Optional[str]) -> str:
+        """返回拒绝原因（通过为空串）。validate 与 try_consume 共用，避免两处规则漂移。
+
+        语义要点：
+        - allowed_models 为 None = 不限模型；为 []（空白名单）= 拒绝所有模型（用 `is not None` 判定，
+          避免空列表被当作"无限制"）。
+        - expires_at 为 None = 永不过期；任意非 None 值都按真实时间戳判定（0 视为已过期，fail-safe）。
+        """
+        if not meta:
+            return "invalid_token"
+        if not meta.get("enabled", True):
+            return "token_disabled"
+        exp = meta.get("expires_at")
+        if exp is not None:
+            try:
+                if _now() > float(exp):
+                    return "token_expired"
+            except (TypeError, ValueError):
+                return "token_expired"
+        allowed = meta.get("allowed_models")
+        if model and allowed is not None and model not in allowed:
+            return "model_not_allowed"
+        quota = meta.get("quota")
+        if quota is not None and meta.get("used", 0) >= int(quota):
+            return "quota_exceeded"
+        return ""
+
     async def validate(self, token: str, model: Optional[str] = None) -> Dict[str, Any]:
         """只读校验（不消费配额）。返回 {valid, reason, meta}。"""
         await self.initialize()
         meta = self._tokens.get(token)
-        if not meta:
-            return {"valid": False, "reason": "invalid_token", "meta": None}
-        if not meta.get("enabled", True):
-            return {"valid": False, "reason": "token_disabled", "meta": meta}
-        exp = meta.get("expires_at")
-        if exp and _now() > float(exp):
-            return {"valid": False, "reason": "token_expired", "meta": meta}
-        allowed = meta.get("allowed_models")
-        if model and allowed and model not in allowed:
-            return {"valid": False, "reason": "model_not_allowed", "meta": meta}
-        quota = meta.get("quota")
-        if quota is not None and meta.get("used", 0) >= int(quota):
-            return {"valid": False, "reason": "quota_exceeded", "meta": meta}
-        return {"valid": True, "reason": "", "meta": meta}
+        reason = self._check_meta(meta, model)
+        return {"valid": reason == "", "reason": reason, "meta": meta}
 
     async def try_consume(self, token: str, model: Optional[str] = None) -> Dict[str, Any]:
         """原子校验 + 消费一次配额。返回 {valid, reason, meta}。
@@ -182,19 +199,9 @@ class TokenManager:
         await self.initialize()
         async with self._lock:
             meta = self._tokens.get(token)
-            if not meta:
-                return {"valid": False, "reason": "invalid_token", "meta": None}
-            if not meta.get("enabled", True):
-                return {"valid": False, "reason": "token_disabled", "meta": meta}
-            exp = meta.get("expires_at")
-            if exp and _now() > float(exp):
-                return {"valid": False, "reason": "token_expired", "meta": meta}
-            allowed = meta.get("allowed_models")
-            if model and allowed and model not in allowed:
-                return {"valid": False, "reason": "model_not_allowed", "meta": meta}
-            quota = meta.get("quota")
-            if quota is not None and meta.get("used", 0) >= int(quota):
-                return {"valid": False, "reason": "quota_exceeded", "meta": meta}
+            reason = self._check_meta(meta, model)
+            if reason:
+                return {"valid": False, "reason": reason, "meta": meta}
             # 消费
             meta["used"] = meta.get("used", 0) + 1
             self._schedule_save()

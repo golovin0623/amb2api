@@ -412,8 +412,9 @@ class UnifiedStats:
 
         stats = self._touch_entry(masked, key_hash=key_hash)
 
-        # 释放本次调用对应的预占槽（若存在）
-        self._release_one_pending(masked)
+        # 注意：配额预占的释放不在这里做。它由请求循环的 finally 统一归还
+        # （见 assembly_client.send_assembly_request），保证每次预占恰好释放一次、
+        # 且释放的是本次尝试真正预占的 key，避免重复释放/错释放。
 
         if success:
             stats["success_count"] = stats.get("success_count", 0) + 1

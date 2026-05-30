@@ -2178,17 +2178,16 @@ async def send_assembly_request(
             error_msg = str(e) if str(e) else repr(e)
             error_type = type(e).__name__
             
-            # 记录失败统计（连接错误等异常也要记录）
-            try:
-                from ..stats.unified_stats import get_unified_stats
-                unified_stats = await get_unified_stats()
-                # 尝试获取当前使用的密钥
-                current_key = keys[idx] if isinstance(idx, int) and 0 <= idx < len(keys) else (keys[0] if keys else "unknown")
-                await unified_stats.record_call(current_key, openai_request.model, success=False)
-                log.debug(f"Recorded connection failure for key {_mask_key(current_key)}, model {openai_request.model}")
-            except Exception as stats_err:
-                log.warning(f"Failed to record connection failure statistics: {stats_err}")
-            
+            # 记录失败统计（仅当确实选中了某个 key 时；避免把异常错记到 keys[0]）
+            if isinstance(idx, int) and 0 <= idx < len(keys):
+                try:
+                    from ..stats.unified_stats import get_unified_stats
+                    unified_stats = await get_unified_stats()
+                    await unified_stats.record_call(keys[idx], openai_request.model, success=False)
+                    log.debug(f"Recorded connection failure for key {_mask_key(keys[idx])}, model {openai_request.model}")
+                except Exception as stats_err:
+                    log.warning(f"Failed to record connection failure statistics: {stats_err}")
+
             if attempt < max_retries:
                 log.warning(f"[RETRY] AssemblyAI request failed ({error_type}), retrying ({attempt + 1}/{max_retries}): {error_msg}")
                 await asyncio.sleep(retry_interval)
@@ -2197,3 +2196,13 @@ async def send_assembly_request(
                 log.error(f"AssemblyAI request failed ({error_type}): {error_msg}", exc_info=True)
                 from fastapi.responses import JSONResponse
                 return JSONResponse(content={"error": {"message": f"Request failed ({error_type}): {error_msg}", "type": "api_error"}}, status_code=500)
+        finally:
+            # 统一归还本次尝试的配额预占：覆盖成功/失败/重试(continue)/早返回/异常所有路径，
+            # 保证每次 selection 的预占恰好释放一次、且释放的是真正预占的 key（idx 有效时）。
+            if isinstance(idx, int) and 0 <= idx < len(keys):
+                try:
+                    from ..stats.unified_stats import get_unified_stats
+                    _us = await get_unified_stats()
+                    _us.release_reservation(keys[idx])
+                except Exception:
+                    pass

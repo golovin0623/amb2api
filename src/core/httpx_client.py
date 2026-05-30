@@ -52,6 +52,23 @@ def _build_client(proxy: Optional[str]) -> httpx.AsyncClient:
     return httpx.AsyncClient(**kwargs)
 
 
+# 旧客户端延迟关闭的宽限期：略大于默认 read 超时（300s），让 in-flight 流收尾
+_OLD_CLIENT_GRACE = 330.0
+
+
+async def _graceful_close_old_client(client: httpx.AsyncClient) -> None:
+    """代理变更后延迟关闭旧共享客户端，避免打断仍在读取的 in-flight 流。"""
+    try:
+        await asyncio.sleep(_OLD_CLIENT_GRACE)
+    except asyncio.CancelledError:
+        pass
+    try:
+        if not client.is_closed:
+            await client.aclose()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def get_shared_client() -> httpx.AsyncClient:
     """返回进程级共享的 AsyncClient。代理变化或被关闭时自动重建。"""
     global _shared_client, _shared_client_proxy
@@ -68,10 +85,9 @@ async def get_shared_client() -> httpx.AsyncClient:
         _shared_client = _build_client(proxy)
         _shared_client_proxy = proxy
         if old is not None and not old.is_closed:
-            try:
-                await old.aclose()
-            except Exception:  # noqa: BLE001
-                pass
+            # 不立即 aclose：可能仍有 in-flight 流在用旧客户端读取（改代理时尤甚）。
+            # 延迟优雅关闭，给已建立的流（read 超时上限 300s）留出收尾时间。
+            asyncio.create_task(_graceful_close_old_client(old))
         log.debug(
             f"共享 HTTP 客户端已构建 (http2={_HTTP2_AVAILABLE}, proxy={'yes' if proxy else 'no'})"
         )

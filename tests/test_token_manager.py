@@ -71,6 +71,32 @@ def test_unlimited_quota():
     asyncio.run(_run())
 
 
+def test_empty_allowed_models_denies_all_models():
+    """allowed_models=[]（显式空白名单）应拒绝所有模型，而非放行所有（falsy-list bug）。"""
+    async def _run():
+        tm = _fresh()
+        tok = (await tm.create_token(name="empty", allowed_models=[]))["token"]
+        assert (await tm.validate(tok, "gpt-5"))["reason"] == "model_not_allowed"
+        assert (await tm.try_consume(tok, "anything"))["reason"] == "model_not_allowed"
+        # 对比：None 白名单 = 不限模型
+        tok2 = (await tm.create_token(name="none", allowed_models=None))["token"]
+        assert (await tm.validate(tok2, "gpt-5"))["valid"]
+    asyncio.run(_run())
+
+
+def test_expires_at_zero_is_treated_as_expired():
+    """expires_at=0（falsy）应判为已过期，而非永不过期。"""
+    async def _run():
+        tm = _fresh()
+        tok = (await tm.create_token(name="z"))["token"]
+        await tm.update_token(tok, {"expires_at": 0})
+        assert (await tm.validate(tok))["reason"] == "token_expired"
+        # None = 永不过期
+        await tm.update_token(tok, {"expires_at": None})
+        assert (await tm.validate(tok))["valid"]
+    asyncio.run(_run())
+
+
 def test_update_and_delete():
     async def _run():
         tm = _fresh()

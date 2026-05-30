@@ -45,23 +45,44 @@ def test_reservation_prevents_overshoot():
     asyncio.run(_run())
 
 
-def test_record_call_releases_reservation():
+def test_release_frees_slot_and_record_call_does_not():
+    """预占的释放由 release_reservation 负责（请求循环 finally 调用）；
+    record_call 只提交 success_count、不动 pending。两者解耦，避免重复/错释放。"""
     async def _run():
         us = _make_stats(2)
         api_key = "k" * 40
-        masked = _seed_key(us, api_key, 2)
+        _seed_key(us, api_key, 2)
 
         await us.reserve_key_for_model(api_key, "gpt-5")
         await us.reserve_key_for_model(api_key, "gpt-5")  # pending=2, 占满
         assert not (await us.reserve_key_for_model(api_key, "gpt-5"))["allowed"]
 
-        # 一次成功：success_count=1, pending 2->1 → 1+1=2 >= 2，仍占满
+        # record_call 不再释放预占：success_count=1，pending 仍=2 → 1+2 >= 2，仍占满
         await us.record_call(api_key, "gpt-5", success=True)
         assert not (await us.reserve_key_for_model(api_key, "gpt-5"))["allowed"]
 
-        # 一次失败：failure_count+1, pending 1->0；success_count 仍=1 → 1<2，放行
-        await us.record_call(api_key, "gpt-5", success=False)
+        # 显式释放两个预占（模拟两次请求各自 finally 归还）
+        us.release_reservation(api_key)
+        us.release_reservation(api_key)  # pending 2->0
+        # success_count=1, pending=0 → 1 < 2，放行
         assert (await us.reserve_key_for_model(api_key, "gpt-5"))["allowed"]
+
+    async def _run_balanced():
+        # 一次完整成功请求的净效果：reserve(+1 pending) → record_call(+1 success)
+        # → release(-1 pending)，最终 success_count+1、pending 归零。
+        us = _make_stats(3)
+        api_key = "k" * 40
+        _seed_key(us, api_key, 3)
+        for _ in range(3):
+            r = await us.reserve_key_for_model(api_key, "gpt-5")
+            assert r["allowed"]
+            await us.record_call(api_key, "gpt-5", success=True)
+            us.release_reservation(api_key)
+        # 现在 success_count=3 == limit → 即便 pending=0 也应拒绝
+        assert not (await us.reserve_key_for_model(api_key, "gpt-5"))["allowed"]
+
+    asyncio.run(_run())
+    asyncio.run(_run_balanced())
 
     asyncio.run(_run())
 
