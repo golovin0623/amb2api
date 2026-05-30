@@ -40,8 +40,8 @@
 
 | # | 项 | 状态 | 风险 | 备注 |
 |---|----|------|------|------|
-| A | 限流双写竞态：旧 `assembly_client._rate_limit_info` 与 `RateLimiter` 写同一 `rate_limit_info` 键 | ⬜ | 中 | 触及 key 选择；需配套测试 |
-| B | 每请求写风暴合并（rate-limit + stats 多次 fire-and-forget save） | ⬜ | 中 | |
+| A | 限流双写竞态：旧 `_rate_limit_info` 与 `RateLimiter` 写同一键 | ✅ | 中 | 已统一到 RateLimiter，删旧系统，重写 2 个测试 (8ffad4f) |
+| B | 每请求写风暴合并（rate-limit save 去抖） | ⏳ | 中 | A 已去掉一处双写；RateLimiter 保存去抖待做 |
 | C | 配额 TOCTOU + "流连接建立即计 success" | ⬜ | 中高 | 改配额语义，回归 test_daily_usage_limits |
 | D | fire-and-forget task 纳入 TaskManager（优雅关闭不丢写） | ⬜ | 低 | |
 | E | 流式 client 断连检测（`is_disconnected`），停止空跑上游 | ⬜ | 中 | 需把 Request 透传进生成器 |

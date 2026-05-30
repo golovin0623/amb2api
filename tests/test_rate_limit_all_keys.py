@@ -41,6 +41,8 @@ async def _setup_rate_limiter(data):
     rl._initialized = True  # 跳过存储加载，保证隔离
     for idx, (limit, remaining) in data.items():
         await rl.update_rate_limit(idx, limit, remaining, 0)
+    if rl._save_task is not None:
+        rl._save_task.cancel()  # 取消去抖任务，避免悬挂
     return rl
 
 

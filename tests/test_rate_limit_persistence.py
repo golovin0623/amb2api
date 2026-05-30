@@ -21,6 +21,8 @@ async def _roundtrip(data):
     await rl1.initialize()
     for idx, (limit, remaining, reset_time) in data.items():
         await rl1.update_rate_limit(idx, limit, remaining, reset_time)
+    if rl1._save_task is not None:
+        rl1._save_task.cancel()  # 取消去抖任务，避免悬挂
     await rl1._save_rate_limits()  # 直接 await 落盘（不依赖 fire-and-forget）
 
     # 模拟重启：全新实例从存储加载

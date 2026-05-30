@@ -52,6 +52,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log.error(f"关闭异步任务时出错: {e}")
 
+    # 刷新限流去抖缓存（避免窗口内的更新丢失）
+    try:
+        from src.services.rate_limiter import flush_rate_limiter
+        await flush_rate_limiter()
+    except Exception as e:
+        log.error(f"刷新限流缓存时出错: {e}")
+
     # 关闭共享 HTTP 客户端
     try:
         from src.core.httpx_client import close_shared_client

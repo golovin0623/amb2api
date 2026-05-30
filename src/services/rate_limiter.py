@@ -2,6 +2,7 @@
 速率限制管理器模块
 跟踪和管理 API 密钥的速率限制状态
 """
+import os
 import time
 import asyncio
 from typing import Dict, List, Optional, Any
@@ -11,13 +12,47 @@ from ..models.models_key import RateLimitInfo, KeyStatus
 from ..storage.storage_adapter import get_storage_adapter
 
 
+def _save_interval() -> float:
+    try:
+        return max(0.0, float(os.getenv("RATE_LIMIT_SAVE_INTERVAL", "5")))
+    except ValueError:
+        return 5.0
+
+
 class RateLimiter:
     """速率限制管理器"""
-    
+
     def __init__(self):
         self._rate_limits: Dict[int, RateLimitInfo] = {}  # 速率限制信息缓存
         self._initialized = False
         self._save_lock = asyncio.Lock()
+        # 去抖保存：把每请求的整块写合并为窗口内一次（降低写放大）
+        self._dirty = False
+        self._save_task: Optional[asyncio.Task] = None
+
+    def _schedule_save(self):
+        """标记脏并安排一次尾随保存（窗口内多次更新只落盘一次）。"""
+        self._dirty = True
+        interval = _save_interval()
+        if interval <= 0:
+            # 关闭去抖：立即异步保存
+            asyncio.create_task(self._flush())
+            return
+        if self._save_task is None or self._save_task.done():
+            self._save_task = asyncio.create_task(self._delayed_save(interval))
+
+    async def _delayed_save(self, interval: float):
+        try:
+            await asyncio.sleep(interval)
+            await self._flush()
+        except asyncio.CancelledError:
+            pass
+
+    async def _flush(self):
+        """若有未保存改动则落盘。"""
+        if self._dirty:
+            self._dirty = False
+            await self._save_rate_limits()
     
     async def initialize(self):
         """初始化速率限制管理器"""
@@ -106,10 +141,10 @@ class RateLimiter:
         self._rate_limits[key_index] = info
         
         log.debug(f"Updated rate limit for key {key_index}: limit={limit}, remaining={remaining}, reset_in={reset_in_seconds}s")
-        
-        # 异步保存
-        asyncio.create_task(self._save_rate_limits())
-    
+
+        # 去抖保存（窗口内合并为一次写）
+        self._schedule_save()
+
     async def is_key_exhausted(self, key_index: int) -> bool:
         """
         检查密钥是否已用尽
@@ -205,9 +240,9 @@ class RateLimiter:
             info.reset_in_seconds = 0
             
             log.info(f"Key {key_index} rate limit reset (limit={info.limit})")
-            
-            # 异步保存
-            asyncio.create_task(self._save_rate_limits())
+
+            # 去抖保存
+            self._schedule_save()
             return True
         
         return False
@@ -279,3 +314,13 @@ async def get_rate_limiter() -> RateLimiter:
         _rate_limiter = RateLimiter()
         await _rate_limiter.initialize()
     return _rate_limiter
+
+
+async def flush_rate_limiter() -> None:
+    """进程退出前把未落盘的限流改动刷新到存储（避免去抖窗口内丢更新）。"""
+    global _rate_limiter
+    if _rate_limiter is not None:
+        task = _rate_limiter._save_task
+        if task is not None and not task.done():
+            task.cancel()
+        await _rate_limiter._flush()
