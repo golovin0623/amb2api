@@ -86,7 +86,7 @@ class UsageStats:
         try:
             from config import get_base_model_name, get_base_model_from_feature_model
             
-            # Remove feature prefixes (流式抗截断/, 假流式/)
+            # Remove feature prefixes (假流式/)
             base_with_suffix = get_base_model_from_feature_model(model_name)
             
             # Remove thinking/search suffixes (-maxthinking, -nothinking, -search)
@@ -98,7 +98,7 @@ class UsageStats:
         except ImportError:
             # Fallback logic if config import fails
             clean_model = model_name
-            for prefix in ["流式抗截断/", "假流式/"]:
+            for prefix in ["假流式/"]:
                 if clean_model.startswith(prefix):
                     clean_model = clean_model[len(prefix):]
                     break

@@ -52,62 +52,15 @@ async def _get_storage_config_cached(key: str) -> Any:
 # 需要自动封禁的错误码 (默认值，可通过环境变量或配置覆盖)
 AUTO_BAN_ERROR_CODES = [401, 403]
 
-# Default Safety Settings for Google API
-DEFAULT_SAFETY_SETTINGS = [
-    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_CIVIC_INTEGRITY", "threshold": "BLOCK_NONE"}
-]
-
-# Helper function to get base model name from any variant
+# 仅保留 usage_stats 用于"模型家族归一化"的辅助函数；其余 Gemini 时代的
+# 安全等级 / thinking-budget / search 辅助已随死代码清理移除。
 def get_base_model_name(model_name):
-    """Convert variant model name to base model name."""
-    # Remove all possible suffixes in order
+    """Strip variant suffixes (-maxthinking/-nothinking/-search) to a base name."""
     suffixes = ["-maxthinking", "-nothinking", "-search"]
     for suffix in suffixes:
         if model_name.endswith(suffix):
             return model_name[:-len(suffix)]
     return model_name
-
-# Helper function to check if model uses search grounding
-def is_search_model(model_name):
-    """Check if model name indicates search grounding should be enabled."""
-    return "-search" in model_name
-
-# Helper function to check if model uses no thinking
-def is_nothinking_model(model_name):
-    """Check if model name indicates thinking should be disabled."""
-    return "-nothinking" in model_name
-
-# Helper function to check if model uses max thinking
-def is_maxthinking_model(model_name):
-    """Check if model name indicates maximum thinking budget should be used."""
-    return "-maxthinking" in model_name
-
-# Helper function to get thinking budget for a model
-def get_thinking_budget(model_name):
-    """Get the appropriate thinking budget for a model based on its name and variant."""
-    
-    if is_nothinking_model(model_name):
-        return 128  # Limited thinking for pro
-    elif is_maxthinking_model(model_name):
-        return 32768
-    else:
-        # Default thinking budget for regular models
-        return None  # Default for all models
-
-# Helper function to check if thinking should be included in output
-def should_include_thoughts(model_name):
-    """Check if thoughts should be included in the response."""
-    if is_nothinking_model(model_name):
-        # For nothinking mode, still include thoughts if it's a pro model
-        base_model = get_base_model_name(model_name)
-        return "pro" in base_model
-    else:
-        # For all other modes, include thoughts
-        return True
 
 # Dynamic Configuration System - Optimized for memory efficiency
 async def get_config_value(key: str, default: Any = None, env_var: Optional[str] = None) -> Any:
@@ -256,23 +209,6 @@ async def get_retry_429_interval() -> float:
     return float(await get_config_value("retry_429_interval", 1))
 
 
-# Model name lists for different features
-BASE_MODELS = [
-    "gemini-2.5-pro-preview-06-05",
-    "gemini-2.5-pro", 
-    "gemini-2.5-pro-preview-05-06",
-    "gemini-2.5-flash",
-    "gemini-flash-latest",
-    "gemini-2.5-flash-image",
-    "gemini-2.5-flash-image-preview",
-    "gemini-2.5-flash-preview-09-2025"
-]
-
-PUBLIC_API_MODELS = [
-    "gemini-2.5-flash-image",
-    "gemini-2.5-flash-image-preview"
-]
-
 async def get_available_models_async(router_type: str = "openai"):
     """异步版本：优先返回已选模型或缓存模型"""
     selected = await get_config_value("available_models_selected")
@@ -303,27 +239,12 @@ def is_fake_streaming_model(model_name: str) -> bool:
     """Check if model name indicates fake streaming should be used."""
     return model_name.startswith("假流式/")
 
-def is_anti_truncation_model(model_name: str) -> bool:
-    """Check if model name indicates anti-truncation should be used."""
-    return model_name.startswith("流式抗截断/")
-
 def get_base_model_from_feature_model(model_name: str) -> str:
-    """Get base model name from feature model name."""
-    # Remove feature prefixes
-    for prefix in ["假流式/", "流式抗截断/"]:
+    """Get base model name from feature model name (strips known feature prefixes)."""
+    for prefix in ["假流式/"]:
         if model_name.startswith(prefix):
             return model_name[len(prefix):]
     return model_name
-
-async def get_anti_truncation_max_attempts() -> int:
-    """
-    Get maximum attempts for anti-truncation continuation.
-    
-    Environment variable: ANTI_TRUNCATION_MAX_ATTEMPTS
-    TOML config key: anti_truncation_max_attempts
-    Default: 3
-    """
-    return 3
 
 # Server Configuration
 async def get_server_host() -> str:
@@ -419,19 +340,6 @@ async def get_auto_load_env_creds() -> bool:
         return env_value.lower() in ("true", "1", "yes", "on")
     
     return bool(await get_config_value("auto_load_env_creds", False))
-
-async def get_compatibility_mode_enabled() -> bool:
-    """
-    Get compatibility mode setting.
-    
-    兼容性模式：启用后所有system消息全部转换成user，停用system_instructions。
-    该选项可能会降低模型理解能力，但是能避免流式空回的情况。
-    
-    Environment variable: COMPATIBILITY_MODE
-    TOML config key: compatibility_mode_enabled
-    Default: True
-    """
-    return False
 
 
 

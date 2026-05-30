@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from config import get_available_models_async, is_fake_streaming_model, is_anti_truncation_model
+from config import get_available_models_async, is_fake_streaming_model
 from log import log
 from ..services.assembly_client import send_assembly_request
 from ..services.assembly_stream_handler import fake_stream_response_for_assembly, convert_streaming_response
@@ -728,22 +728,14 @@ async def chat_completions(
     # 处理模型名称和功能检测
     model = request_data.model
     use_fake_streaming = is_fake_streaming_model(model)
-    use_anti_truncation = is_anti_truncation_model(model)
-    
+
     # AssemblyAI 直接使用传入模型名，无需特征前缀转换
-    
+
     # 处理假流式
     if use_fake_streaming and getattr(request_data, "stream", False):
         request_data.stream = False
         return await fake_stream_response_for_assembly(request_data, trace=trace)
-    
-    # 处理抗截断 (仅流式传输时有效)
-    is_streaming = getattr(request_data, "stream", False)
-    if use_anti_truncation and is_streaming:
-        log.warning("AssemblyAI 暂不支持原生流式抗截断，将作为普通请求处理")
-        request_data.stream = False
-        is_streaming = False
-    
+
     # 发送到 AssemblyAI（非流式）
     is_streaming = getattr(request_data, "stream", False)
     if is_streaming:
