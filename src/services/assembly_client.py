@@ -1056,50 +1056,6 @@ def _build_claude_tool_recovery_payload(
 
 _rr_counter = itertools.count()
 _failed_keys = {}  # 记录失败的 Key 和失败时间
-_rate_limit_info = {}  # 记录每个 Key 的速率限制信息
-_rate_limit_loaded = False  # 标记是否已加载速率限制信息
-_load_lock = asyncio.Lock()  # 加载锁，防止并发加载
-
-async def _load_rate_limit_info():
-    """从存储中加载速率限制信息"""
-    global _rate_limit_info, _rate_limit_loaded
-    
-    # 使用锁防止并发加载
-    async with _load_lock:
-        if _rate_limit_loaded:
-            return
-        
-        try:
-            adapter = await get_storage_adapter()
-            data = await adapter.get_config("rate_limit_info")
-            if data and isinstance(data, dict):
-                # 转换字符串key为整数key
-                _rate_limit_info = {}
-                for k, v in data.items():
-                    try:
-                        idx = int(k)
-                        _rate_limit_info[idx] = v
-                    except (ValueError, TypeError):
-                        log.warning(f"Invalid rate limit key: {k}, skipping")
-                log.info(f"Loaded rate limit info for {len(_rate_limit_info)} keys from storage")
-            else:
-                log.info("No existing rate limit info found in storage")
-            _rate_limit_loaded = True
-        except Exception as e:
-            log.error(f"Failed to load rate limit info from storage: {e}")
-            # 即使失败也标记为已加载，使用内存数据继续运行
-            _rate_limit_loaded = True
-
-async def _save_rate_limit_info():
-    """保存速率限制信息到存储"""
-    try:
-        adapter = await get_storage_adapter()
-        # 转换整数key为字符串key以便JSON序列化
-        data_to_save = {str(k): v for k, v in _rate_limit_info.items()}
-        await adapter.set_config("rate_limit_info", data_to_save)
-        log.debug(f"Saved rate limit info for {len(_rate_limit_info)} keys")
-    except Exception as e:
-        log.error(f"Failed to save rate limit info: {e}")
 
 def _next_key_index(n: int) -> int:
     """
@@ -1482,111 +1438,67 @@ def _sanitize_headers_for_log(headers: Any, max_value_len: int = 240) -> Dict[st
     return sanitized
 
 async def _update_rate_limit_info(idx: int, api_key: str, headers: dict):
-    """更新速率限制信息 - 使用新的 RateLimiter"""
+    """更新速率限制信息 —— 单一真相源 RateLimiter（不再维护并行的旧内存缓存/旧存储键）。"""
     import time
     try:
         limit = headers.get('x-ratelimit-limit')
         remaining = headers.get('x-ratelimit-remaining')
         reset = headers.get('x-ratelimit-reset')
-        
-        if limit is not None or remaining is not None:
-            masked_key = _mask_key(api_key)
-            
-            # 同时更新旧的内存缓存（兼容性）
-            if idx not in _rate_limit_info:
-                _rate_limit_info[idx] = {
-                    "key": masked_key,
-                    "full_key": api_key,
-                }
-            
-            info = _rate_limit_info[idx]
-            info["last_request_time"] = time.time()
-            
-            limit_val = 0
-            remaining_val = 0
-            reset_time = 0
-            
-            if limit is not None:
-                try:
-                    limit_val = int(limit)
-                    info["limit"] = limit_val
-                except (ValueError, TypeError):
-                    pass
-            
-            if remaining is not None:
-                try:
-                    remaining_val = int(remaining)
-                    info["remaining"] = remaining_val
-                    info["used"] = info.get("limit", 0) - remaining_val
-                except (ValueError, TypeError):
-                    pass
-            
-            if reset is not None:
-                try:
-                    reset_val = int(reset)
-                    if reset_val > 0:
-                        reset_time = int(time.time() + reset_val)
-                        info["reset_time"] = reset_time
-                    else:
-                        reset_time = int(time.time() + 60)
-                        info["reset_time"] = reset_time
-                except (ValueError, TypeError):
-                    pass
-            
-            log.debug(f"Updated rate limit info for key {masked_key}: limit={limit_val}, remaining={remaining_val}, reset_in={reset}s")
-            
-            # 使用新的 RateLimiter 更新
+
+        if limit is None and remaining is None:
+            return
+
+        masked_key = _mask_key(api_key)
+        limit_val = 0
+        remaining_val = 0
+        reset_time = 0
+
+        if limit is not None:
             try:
-                rate_limiter = await get_rate_limiter()
-                await rate_limiter.update_rate_limit(idx, limit_val, remaining_val, reset_time)
-            except Exception as e:
-                log.warning(f"Failed to update RateLimiter: {e}")
-            
-            # 异步保存到存储（兼容旧系统）
-            asyncio.create_task(_save_rate_limit_info())
+                limit_val = int(limit)
+            except (ValueError, TypeError):
+                pass
+
+        if remaining is not None:
+            try:
+                remaining_val = int(remaining)
+            except (ValueError, TypeError):
+                pass
+
+        if reset is not None:
+            try:
+                reset_val = int(reset)
+                reset_time = int(time.time() + (reset_val if reset_val > 0 else 60))
+            except (ValueError, TypeError):
+                pass
+
+        log.debug(f"Updated rate limit info for key {masked_key}: limit={limit_val}, remaining={remaining_val}, reset_in={reset}s")
+
+        rate_limiter = await get_rate_limiter()
+        await rate_limiter.update_rate_limit(idx, limit_val, remaining_val, reset_time)
     except Exception as e:
         log.error(f"Failed to update rate limit info: {e}")
 
 async def initialize_rate_limit_system():
     """初始化速率限制系统，在应用启动时调用"""
     log.info("Initializing rate limit system...")
-    await _load_rate_limit_info()
+    await get_rate_limiter()  # 触发 RateLimiter 从存储加载
     log.info("Rate limit system initialized")
 
 async def get_rate_limit_info() -> dict:
-    """获取所有key的速率限制信息"""
-    import time
-    
-    # 确保数据已加载
-    await _load_rate_limit_info()
-    
-    current_time = time.time()
+    """获取所有 key 的速率限制信息（从 RateLimiter 派生，供面板展示）。"""
+    rate_limiter = await get_rate_limiter()
+    all_limits = await rate_limiter.get_all_rate_limits()
     result = {}
-    
-    for idx, info in _rate_limit_info.items():
-        key_info = {
-            "key": info.get("key", "unknown"),
-            "limit": info.get("limit", 0),
-            "remaining": info.get("remaining", 0),
-            "used": info.get("used", 0),
-            "last_request_time": info.get("last_request_time", 0),
+    for idx, info in all_limits.items():
+        result[idx] = {
+            "limit": info.limit,
+            "remaining": info.remaining,
+            "used": info.used,
+            "reset_in_seconds": info.reset_in_seconds,
+            # RateLimiter 不跟踪 last_request_time，保留字段以兼容面板
+            "last_request_time": 0,
         }
-        
-        # 计算重置剩余时间
-        reset_time = info.get("reset_time", 0)
-        if reset_time > current_time:
-            key_info["reset_in_seconds"] = int(reset_time - current_time)
-        else:
-            key_info["reset_in_seconds"] = 0
-            # 如果已经过了重置时间，重置计数器
-            if info.get("limit", 0) > 0:
-                info["remaining"] = info["limit"]
-                info["used"] = 0
-                key_info["remaining"] = info["limit"]
-                key_info["used"] = 0
-        
-        result[idx] = key_info
-    
     return result
 
 async def fetch_assembly_models() -> Dict[str, Any]:
