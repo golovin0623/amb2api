@@ -729,3 +729,9 @@ async def get_unified_stats() -> UnifiedStats:
         _unified_stats = UnifiedStats()
         await _unified_stats.initialize()
     return _unified_stats
+
+
+async def flush_unified_stats() -> None:
+    """进程退出前强制落盘统计（30s 节流窗口内的改动不丢）。仅在已实例化时执行。"""
+    if _unified_stats is not None and _unified_stats._dirty:
+        await _unified_stats._save_stats(force=True)

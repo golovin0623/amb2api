@@ -59,6 +59,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log.error(f"刷新限流缓存时出错: {e}")
 
+    # 刷新统计（30s 节流窗口内的改动落盘）
+    try:
+        from src.stats.unified_stats import flush_unified_stats
+        await flush_unified_stats()
+    except Exception as e:
+        log.error(f"刷新统计时出错: {e}")
+
     # 关闭共享 HTTP 客户端
     try:
         from src.core.httpx_client import close_shared_client
