@@ -43,8 +43,8 @@
 | A | 限流双写竞态：旧 `_rate_limit_info` 与 `RateLimiter` 写同一键 | ✅ | 中 | 已统一到 RateLimiter，删旧系统，重写 2 个测试 (8ffad4f) |
 | B | 每请求写风暴合并（rate-limit save 去抖） | ✅ | 中 | RateLimiter 保存去抖 5s + lifespan flush (bb6cd3e) |
 | C | 配额 TOCTOU + "流连接建立即计 success" | 🔒 | 中高 | 见下方分析：需预占(reservation)重设计，不宜急改 |
-| D | 优雅关闭刷新 stats/perf（不丢在途写） | ⏳ | 低 | |
-| E | 流式 client 断连检测（`is_disconnected`），停止空跑上游 | ⬜ | 中 | 需把 Request 透传进生成器 |
+| D | 优雅关闭刷新 stats（不丢在途写） | ✅ | 低 | flush_unified_stats + lifespan (baeba37) |
+| E | 流式 client 断连检测（`is_disconnected`），停止空跑上游 | ⏳ | 中 | 需把 Request 透传进生成器 |
 
 > **C 的结论（经验证）**：`record_call` 的自增是同步的（await 之间无让点 → 事件循环内原子），**不存在丢更新**。真正的 TOCTOU 在"选 key"与"记账"之间（中间隔了整个上游请求），正确修法是**预占式配额**（选 key 时原子 check-and-reserve、失败再回滚），属架构级改动且会改动 `test_daily_usage_limits` 锁定的语义。"连上即 success" 实为"拿到 2xx 响应头"，是合理的成功近似。仓促改配额语义的风险高于现状（有界的轻微超计），故按独立专项延后。
 
