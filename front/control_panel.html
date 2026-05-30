@@ -6439,14 +6439,14 @@
         /* 按下: 明确的"已点击"回弹触感 */
         .btn:active:not(:disabled),
         .btn-sm:active:not(:disabled),
-        .pagination-btn:active, .btn-icon:active, .refresh-btn:active,
-        .cost-view-btn:active, .cost-window-btn:active, .config-copy-btn:active,
-        .col-toggle-btn:active, .usage-product-btn:active, .trace-detail-btn:active,
-        .cost-date-preset:active, .usage-date-preset:active, .cred-btn:active,
-        .log-btn:active, .playground-btn:active, .remove-btn:active,
-        .download-all-btn:active, .config-toggle-btn:active,
-        .config-floating-btn:active, .v2-rl-toolbar__btn:active,
-        .usage-btn:active, .ranking-legend-pager-btn:active {
+        .pagination-btn:active:not(:disabled), .btn-icon:active:not(:disabled), .refresh-btn:active:not(:disabled),
+        .cost-view-btn:active:not(:disabled), .cost-window-btn:active:not(:disabled), .config-copy-btn:active:not(:disabled),
+        .col-toggle-btn:active:not(:disabled), .usage-product-btn:active:not(:disabled), .trace-detail-btn:active:not(:disabled),
+        .cost-date-preset:active:not(:disabled), .usage-date-preset:active:not(:disabled), .cred-btn:active:not(:disabled),
+        .log-btn:active:not(:disabled), .playground-btn:active:not(:disabled), .remove-btn:active:not(:disabled),
+        .download-all-btn:active:not(:disabled), .config-toggle-btn:active:not(:disabled),
+        .config-floating-btn:active:not(:disabled), .v2-rl-toolbar__btn:active:not(:disabled),
+        .usage-btn:active:not(:disabled), .ranking-legend-pager-btn:active:not(:disabled) {
             transform: scale(.94);
         }
 
@@ -19636,7 +19636,9 @@
 
             document.addEventListener('pointerdown', function (e) {
                 const btn = e.target.closest && e.target.closest('.btn, .btn-sm');
-                if (!btn || btn.disabled || btn.classList.contains('bf-busy')) return;
+                // 同时排除原生 disabled 与 <a>/自定义按钮常用的 .disabled / [disabled]
+                if (!btn || btn.disabled || btn.classList.contains('disabled') ||
+                    btn.hasAttribute('disabled') || btn.classList.contains('bf-busy')) return;
 
                 const rect = btn.getBoundingClientRect();
                 const size = Math.max(rect.width, rect.height);
@@ -19673,15 +19675,16 @@
             }
 
             // 去重: 极短时间内相同文案只显示一次, 避免与既有 toast 体系重复刷屏
-            const recentToasts = new Map();
+            // 用 Set + 自动过期, 而不是 Map 累积时间戳 —— 后者会随不同文案无限增长.
+            const recentToasts = new Set();
 
             window.bfToast = function (message, type, duration) {
                 if (!message) return;
                 const t = normalizeType(type || 'info');
                 const key = t + '|' + message;
-                const now = Date.now();
-                if (recentToasts.get(key) && now - recentToasts.get(key) < 1500) return;
-                recentToasts.set(key, now);
+                if (recentToasts.has(key)) return;
+                recentToasts.add(key);
+                setTimeout(() => recentToasts.delete(key), 1500);
 
                 const stack = ensureToastStack();
                 const toast = document.createElement('div');
@@ -19710,15 +19713,26 @@
             window.bfButtonState = function (btn, state) {
                 if (typeof btn === 'string') btn = document.getElementById(btn) || document.querySelector(btn);
                 if (!btn || !btn.classList) return;
+                // 清掉上一次未到期的清除定时器, 避免快速连点时旧 timer 提前抹掉新状态
+                if (btn._bfTimeout) {
+                    clearTimeout(btn._bfTimeout);
+                    delete btn._bfTimeout;
+                }
                 btn.classList.remove('bf-busy', 'bf-success', 'bf-error');
                 if (state === 'busy') {
                     btn.classList.add('bf-busy');
                 } else if (state === 'success') {
                     btn.classList.add('bf-success');
-                    setTimeout(() => btn.classList.remove('bf-success'), 1300);
+                    btn._bfTimeout = setTimeout(() => {
+                        btn.classList.remove('bf-success');
+                        delete btn._bfTimeout;
+                    }, 1300);
                 } else if (state === 'error') {
                     btn.classList.add('bf-error');
-                    setTimeout(() => btn.classList.remove('bf-error'), 700);
+                    btn._bfTimeout = setTimeout(() => {
+                        btn.classList.remove('bf-error');
+                        delete btn._bfTimeout;
+                    }, 700);
                 }
             };
 
@@ -19730,7 +19744,11 @@
                 else if (btnOrEvent && btnOrEvent.target && btnOrEvent.target.closest) {
                     btn = btnOrEvent.target.closest('.btn, .btn-sm, button') || btnOrEvent.target;
                 }
-                if (btn) window.bfButtonState(btn, 'busy');
+                if (btn) {
+                    // 防并发: 正在执行 (busy) 时再次点击直接忽略, 避免重复提交/重复请求
+                    if (btn.classList.contains('bf-busy')) return;
+                    window.bfButtonState(btn, 'busy');
+                }
                 try {
                     const r = await fn();
                     if (btn) window.bfButtonState(btn, 'success');
@@ -19753,12 +19771,14 @@
                 window.__bfStatusBridged = true;
                 const prev = window.showStatus;
                 window.showStatus = function (message, type) {
-                    try { prev.apply(this, arguments); } catch (_) {}
+                    let result;
+                    try { result = prev.apply(this, arguments); } catch (_) {}
                     // 仅补 success: error/warning 由 ui.js 负责弹出, 不重复
                     if (type === 'success') {
                         window.bfToast(message, 'success');
                     }
-                    return undefined;
+                    // 透传原函数返回值, 不假定调用方不关心结果
+                    return result;
                 };
             }
             if (document.readyState === 'loading') {
