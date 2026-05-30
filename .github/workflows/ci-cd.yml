@@ -81,14 +81,16 @@ jobs:
       - name: Install dependencies
         # CLAUDE.md 第 23 行说明: hypothesis 在 [dependency-groups].dev,
         # 不在主依赖. 当前 Python 3.12 不支持 `pip install --group dev`
-        # (需 3.13+), 所以单独装 dev tools.
+        # (需 3.13+), 所以单独装 dev tools. pytest-xdist 用于并行跑测试.
         run: |
           python -m pip install --upgrade pip wheel setuptools
           python -m pip install -e .
-          python -m pip install pytest pytest-asyncio hypothesis
+          python -m pip install pytest pytest-asyncio hypothesis pytest-xdist
 
       - name: Run tests
-        run: python -m pytest -q
+        # -n auto: 按 CPU 核数并行 (GitHub runner 通常 2-4 核), 缩短整体时长,
+        # 对偏慢的 hypothesis 属性测试收益明显. 测试间彼此独立, 无共享状态.
+        run: python -m pytest -q -n auto
 
   # ==========================================================================
   # Docker Compose 配置校验
@@ -139,8 +141,25 @@ jobs:
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Set up QEMU
+      # 平台策略: main 日常 push 只构建 linux/amd64 (绝大多数部署服务器是 amd64),
+      # 避免 arm64 QEMU 模拟编译拖慢每次合并; 仅 v* tag 发版时才出 amd64+arm64
+      # 双平台, 兼顾 arm 用户. 手动 workflow_dispatch 也按双平台 (保守, 发布前验证).
+      - name: Resolve build platforms
         if: steps.docker-creds.outputs.enabled == 'true'
+        id: platforms
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "value=linux/amd64,linux/arm64" >> "$GITHUB_OUTPUT"
+            echo "需要 arm64 -> 启用 QEMU 双平台构建"
+          else
+            echo "value=linux/amd64" >> "$GITHUB_OUTPUT"
+            echo "main 日常构建 -> 仅 linux/amd64 (跳过 QEMU, 更快)"
+          fi
+
+      - name: Set up QEMU
+        # 仅当目标平台含 arm64 时才装 QEMU —— amd64-only 构建不需要, 省一步.
+        if: steps.docker-creds.outputs.enabled == 'true' && contains(steps.platforms.outputs.value, 'arm64')
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
@@ -193,7 +212,7 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: ${{ steps.prep.outputs.tags }}
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ steps.platforms.outputs.value }}
           # 双缓存策略 (仿 AetherBlog): GHA 缓存用于 CI 增量构建加速,
           # registry 缓存用于持久备份, 跨 runner 也能命中.
           cache-from: |
