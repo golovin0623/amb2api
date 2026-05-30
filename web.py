@@ -21,6 +21,7 @@ from src.api.admin_routes import router as admin_router
 from src.api.account_api import router as account_router
 from src.api.key_management_api import router as keys_router
 from src.api.playground_api import router as playground_router
+from src.api.token_management_api import router as tokens_router
 # Google/Gemini 相关路由与控制面板已移除
 
 # Import managers and utilities
@@ -65,6 +66,13 @@ async def lifespan(app: FastAPI):
         await flush_unified_stats()
     except Exception as e:
         log.error(f"刷新统计时出错: {e}")
+
+    # 刷新 user token 配额计数
+    try:
+        from src.services.token_manager import flush_token_manager
+        await flush_token_manager()
+    except Exception as e:
+        log.error(f"刷新 token 配额时出错: {e}")
 
     # 关闭共享 HTTP 客户端
     try:
@@ -142,6 +150,12 @@ app.include_router(
     playground_router,
     prefix="",
     tags=["Playground"]
+)
+
+app.include_router(
+    tokens_router,
+    prefix="",
+    tags=["User Tokens"]
 )
 
 # Gemini原生路由 - 处理Gemini格式请求

@@ -37,14 +37,54 @@ security = HTTPBearer()
 
 # AssemblyAI 适配不需要 Google 凭证管理器
 
-async def authenticate(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    """验证用户密码"""
+async def _resolve_identity(request: Request, token: str) -> bool:
+    """把 token 解析为身份并挂到 request.state.identity。
+
+    接受两类凭证：① 主口令 API_PASSWORD（master，无限制）；② 有效的下游 user token
+    （启用且未过期；配额/模型白名单在拿到 model 后于处理函数内强制）。
+    返回是否通过鉴权。
+    """
     from config import get_api_password
     password = await get_api_password()
+    if token and token == password:
+        request.state.identity = {"master": True, "token": token, "meta": None}
+        return True
+    from ..services.token_manager import get_token_manager
+    tm = await get_token_manager()
+    v = await tm.validate(token)  # 仅校验启用/过期；配额与模型稍后强制
+    if v.get("valid"):
+        request.state.identity = {"master": False, "token": token, "meta": v["meta"]}
+        return True
+    return False
+
+
+async def authenticate(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> str:
+    """验证主口令或下游 user token"""
     token = credentials.credentials
-    if token != password:
+    if not await _resolve_identity(request, token):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="密码错误")
     return token
+
+
+async def enforce_token_quota(request: Request, model: str) -> None:
+    """对 user token 强制：模型白名单 + 配额（原子消费）。master 不受限。
+
+    在处理函数拿到 model 后调用。配额耗尽 → 429；模型不允许/禁用/过期 → 403。
+    """
+    identity = getattr(request.state, "identity", None)
+    if not identity or identity.get("master"):
+        return
+    from ..services.token_manager import get_token_manager
+    tm = await get_token_manager()
+    res = await tm.try_consume(identity["token"], model)
+    if not res.get("valid"):
+        reason = res.get("reason", "forbidden")
+        if reason == "quota_exceeded":
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=reason)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
 
 @router.get("/v1/models")
 async def list_models(request: Request):
@@ -56,18 +96,14 @@ async def list_models(request: Request):
 
 
 async def authenticate_anthropic_request(request: Request) -> str:
-    """Anthropic-compatible auth: x-api-key first, then Bearer."""
-    from config import get_api_password
-
-    password = await get_api_password()
-
+    """Anthropic-compatible auth: x-api-key first, then Bearer. 支持主口令或 user token。"""
     token = request.headers.get("x-api-key", "").strip()
     if not token:
         auth_header = request.headers.get("authorization", "")
         if auth_header.lower().startswith("bearer "):
             token = auth_header.split(" ", 1)[1].strip()
 
-    if token != password:
+    if not await _resolve_identity(request, token):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="密码错误")
     return token
 
@@ -432,6 +468,17 @@ async def anthropic_messages(
             status_code=400,
         )
 
+    # 多租户：对 user token 强制模型白名单 + 配额（包装成 Anthropic 错误壳）
+    try:
+        await enforce_token_quota(request, request_data.model)
+    except HTTPException as e:
+        return JSONResponse(
+            content=openai_error_to_anthropic_error(
+                e.status_code, {"message": str(e.detail)}, fallback_message=str(e.detail)
+            ),
+            status_code=e.status_code,
+        )
+
     if getattr(request_data, "max_tokens", None) is not None and request_data.max_tokens > 65535:
         request_data.max_tokens = 65535
 
@@ -626,9 +673,13 @@ async def chat_completions(
     except Exception as e:
         log.error(f"Request validation failed: {e}")
         raise HTTPException(status_code=400, detail=f"Request validation error: {str(e)}")
-    
+
+    # 多租户：对 user token 强制模型白名单 + 配额（master 不受限）。放在校验之外，
+    # 避免 429/403 被上面的 except 包装成 400。
+    await enforce_token_quota(request, request_data.model)
+
     # 健康检查
-    if (len(request_data.messages) == 1 and 
+    if (len(request_data.messages) == 1 and
         getattr(request_data.messages[0], "role", None) == "user" and
         getattr(request_data.messages[0], "content", None) == "Hi"):
         return JSONResponse(content={
