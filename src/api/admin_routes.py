@@ -7,8 +7,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi import WebSocket, WebSocketDisconnect
 import asyncio
 import re
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
+from .auth import authenticate, security  # 共享鉴权依赖
 from log import log
 from config import (
     get_api_password,
@@ -25,7 +25,6 @@ from ..services.assembly_client import fetch_assembly_models, get_rate_limit_inf
 
 
 router = APIRouter()
-security = HTTPBearer()
 
 
 def _parse_config_bool(value: Any) -> bool:
@@ -38,17 +37,6 @@ def _parse_config_bool(value: Any) -> bool:
         if normalized in ("false", "0", "no", "off", "disabled", "none", ""):
             return False
     return bool(value)
-
-
-async def authenticate(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    token = credentials.credentials
-    password = await get_panel_password()
-    if token != password:
-        # 兼容 API 密码
-        api_pwd = await get_api_password()
-        if token != api_pwd:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="密码错误")
-    return token
 
 
 def _mask_email(value: Any) -> Optional[str]:

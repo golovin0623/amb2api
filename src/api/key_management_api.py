@@ -3,17 +3,21 @@
 提供密钥的增删改查、状态管理和导入导出功能
 """
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, Field
 
 from log import log
+from .auth import authenticate
 from ..services.key_manager import get_key_manager
 from ..services.rate_limiter import get_rate_limiter
 from ..stats.stats_tracker import get_stats_tracker
 from ..models.models_key import AggregationMode
 
 
-router = APIRouter(prefix="/api/keys", tags=["Key Management"])
+# 整组路由要求面板/API 口令鉴权（含敏感的 export/import/delete）
+router = APIRouter(
+    prefix="/api/keys", tags=["Key Management"], dependencies=[Depends(authenticate)]
+)
 
 
 # Request/Response Models

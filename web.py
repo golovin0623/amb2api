@@ -11,6 +11,7 @@ load_dotenv()
 
 import os
 from fastapi import FastAPI, Response
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -62,10 +63,21 @@ app = FastAPI(
 )
 
 # CORS中间件
+# 安全说明：API 通过 Authorization / x-api-key 头鉴权（非 Cookie），因此默认
+# 不开启 allow_credentials。带凭证的通配源（["*"] + credentials）既被浏览器
+# 拒绝又有安全风险，已禁止该组合。可用 CORS_ALLOW_ORIGINS 配置显式白名单。
+_cors_origins_env = os.getenv("CORS_ALLOW_ORIGINS", "*").strip()
+if _cors_origins_env in ("", "*"):
+    _cors_allow_origins = ["*"]
+    _cors_allow_credentials = False
+else:
+    _cors_allow_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+    _cors_allow_credentials = True
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_allow_origins,
+    allow_credentials=_cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -117,6 +129,34 @@ if os.path.isdir(_ASSETS_DIR):
 async def keepalive() -> Response:
     return Response(status_code=200)
 
+
+# 健康检查：探测存储后端是否可用，供编排器做就绪/存活探针
+@app.get("/health")
+async def health() -> JSONResponse:
+    from src.storage.storage_adapter import get_storage_adapter
+
+    storage_ok = False
+    backend = "unknown"
+    try:
+        adapter = await get_storage_adapter()
+        backend = type(adapter).__name__
+        # 轻量探测：读取一个配置键不应抛错
+        await adapter.get_config("__health_probe__")
+        storage_ok = True
+    except Exception as e:  # noqa: BLE001 - 健康检查需吞掉异常并降级
+        log.warning(f"/health 存储探测失败: {e}")
+
+    status_code = 200 if storage_ok else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "ok" if storage_ok else "degraded",
+            "version": app.version,
+            "storage": {"backend": backend, "ok": storage_ok},
+        },
+    )
+
+
 __all__ = ['app']
 
 async def main():
@@ -137,11 +177,14 @@ async def main():
     log.info(f"Anthropic 兼容端点: http://127.0.0.1:{port}/v1/messages")
     log.info(f"管理控制面板: http://127.0.0.1:{port}/ui")
     
+    # 安全：不再把口令明文写入日志。仅在仍使用默认弱口令时给出告警提示。
     from config import get_api_password, get_panel_password
     api_pwd = await get_api_password()
     panel_pwd = await get_panel_password()
-    log.info(f"API 访问密码: {api_pwd}")
-    log.info(f"控制面板密码: {panel_pwd}")
+    if api_pwd == "pwd" or panel_pwd == "pwd":
+        log.warning("检测到仍在使用默认口令 'pwd'，请尽快通过 API_PASSWORD/PANEL_PASSWORD 修改！")
+    else:
+        log.info("API/面板口令已配置（已隐藏，不在日志中输出明文）")
     log.info("=" * 60)
     # 仅保留 OpenAI 兼容端点日志
 

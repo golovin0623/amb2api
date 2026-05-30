@@ -3,17 +3,21 @@
 提供请求报文预览和自定义报文发送功能
 """
 from typing import Dict, Any, Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from log import log
+from .auth import authenticate
 from ..transform.request_generator import get_request_generator, create_request_generator
 from ..services.assembly_client import send_assembly_request
 from ..models.models import ChatCompletionRequest
 from config import get_assembly_endpoint, get_assembly_api_keys
 
 
-router = APIRouter(prefix="/api/playground", tags=["Playground"])
+# 操练场会用服务端 key 发真实请求，必须鉴权
+router = APIRouter(
+    prefix="/api/playground", tags=["Playground"], dependencies=[Depends(authenticate)]
+)
 
 
 # Request/Response Models

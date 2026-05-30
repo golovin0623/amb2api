@@ -16,10 +16,14 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from log import log
+from .auth import authenticate
 from ..core.httpx_client import http_client
 from ..storage.storage_adapter import get_storage_adapter
 
-router = APIRouter(prefix="/api/account", tags=["account"])
+# 暴露 AssemblyAI 后台会话/账单/key，必须整组鉴权
+router = APIRouter(
+    prefix="/api/account", tags=["account"], dependencies=[Depends(authenticate)]
+)
 
 # AssemblyAI Dashboard API 基础 URL
 ASSEMBLY_DASHBOARD_BASE = "https://www.assemblyai.com"
