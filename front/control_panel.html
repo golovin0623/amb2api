@@ -9137,7 +9137,6 @@
                 } else if (window.toast) {
                     window.toast({ kind: type || 'info', title: String(message || '') });
                 } else {
-                    console.log('[status]', type, message);
                 }
             }
         }
@@ -10290,19 +10289,15 @@
         // 触发后台预加载账户数据（非阻塞，静默执行）
         async function triggerAccountPreload() {
             try {
-                console.log('[Preload] Triggering account preload after panel login');
                 const res = await fetch('/api/account/preload/trigger', {
                     method: 'POST',
                     headers: getAuthHeaders()
                 });
                 if (res.ok) {
                     const data = await res.json();
-                    console.log('[Preload] Preload triggered:', data);
                 } else {
-                    console.log('[Preload] Preload trigger failed:', res.status);
                 }
             } catch (e) {
-                console.log('[Preload] Preload trigger error:', e.message);
             }
         }
 
@@ -10810,7 +10805,6 @@
                     headers: getAuthHeaders()
                 });
 
-                console.log('Creds status response:', response.status);
 
                 const data = await response.json();
                 if (response.ok) {
@@ -11055,7 +11049,6 @@
 
             // 调试：记录状态
             if (filename.includes('atomic-affinity')) {
-                console.log(`Creating card for ${filename}:`, status);
             }
 
             // 设置卡片状态样式
@@ -11074,7 +11067,6 @@
 
 
             // 调试：记录 error_codes
-            console.log(`Error codes for ${filename}:`, status.error_codes);
 
             if (status.error_codes && status.error_codes.length > 0) {
                 statusBadges += `<span class="error-codes">错误码: ${status.error_codes.join(', ')}</span>`;
@@ -11170,10 +11162,8 @@
                     body: JSON.stringify(requestBody)
                 });
 
-                console.log('Response status:', response.status);
 
                 const data = await response.json();
-                console.log('Response data:', data);
 
                 if (response.ok) {
                     showStatus(data.message, 'success');
@@ -12877,9 +12867,6 @@
 
         // 页面加载时检查状态
         window.onload = async function () {
-            console.log('Page loaded');
-            console.log('Login section exists:', !!document.getElementById('loginSection'));
-            console.log('Main section exists:', !!document.getElementById('mainSection'));
 
             // 初始化列可见性
             applyTraceColVisible();
@@ -12924,7 +12911,6 @@
                 await refreshUsageStats();
                 triggerAccountPreload();
 
-                console.log('自动登录成功');
             } else {
                 // 显示登录页面
                 const loginSection = document.getElementById('loginSection');
@@ -14683,7 +14669,6 @@
             // 始终更新进度条背景以反映新的 max 值
             updateMaxTokensValue(parseInt(slider.value));
 
-            console.log(`Model ${model}: max_tokens limit set to ${maxTokens}, current value: ${slider.value} `);
         }
 
         async function initPlayground() {
@@ -15263,7 +15248,6 @@
 
         // 预览请求
         async function previewRequest() {
-            console.log('previewRequest called');
 
             const sel = document.getElementById('playgroundModel');
             if (!sel || !sel.value) {
@@ -15279,7 +15263,6 @@
                 return;
             }
 
-            console.log('Request data:', requestData);
 
             try {
                 const response = await fetch('/api/playground/preview', {
@@ -15288,11 +15271,9 @@
                     body: JSON.stringify(requestData)
                 });
 
-                console.log('Response status:', response.status);
 
                 if (response.ok) {
                     const data = await response.json();
-                    console.log('Preview data:', data);
 
                     // 显示预览区域
                     const previewSection = document.getElementById('requestPreviewSection');
@@ -16683,12 +16664,9 @@
                 }
 
                 const el = document.getElementById('accountRatesContent');
-                console.log('Switching to rates tab, cache:', accountCache.rates ? { ts: accountCache.rates.ts, hasHtml: !!accountCache.rates.html } : 'none');
                 if (el && accountCache.rates.html && isFresh(accountCache.rates.ts)) {
-                    console.log('Using cached rates data');
                     el.innerHTML = accountCache.rates.html;
                 } else {
-                    console.log('No valid cache, loading rates data');
                     loadAccountRates();
                 }
             }
@@ -16860,7 +16838,6 @@
                 const res = await fetch('/api/account/billing' + (params.toString() ? '?' + params.toString() : ''), { headers: getAuthHeaders() });
                 if (!res.ok) throw new Error('加载失败');
                 const data = await res.json();
-                console.log('Billing data:', data);
 
                 const balance = data.balance || 0;
                 const totalSpend = data.total_spend_30_days || 0;
@@ -17181,7 +17158,6 @@
                 const res = await fetch('/api/account/usage?' + params.toString(), { headers: getAuthHeaders() });
                 if (!res.ok) throw new Error('加载失败');
                 const data = await res.json();
-                console.log('Usage data received (force=' + force + ', silent=' + silent + '):', data);
 
                 // 归类并复刻使用量分布与列表 - 确保数据始终显示
                 const hasModelData = data.by_model && Array.isArray(data.by_model) && data.by_model.length > 0;
@@ -17289,7 +17265,6 @@
 
                 // 显示调试信息（如果有）- 仅在控制台输出，不显示给用户
                 if (data.debug_info && Object.keys(data.debug_info).length > 0) {
-                    console.log('Debug info:', data.debug_info);
                     // 调试信息仅用于开发，不在界面显示
                 }
 
@@ -17302,7 +17277,6 @@
 
                 // 缓存完整数据
                 accountCache.usage[key] = { ts: Date.now(), html, complete: true };
-                console.log('Usage data cached successfully');
 
                 el.innerHTML = html;
             } catch (e) {
@@ -18373,7 +18347,6 @@
 
         // 切换筛选面板
         function toggleCostFilterPanel(panelType) {
-            console.log('toggleCostFilterPanel called with:', panelType);
             const panels = ['Date', 'Service', 'Model', 'Region'];
             const panelTypeCapitalized = panelType.charAt(0).toUpperCase() + panelType.slice(1);
 
@@ -19015,7 +18988,6 @@
                 }
                 if (yTicks.length === 0) yTicks.push(0, yMax);
 
-                console.log('Y-axis:', { maxAmount, yMax, yStep, yTicks });
 
                 const chartHeight = 200;
                 const chartWidth = 100; // SVG viewBox width
@@ -19593,7 +19565,6 @@
                 const res = await fetch(`/api/account/rates?${params.toString()}`, { headers: getAuthHeaders() });
                 if (!res.ok) throw new Error('加载失败');
                 const data = await res.json();
-                console.log('Rates data received:', data);
                 let html = '<div style="display: grid; gap: 20px;">';
 
                 // LLM Gateway - 合并输入/输出两列并优先展示
