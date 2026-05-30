@@ -10192,9 +10192,10 @@
                 const isZip = file.name.endsWith('.zip');
                 const fileIcon = isZip ? '📦' : '📄';
                 const fileType = isZip ? ' (ZIP压缩包)' : ' (JSON文件)';
+                // 文件名为用户可控，转义后再插入，防止 <img onerror> 之类的 XSS
                 fileItem.innerHTML = `
                     <div>
-                        <span class="file-name">${fileIcon} ${file.name}</span>
+                        <span class="file-name">${fileIcon} ${escapeHtml(file.name)}</span>
                         <span class="file-size">(${formatFileSize(file.size)}${fileType})</span>
                     </div>
                     <button class="remove-btn" onclick="removeFile(${index})">删除</button>
