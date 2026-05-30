@@ -1882,12 +1882,12 @@ async def send_assembly_request(
                 log.debug(f"[TOOL_DEBUG] REQ Payload: {_truncate_for_log(post_data, 4000)}")
 
             if is_streaming:
+                # 复用进程级共享客户端；流式只关闭 stream 上下文，绝不关闭共享客户端
                 stream_client = await create_streaming_client_with_kwargs()
                 stream_ctx = stream_client.stream("POST", endpoint, content=post_data, headers=headers)
                 try:
                     resp = await stream_ctx.__aenter__()
                 except Exception:
-                    await stream_client.aclose()
                     raise
 
                 # 更新速率限制信息（流式连接建立时即可读取响应头）
@@ -1966,10 +1966,8 @@ async def send_assembly_request(
 
                 if should_retry and retry_enabled and attempt < max_retries:
                     log.warning(f"[RETRY] {retry_reason}, switching to next key ({attempt + 1}/{max_retries})")
-                    try:
-                        await stream_ctx.__aexit__(None, None, None)
-                    finally:
-                        await stream_client.aclose()
+                    # 只关闭流上下文（连接归还连接池），共享客户端保持存活
+                    await stream_ctx.__aexit__(None, None, None)
                     await asyncio.sleep(retry_interval)
                     continue
 
@@ -1982,10 +1980,7 @@ async def send_assembly_request(
                 # 流式请求在响应头阶段失败：直接返回错误，供上层按 bootstrap 策略处理
                 if not (200 <= resp.status_code < 400):
                     error_message = response_text or f"Upstream HTTP {resp.status_code}"
-                    try:
-                        await stream_ctx.__aexit__(None, None, None)
-                    finally:
-                        await stream_client.aclose()
+                    await stream_ctx.__aexit__(None, None, None)
                     return JSONResponse(
                         content={"error": {"message": error_message, "type": "api_error"}},
                         status_code=resp.status_code
@@ -2013,10 +2008,8 @@ async def send_assembly_request(
                             else:
                                 yield f"data: {line}\n\n".encode("utf-8")
                     finally:
-                        try:
-                            await stream_ctx.__aexit__(None, None, None)
-                        finally:
-                            await stream_client.aclose()
+                        # 只关闭流上下文，连接归还连接池；共享客户端不关闭
+                        await stream_ctx.__aexit__(None, None, None)
 
                 return StreamingResponse(
                     upstream_stream_generator(),

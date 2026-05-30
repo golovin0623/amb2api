@@ -51,7 +51,22 @@ async def lifespan(app: FastAPI):
         log.info("所有异步任务已关闭")
     except Exception as e:
         log.error(f"关闭异步任务时出错: {e}")
-    
+
+    # 关闭共享 HTTP 客户端
+    try:
+        from src.core.httpx_client import close_shared_client
+        await close_shared_client()
+    except Exception as e:
+        log.error(f"关闭共享 HTTP 客户端时出错: {e}")
+
+    # 关闭存储适配器（刷新在途写入，避免 SIGTERM 丢数据）
+    try:
+        from src.storage.storage_adapter import close_storage_adapter
+        await close_storage_adapter()
+        log.info("存储适配器已关闭")
+    except Exception as e:
+        log.error(f"关闭存储适配器时出错: {e}")
+
     log.info("AMB2API 主服务已停止")
 
 # 创建FastAPI应用
