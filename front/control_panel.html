@@ -16001,7 +16001,7 @@
                             }
                             // 5. 多密钥管理（如果弹窗已打开，则刷新）
                             const keyModal = document.getElementById('keyManagementModal');
-                            if (keyModal && keyModal.style.display === 'block' && typeof loadKeyManagementModal === 'function') {
+                            if (keyModal && keyModal.style.display && keyModal.style.display !== 'none' && typeof loadKeyManagementModal === 'function') {
                                 loadKeyManagementModal();
                             }
                         } catch (e) {
