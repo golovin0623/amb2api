@@ -83,6 +83,22 @@
 > ✅ 多租户已端到端可用：面板"用户令牌"页或 `POST /api/tokens` 发 token，下游用该
 > token 调 `/v1/chat/completions` 或 `/v1/messages`，受配额/模型白名单/过期约束。
 
+## ✅ 代码评审 + 安全评审 + 实跑验收（本轮）
+
+用 skills 做了彻底验收，并迭代修复到干净：
+
+- **code-review（high effort，7 角度）** → 发现并**全部修复**：
+  - 配额预占在重试/早返回/异常路径泄漏 + 异常处理器对 keys[0] 过度释放 → 解耦 record_call，改由每次尝试的 `finally` 精确归还一次
+  - token `allowed_models=[]` 误放行所有模型、`expires_at=0` 误判永不过期 → `_check_meta` 修正
+  - httpx 改代理时立即 aclose 打断在途流 → 改 330s 宽限延迟关闭
+  - 清理类：`_check_meta`/`_quota_state` 去重、`DebouncedSaver` mixin 统一去抖、`import os`
+- **security-review** → **无 HIGH 新增漏洞**；2 个 LOW 已修：count_tokens 现强制 token 模型白名单（不消费配额）、CORS 混合 `*,origin` 强制关 credentials
+- **fix 复审（独立 agent）** → 6 项关注点全部 OK、无新增 bug；预占释放严格 1:1（idx≥0 ⟺ 恰好一次预占）
+- **实跑验收**（真实 hypercorn 服务）：/health=ok、/ui=200、错误口令 403、令牌 CRUD、白名单外模型 403、`allowed_models=[]` 拒绝、配额耗尽 429 —— 全部实测通过
+- 测试：**248 passed**；所有改动文件 `py_compile` 通过、前端 inline JS `node --check` 通过
+
+> 结论：分支无遗留的代码评审/安全问题；上述发现均已修复并回归。
+
 ## 🔒 仍延后（需单独决策）
 | 项 | 原因 |
 |----|------|
