@@ -3,9 +3,49 @@ Configuration constants for the Geminicli2api proxy server.
 Centralizes all configuration to avoid duplication across modules.
 """
 import os
+import time
 from typing import Any, Optional
 
 from src.storage.storage_adapter import get_storage_adapter
+
+# ----------------------------------------------------------------------------
+# 配置快照缓存（短 TTL）
+#
+# 热路径上一次请求会读取 10+ 个配置项，每次都走 storage adapter（含锁与多次 await）。
+# 这里在 config 层加一个很短 TTL 的内存快照，命中即返回，显著减少存储往返。
+# 正确性：StorageAdapter.set_config/delete_config 会调用 invalidate_config_cache(key)
+# 即时失效；面板保存、key 管理、测试写入都会立刻可见。TTL 仅兜底其他直写路径。
+# 设 CONFIG_CACHE_TTL=0 可完全禁用缓存。
+# ----------------------------------------------------------------------------
+_CONFIG_CACHE: dict[str, tuple[float, Any]] = {}
+try:
+    _CONFIG_CACHE_TTL = float(os.getenv("CONFIG_CACHE_TTL", "3.0"))
+except ValueError:
+    _CONFIG_CACHE_TTL = 3.0
+
+
+def invalidate_config_cache(key: Optional[str] = None) -> None:
+    """失效配置快照缓存。key 为空时清空全部。"""
+    if key is None:
+        _CONFIG_CACHE.clear()
+    else:
+        _CONFIG_CACHE.pop(key, None)
+
+
+async def _get_storage_config_cached(key: str) -> Any:
+    """带短 TTL 的存储配置读取。"""
+    if _CONFIG_CACHE_TTL <= 0:
+        adapter = await get_storage_adapter()
+        return await adapter.get_config(key)
+    now = time.monotonic()
+    hit = _CONFIG_CACHE.get(key)
+    if hit is not None and hit[0] > now:
+        return hit[1]
+    adapter = await get_storage_adapter()
+    value = await adapter.get_config(key)
+    _CONFIG_CACHE[key] = (now + _CONFIG_CACHE_TTL, value)
+    return value
+
 
 # Client Configuration
 
@@ -78,8 +118,7 @@ async def get_config_value(key: str, default: Any = None, env_var: Optional[str]
             override_env = True
     if not override_env:
         try:
-            storage_adapter = await get_storage_adapter()
-            ov = await storage_adapter.get_config("override_env")
+            ov = await _get_storage_config_cached("override_env")
             if isinstance(ov, str):
                 override_env = ov.lower() in ("true", "1", "yes", "on")
             else:
@@ -89,8 +128,7 @@ async def get_config_value(key: str, default: Any = None, env_var: Optional[str]
     if (not override_env) and env_var and os.getenv(env_var):
         return os.getenv(env_var)
     try:
-        storage_adapter = await get_storage_adapter()
-        value = await storage_adapter.get_config(key)
+        value = await _get_storage_config_cached(key)
         if value is not None:
             return value
     except Exception:

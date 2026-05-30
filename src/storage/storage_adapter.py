@@ -10,6 +10,16 @@ from typing import Dict, Any, List, Optional, Protocol
 from log import log
 
 
+def _invalidate_config_snapshot(key: str) -> None:
+    """写入配置后失效 config.py 的快照缓存（懒导入避免循环依赖）。"""
+    try:
+        from config import invalidate_config_cache
+
+        invalidate_config_cache(key)
+    except Exception:  # noqa: BLE001 - 缓存失效失败不应影响写入主流程
+        pass
+
+
 class StorageBackend(Protocol):
     """存储后端协议"""
     
@@ -235,7 +245,9 @@ class StorageAdapter:
     async def set_config(self, key: str, value: Any) -> bool:
         """设置配置项"""
         self._ensure_initialized()
-        return await self._backend.set_config(key, value)
+        result = await self._backend.set_config(key, value)
+        _invalidate_config_snapshot(key)
+        return result
     
     async def get_config(self, key: str, default: Any = None) -> Any:
         """获取配置项"""
@@ -250,7 +262,9 @@ class StorageAdapter:
     async def delete_config(self, key: str) -> bool:
         """删除配置项"""
         self._ensure_initialized()
-        return await self._backend.delete_config(key)
+        result = await self._backend.delete_config(key)
+        _invalidate_config_snapshot(key)
+        return result
     
     # ============ 性能追踪数据管理 (独立存储) ============
     

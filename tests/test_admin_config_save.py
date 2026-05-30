@@ -146,6 +146,10 @@ def _patch_config_get_isolation(monkeypatch, store=None):
 
     values = dict(store or {})
 
+    # 该 helper 直接换掉 adapter（不走 set_config 失效钩子），需手动清掉 config 快照缓存，
+    # 以免上个用例缓存的值串场。
+    config.invalidate_config_cache()
+
     class _FakeAdapter:
         async def get_config(self, key, default=None):
             return values.get(key, default)
