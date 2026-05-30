@@ -47,7 +47,7 @@
 |---|----|------|------|------|
 | A | 限流双写竞态：旧 `_rate_limit_info` 与 `RateLimiter` 写同一键 | ✅ | 中 | 已统一到 RateLimiter，删旧系统，重写 2 个测试 (8ffad4f) |
 | B | 每请求写风暴合并（rate-limit save 去抖） | ✅ | 中 | RateLimiter 保存去抖 5s + lifespan flush (bb6cd3e) |
-| C | 配额 TOCTOU + "流连接建立即计 success" | 🔒 | 中高 | 见下方分析：需预占(reservation)重设计，不宜急改 |
+| C | 配额 TOCTOU（预占式重设计） | ✅ | 中高 | TTL 自愈预占，并发不超计 (7e8d1d9)；"流 success" 实为 2xx 头，保留 |
 | D | 优雅关闭刷新 stats（不丢在途写） | ✅ | 低 | flush_unified_stats + lifespan (baeba37) |
 | E | 流式 client 断连检测 | ✅ | 中 | 已验证：Starlette 1.2.0 断连即取消流任务→generator finally 释放上游连接 |
 
@@ -55,11 +55,23 @@
 
 > **C 的结论（经验证）**：`record_call` 的自增是同步的（await 之间无让点 → 事件循环内原子），**不存在丢更新**。真正的 TOCTOU 在"选 key"与"记账"之间（中间隔了整个上游请求），正确修法是**预占式配额**（选 key 时原子 check-and-reserve、失败再回滚），属架构级改动且会改动 `test_daily_usage_limits` 锁定的语义。"连上即 success" 实为"拿到 2xx 响应头"，是合理的成功近似。仓促改配额语义的风险高于现状（有界的轻微超计），故按独立专项延后。
 
-## 🔒 延后（需你拍板 / 独立专项）
+## 🚧 大工程（用户已拍板，全部要做；按 C→多租户→前端 V2 顺序）
 
+| 项 | 状态 | 备注 |
+|----|------|------|
+| **T. per-user token 多租户** | ⏳ | token 发放/存储 + API 面鉴权按 token + 每 token 配额 + 面板管理。最大新能力 |
+| **U. 前端 V2 收尾** | ⬜ | 用户选"收尾"(非回滚)：删旧内联 CSS 的 !important 战争、localStorage→更安全、暗色/移动/a11y、统一通知。19.8k 单体，小步提交+每步验 /ui |
+
+### 多租户(T)拆解清单
+- [ ] T1 数据模型：token 结构（key 明文/hash、名称、配额、模型白名单、过期、启用、已用）+ 存储读写（走 storage adapter，4 后端通用 config 键）
+- [ ] T2 鉴权：API 面（OpenAI/Anthropic）支持"面板口令 || 有效 user token"；解析出 token 身份
+- [ ] T3 配额：每 token 调用/额度计数 + 预占（复用 C 的机制思路），超额 429
+- [ ] T4 管理 API：`/api/tokens` CRUD（面板口令保护）
+- [ ] T5 面板 UI：token 管理页（列表/新建/禁用/删除/配额）
+- [ ] T6 测试：鉴权放行/拒绝、配额耗尽、CRUD
+
+## 🔒 仍延后（需单独决策）
 | 项 | 原因 |
 |----|------|
-| anthropic_transfer.py 的 `Task` 入参归一化是否移植进生产 `openai_to_claude` | 产品取舍：生产链路目前**缺**这块归一化，那 671 行只被测试引用 |
-| 前端 V2 收尾 or 回滚（`!important` 战争 / 3 个 HTML / localStorage 明文口令 / 暗色·移动·a11y） | 19.8k 行单体，独立前端专项 |
-| 多 worker 横向扩展（进程内计数器迁共享存储） | 架构级，需先定方向 |
-| per-user token + 配额 + 货币成本核算 | 决定"个人韧性代理"vs"对外分发平台" |
+| anthropic_transfer.py 的 `Task` 入参归一化移植 | 生产链路缺这块；产品取舍 |
+| 多 worker 横向扩展（进程内计数器迁共享存储） | 架构级，建议多租户稳定后做 |
