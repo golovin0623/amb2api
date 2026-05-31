@@ -1731,7 +1731,6 @@ html body #logsTab .log-row--warning {
     overflow: visible;
   }
   html body #logsTab .log-stat-card {
-    align-items: start;
     gap: var(--s-1);
     min-height: auto;
     padding: var(--s-3) !important;
