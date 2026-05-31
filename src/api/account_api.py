@@ -626,11 +626,16 @@ async def _renew_session(account_email: str) -> Optional[Dict[str, Any]]:
             try:
                 result, headers = await _authenticate_dashboard(account_email, password)
                 fresh = _build_session_data_from_auth(account_email, result, headers)
-                # 保留加密密码与首次登录时间，便于持续续期
+                # 保留加密密码，便于持续续期
                 fresh["enc_password"] = session_data.get("enc_password")
-                fresh["logged_in_at"] = session_data.get(
-                    "logged_in_at", fresh["logged_in_at"]
-                )
+                # 仅当新 JWT 能解析出 exp 时，才保留原始 logged_in_at（续期判定走
+                # exp，不依赖登录时间）。若新 JWT 无 exp，_session_needs_renewal 会
+                # 回退到 logged_in_at 估算，此时必须保留本次刷新的新鲜时间，否则刚
+                # 续期的会话会被立刻判为陈旧，导致重复重新认证。
+                if fresh.get("jwt_expires_at_ts") is not None:
+                    fresh["logged_in_at"] = session_data.get(
+                        "logged_in_at", fresh["logged_in_at"]
+                    )
                 fresh["last_renew_ts"] = time.time()
                 await _save_session(fresh)
                 log.info(f"[Session] Renewed via stored credentials for {account_email}")

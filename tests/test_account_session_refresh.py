@@ -229,6 +229,42 @@ async def test_renew_session_relogins_with_stored_credentials():
 
 
 @pytest.mark.asyncio
+async def test_renew_session_keeps_fresh_login_time_for_exp_less_jwt():
+    """续期返回的 JWT 无 exp 时，应保留本次刷新的新鲜 logged_in_at，否则会被
+    age 回退判定为立刻陈旧，导致重复重新认证。"""
+    fake = FakeAdapter()
+    email = "noexp@example.com"
+    now = int(time.time())
+    with patch.object(account_api, "get_storage_adapter", AsyncMock(return_value=fake)):
+        key = await account_api._get_session_secret()
+        fake.store[f"{account_api.SESSION_STORAGE_KEY}:{email}"] = {
+            "email": email,
+            "auth_type": "dashboard",
+            "session_jwt": make_jwt(now - 10),
+            "enc_password": encrypt_secret(key, "pw"),
+            "logged_in_at": "2020-01-01T00:00:00",  # 远古值
+        }
+        auth_result = {
+            "isAuthenticated": True,
+            "user": {"email": email, "id": 1, "customer_type": "PAYG"},
+            "sessionJWT": "no-dots-no-exp",  # 无法解析 exp
+            "sessionToken": "stok",
+        }
+        with patch.object(
+            account_api,
+            "_authenticate_dashboard",
+            AsyncMock(return_value=(auth_result, {})),
+        ):
+            renewed = await account_api._renew_session(email)
+
+    assert renewed is not None
+    assert renewed.get("jwt_expires_at_ts") is None  # 无 exp
+    # 未沿用远古 logged_in_at，故不会被 age 回退判为陈旧
+    assert renewed["logged_in_at"] != "2020-01-01T00:00:00"
+    assert account_api._session_needs_renewal(renewed) is False
+
+
+@pytest.mark.asyncio
 async def test_renew_session_without_credentials_returns_none():
     fake = FakeAdapter()
     email = "nocreds@example.com"
