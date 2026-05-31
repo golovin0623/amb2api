@@ -30,6 +30,13 @@ _NONCE_LEN = 16
 _TAG_LEN = 32
 
 
+def _derive_keys(key: bytes) -> tuple:
+    """从主密钥派生独立的加密子密钥与 MAC 子密钥（避免密钥复用）。"""
+    enc_key = hashlib.sha256(key + b"enc").digest()
+    mac_key = hashlib.sha256(key + b"mac").digest()
+    return enc_key, mac_key
+
+
 def _keystream(key: bytes, nonce: bytes, length: int) -> bytes:
     """用 HMAC-SHA256 在 CTR 模式下生成 ``length`` 字节的密钥流。"""
     out = bytearray()
@@ -47,11 +54,12 @@ def encrypt_secret(key: bytes, plaintext: str) -> str:
     """加密一个字符串（如账户密码），返回可安全落盘的 token。"""
     if not isinstance(plaintext, str):
         raise TypeError("plaintext must be str")
+    enc_key, mac_key = _derive_keys(key)
     nonce = os.urandom(_NONCE_LEN)
     data = plaintext.encode("utf-8")
-    ks = _keystream(key, nonce, len(data))
+    ks = _keystream(enc_key, nonce, len(data))
     ciphertext = bytes(a ^ b for a, b in zip(data, ks))
-    tag = hmac.new(key, nonce + ciphertext, hashlib.sha256).digest()
+    tag = hmac.new(mac_key, nonce + ciphertext, hashlib.sha256).digest()
     blob = nonce + ciphertext + tag
     return f"{_VERSION}:{base64.b64encode(blob).decode('ascii')}"
 
@@ -70,10 +78,11 @@ def decrypt_secret(key: bytes, token: str) -> Optional[str]:
         nonce = blob[:_NONCE_LEN]
         tag = blob[-_TAG_LEN:]
         ciphertext = blob[_NONCE_LEN:-_TAG_LEN]
-        expected = hmac.new(key, nonce + ciphertext, hashlib.sha256).digest()
+        enc_key, mac_key = _derive_keys(key)
+        expected = hmac.new(mac_key, nonce + ciphertext, hashlib.sha256).digest()
         if not hmac.compare_digest(tag, expected):
             return None
-        ks = _keystream(key, nonce, len(ciphertext))
+        ks = _keystream(enc_key, nonce, len(ciphertext))
         data = bytes(a ^ b for a, b in zip(ciphertext, ks))
         return data.decode("utf-8")
     except Exception:

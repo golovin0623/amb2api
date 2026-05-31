@@ -49,6 +49,7 @@ DEFAULT_JWT_TTL_SECONDS = 300  # 无法解析 exp 时的保守默认寿命
 _cache_store: Dict[str, Dict[str, Any]] = {}
 _renew_locks: Dict[str, asyncio.Lock] = {}  # 每账户续期锁，串行化并发续期
 _keepalive_task: Optional["asyncio.Task"] = None
+_secret_lock: Optional[asyncio.Lock] = None  # 加密密钥初始化锁（防并发生成覆盖）
 _cache_ttl_seconds = 300
 _api_keys_fetch_task = None
 _api_keys_last_fetch_ts = 0.0
@@ -394,15 +395,23 @@ async def _clear_session(account_email: Optional[str] = None) -> bool:
 # ============================================================================
 
 async def _get_session_secret() -> bytes:
-    """获取（或首次生成）本地加密密钥，用于加密落盘账户密码。"""
-    adapter = await get_storage_adapter()
-    stored = await adapter.get_config(SESSION_SECRET_KEY)
-    hexkey = stored.get("secret") if isinstance(stored, dict) else stored
-    if not hexkey:
-        import secrets as _secrets
-        hexkey = _secrets.token_hex(32)
-        await adapter.set_config(SESSION_SECRET_KEY, {"secret": hexkey})
-    return bytes.fromhex(hexkey)
+    """获取（或首次生成）本地加密密钥，用于加密落盘账户密码。
+
+    用延迟初始化的 asyncio.Lock 串行化首次生成，避免并发协程各自生成不同
+    密钥互相覆盖，导致先加密的数据无法解密。
+    """
+    global _secret_lock
+    if _secret_lock is None:
+        _secret_lock = asyncio.Lock()
+    async with _secret_lock:
+        adapter = await get_storage_adapter()
+        stored = await adapter.get_config(SESSION_SECRET_KEY)
+        hexkey = stored.get("secret") if isinstance(stored, dict) else stored
+        if not hexkey:
+            import secrets as _secrets
+            hexkey = _secrets.token_hex(32)
+            await adapter.set_config(SESSION_SECRET_KEY, {"secret": hexkey})
+        return bytes.fromhex(hexkey)
 
 
 async def _get_raw_session(account_email: str) -> Optional[Dict[str, Any]]:
@@ -518,16 +527,29 @@ async def _authenticate_dashboard(email: str, password: str):
 
 
 def _extract_aai_extended_session(headers: Any) -> Optional[str]:
-    """从响应头的 Set-Cookie 中提取 aai_extended_session。"""
+    """从响应头的 Set-Cookie 中提取 aai_extended_session。
+
+    用标准库 http.cookies.SimpleCookie 解析，并优先用 httpx.Headers.get_list
+    取多个 Set-Cookie，避免逗号拼接导致的正则错配。
+    """
     try:
-        set_cookie = headers.get("set-cookie", "") or ""
+        if hasattr(headers, "get_list"):
+            set_cookies = headers.get_list("set-cookie")
+        else:
+            raw = headers.get("set-cookie", "") or ""
+            set_cookies = [raw] if raw else []
     except Exception:
         return None
-    if "aai_extended_session=" in set_cookie:
-        import re
-        match = re.search(r"aai_extended_session=([^;]+)", set_cookie)
-        if match:
-            return match.group(1)
+
+    from http.cookies import SimpleCookie
+    for cookie_str in set_cookies:
+        try:
+            jar = SimpleCookie()
+            jar.load(cookie_str)
+            if "aai_extended_session" in jar:
+                return jar["aai_extended_session"].value
+        except Exception:
+            pass
     return None
 
 
@@ -617,6 +639,10 @@ async def _renew_session(account_email: str) -> Optional[Dict[str, Any]]:
                 log.warning(
                     f"[Session] Credential renew failed for {account_email}: {e.detail}"
                 )
+                # 凭据已失效（如改了密码）：清除会话，避免保活循环用错误密码反复
+                # 登录触发风控 / 账户锁定。
+                if e.status_code == 401:
+                    await _clear_session(account_email)
             except Exception as e:
                 log.warning(f"[Session] Credential renew error for {account_email}: {e}")
         else:
@@ -746,7 +772,9 @@ def _prepare_dashboard_request(
         cookies.append(f"aai_extended_session={aai_extended_session}")
     if session_token:
         cookies.append(f"session_token={session_token}")
-    if session_jwt:
+    # JWT 陈旧（allow_bearer=False）时连 cookie 里的 session_jwt 也一并丢弃，
+    # 仅依赖长效 aai_extended_session / session_token，避免失效 JWT 触发 401。
+    if session_jwt and allow_bearer:
         cookies.append(f"session_jwt={session_jwt}")
     if cookies:
         headers["Cookie"] = "; ".join(cookies)

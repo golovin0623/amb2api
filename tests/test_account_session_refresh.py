@@ -156,10 +156,28 @@ def test_prepare_dashboard_request_omits_bearer_when_stale():
     assert headers.get("Authorization") == f"Bearer {session['session_jwt']}"
     assert "aai_extended_session=aai-cookie" in headers["Cookie"]
 
-    # 不允许 Bearer：仍带 cookie 兜底，但不发送失效 JWT
+    # 不允许 Bearer：仍带长效 cookie 兜底，但连失效的 session_jwt cookie 也丢弃
     _, headers2 = account_api._prepare_dashboard_request(session, "/dashboard/x", None, allow_bearer=False)
     assert "Authorization" not in headers2
     assert "aai_extended_session=aai-cookie" in headers2["Cookie"]
+    assert "session_token=stok" in headers2["Cookie"]
+    assert "session_jwt" not in headers2["Cookie"]
+
+
+def test_extract_aai_extended_session_handles_multiple_set_cookie():
+    # httpx.Headers 风格：get_list 返回多条 Set-Cookie
+    class FakeHeaders:
+        def get_list(self, name):
+            return [
+                "other_cookie=abc; Path=/",
+                "aai_extended_session=XYZ123; Path=/; HttpOnly",
+            ]
+
+    assert account_api._extract_aai_extended_session(FakeHeaders()) == "XYZ123"
+
+    # 逗号拼接的回退场景（普通 dict-like，无 get_list）——SimpleCookie 正确切分
+    joined = {"set-cookie": "aai_extended_session=XYZ123; Path=/, other=abc; Path=/"}
+    assert account_api._extract_aai_extended_session(joined) == "XYZ123"
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +243,36 @@ async def test_renew_session_without_credentials_returns_none():
             renewed = await account_api._renew_session(email)
     assert renewed is None
     assert mock_auth.await_count == 0  # 无凭据不应尝试登录
+
+
+@pytest.mark.asyncio
+async def test_renew_session_clears_session_on_401():
+    """凭据失效（401，如改了密码）时应清除会话，避免保活循环反复登录。"""
+    fake = FakeAdapter()
+    email = "changed-pw@example.com"
+    now = int(time.time())
+    session_key = f"{account_api.SESSION_STORAGE_KEY}:{email}"
+    fake.store[account_api.ACCOUNTS_LIST_KEY] = [{"email": email}]
+
+    with patch.object(account_api, "get_storage_adapter", AsyncMock(return_value=fake)):
+        key = await account_api._get_session_secret()
+        fake.store[session_key] = {
+            "email": email,
+            "auth_type": "dashboard",
+            "session_jwt": make_jwt(now - 10),
+            "enc_password": encrypt_secret(key, "old-password"),
+            "logged_in_at": "2026-01-01T00:00:00",
+        }
+        with patch.object(
+            account_api,
+            "_authenticate_dashboard",
+            AsyncMock(side_effect=account_api.HTTPException(status_code=401, detail="bad creds")),
+        ):
+            renewed = await account_api._renew_session(email)
+
+    assert renewed is None
+    # 失效会话被清除
+    assert session_key not in fake.store
 
 
 # ---------------------------------------------------------------------------
