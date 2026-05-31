@@ -1016,13 +1016,18 @@ async def refresh_session(account_email: Optional[str] = None) -> Dict[str, Any]
         raise HTTPException(status_code=401, detail="Session not found. Please login again.")
 
     renewed = False
+    cookie_fallback = False
     if _session_needs_renewal(session):
         fresh = await _renew_session(account_email)
         if fresh:
             session = fresh
             renewed = True
+        elif session.get("aai_extended_session") or session.get("session_token"):
+            # 无法主动续期（无凭据/旧会话），但仍有长效 cookie 可走兜底认证：
+            # 不强制下线，交给真实请求在确实 401 时再清理，避免误判"已过期"。
+            cookie_fallback = True
         else:
-            # 无法续期：JWT 已过期且无凭据兜底
+            # 既无法续期、也无可用的长效 cookie，才视为真正失效
             raise HTTPException(
                 status_code=401,
                 detail="Session expired and could not be renewed. Please login again.",
@@ -1031,6 +1036,7 @@ async def refresh_session(account_email: Optional[str] = None) -> Dict[str, Any]
     return {
         "success": True,
         "renewed": renewed,
+        "cookie_fallback": cookie_fallback,
         "email": session.get("email"),
         "jwt_seconds_remaining": _jwt_seconds_remaining(session),
         "auto_renew": bool(session.get("enc_password")),

@@ -348,3 +348,49 @@ async def test_dashboard_request_clears_session_when_renewal_fails():
     assert exc.value.status_code == 401
     # 续期失败后会话被清除
     assert session_key not in fake.store
+
+
+@pytest.mark.asyncio
+async def test_refresh_endpoint_keeps_cookie_only_session_alive():
+    """无凭据但有长效 cookie 的会话：/refresh 不应 401，应报告 cookie_fallback。"""
+    fake = FakeAdapter()
+    email = "cookieonly@example.com"
+    now = int(time.time())
+    session_key = f"{account_api.SESSION_STORAGE_KEY}:{email}"
+    fake.store[account_api.CURRENT_ACCOUNT_KEY] = {"email": email}
+    fake.store[session_key] = {
+        "email": email,
+        "auth_type": "dashboard",
+        "session_jwt": make_jwt(now - 10),  # 已过期
+        "aai_extended_session": "still-good-cookie",
+        "expires_at": "2999-01-01T00:00:00",
+        # 无 enc_password -> 无法主动续期
+    }
+    with patch.object(account_api, "get_storage_adapter", AsyncMock(return_value=fake)):
+        result = await account_api.refresh_session(account_email=email)
+    assert result["success"] is True
+    assert result["renewed"] is False
+    assert result["cookie_fallback"] is True
+    assert result["auto_renew"] is False
+    assert session_key in fake.store  # 会话未被清除
+
+
+@pytest.mark.asyncio
+async def test_refresh_endpoint_401_when_truly_dead():
+    """JWT 过期、无凭据、且无长效 cookie：/refresh 应 401。"""
+    fake = FakeAdapter()
+    email = "dead2@example.com"
+    now = int(time.time())
+    session_key = f"{account_api.SESSION_STORAGE_KEY}:{email}"
+    fake.store[account_api.CURRENT_ACCOUNT_KEY] = {"email": email}
+    fake.store[session_key] = {
+        "email": email,
+        "auth_type": "dashboard",
+        "session_jwt": make_jwt(now - 10),
+        "expires_at": "2999-01-01T00:00:00",
+        # 无 cookie、无 enc_password
+    }
+    with patch.object(account_api, "get_storage_adapter", AsyncMock(return_value=fake)):
+        with pytest.raises(account_api.HTTPException) as exc:
+            await account_api.refresh_session(account_email=email)
+    assert exc.value.status_code == 401
