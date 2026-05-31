@@ -2123,6 +2123,21 @@ html body #playgroundTab .playground-feature-grid .config-input {
   width: 100% !important;
   min-width: 0;
 }
+/* 原生 <select> 升级成自定义下拉后：原生元素仅作隐藏取值源，下拉占满网格单元 */
+html body #playgroundTab .playground-feature-panel select.config-input.pg-select-enhanced {
+  display: none !important;
+}
+html body #playgroundTab .playground-feature-grid .playground-select-wrapper {
+  display: flex !important;
+  width: 100%;
+  min-width: 0;
+}
+html body #playgroundTab .playground-feature-grid .playground-select-wrapper .custom-select-trigger {
+  width: 100%;
+  height: auto;
+  min-height: 38px;
+  text-align: left;
+}
 html body #playgroundTab .playground-feature-wide {
   grid-column: span 2;
 }
@@ -2983,6 +2998,28 @@ html body .status.info { color: var(--sig-info); }
   html body .usage-trace-controls { grid-template-columns: 1fr !important; }
   html body #playgroundTab .playground-feature-grid {
     grid-template-columns: 1fr;
+    gap: var(--s-2);
+  }
+  /* 移动端把"标题 + 控件"压成一行，省纵向空间、观感更紧凑（宽字段/勾选项除外） */
+  html body #playgroundTab .playground-feature-grid label:not(.playground-feature-wide):not(.playground-feature-check) {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+  }
+  html body #playgroundTab .playground-feature-grid label:not(.playground-feature-wide):not(.playground-feature-check) > span {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  html body #playgroundTab .playground-feature-grid label:not(.playground-feature-wide):not(.playground-feature-check) > .config-input,
+  html body #playgroundTab .playground-feature-grid label:not(.playground-feature-wide):not(.playground-feature-check) > .playground-select-wrapper {
+    flex: 0 0 auto;
+    width: 50% !important;
+    max-width: 50%;
+    min-width: 0;
   }
   html body #playgroundTab .playground-feature-panel {
     padding: var(--s-3);
