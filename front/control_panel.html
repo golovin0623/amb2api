@@ -13002,7 +13002,21 @@
 
                 wrapper.appendChild(trigger);
                 wrapper.appendChild(box);
+
+                const label = select.closest('label');
                 select.parentNode.insertBefore(wrapper, select.nextSibling);
+
+                // 把隐藏的原生 <select> 移出 <label>，断开隐式关联：否则点击 <label>
+                // 文字（如"Reasoning Effort"）浏览器会把点击派发给隐藏 <select>，自定义下拉打不开。
+                // 移出后由 <label> 上的监听把点击代理到 trigger（点在下拉自身上时跳过，交给其自有逻辑），
+                // 避免 trigger 直接点击与 label 默认行为重复触发导致的开/合抖动。
+                if (label && label.parentNode) {
+                    label.parentNode.insertBefore(select, label.nextSibling);
+                    label.addEventListener('click', (e) => {
+                        if (e.target.closest('.custom-select-wrapper')) return;
+                        trigger.click();
+                    });
+                }
             });
             initCustomSelects(container);
         }
