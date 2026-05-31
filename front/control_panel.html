@@ -16435,13 +16435,12 @@
 
                     // 先设置子标签页状态，但不触发加载
                     currentAccountSubTab = 'overview';
-                    const tabs = ['overview', 'usage', 'cost', 'rates'];
-                    tabs.forEach(t => {
+                    const subTabs = ['overview', 'usage', 'cost', 'rates'];
+                    subTabs.forEach(t => {
                         const el = document.getElementById('accountSub' + t.charAt(0).toUpperCase() + t.slice(1));
-                        const btn = document.getElementById('accountSubTab' + t.charAt(0).toUpperCase() + t.slice(1));
                         if (el) el.classList.toggle('hidden', t !== 'overview');
-                        if (btn) btn.style.background = (t === 'overview') ? '#4285f4' : '#6c757d';
                     });
+                    setActiveSubTab('overview');
 
                     // 使用合并的 overview API 减少请求数量（1个请求代替3个）
                     // 同时并发加载 usage、cost、rates
@@ -16633,13 +16632,12 @@
 
                         // 设置子标签页状态为概览，但不触发加载
                         currentAccountSubTab = 'overview';
-                        const tabs = ['overview', 'usage', 'cost', 'rates'];
-                        tabs.forEach(t => {
+                        const subTabs = ['overview', 'usage', 'cost', 'rates'];
+                        subTabs.forEach(t => {
                             const el = document.getElementById('accountSub' + t.charAt(0).toUpperCase() + t.slice(1));
-                            const btn = document.getElementById('accountSubTab' + t.charAt(0).toUpperCase() + t.slice(1));
                             if (el) el.classList.toggle('hidden', t !== 'overview');
-                            if (btn) btn.style.background = (t === 'overview') ? '#4285f4' : '#6c757d';
                         });
+                        setActiveSubTab('overview');
 
                         // 使用合并的 overview API 加载概览数据（1个请求代替3个）
                         // 同时并发加载 usage、cost、rates
