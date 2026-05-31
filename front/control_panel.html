@@ -10194,17 +10194,19 @@
                     const quota = (t.quota === null || t.quota === undefined) ? '∞' : t.quota;
                     const models = (t.allowed_models && t.allowed_models.length) ? t.allowed_models.join(', ') : '全部';
                     const enabled = t.enabled !== false;
-                    const tok = t.token;
+                    // 列表只展示掩码 token（完整 token 仅创建时返回一次）；操作以稳定 id 引用
+                    const tid = encodeURIComponent(t.id || '');
+                    const masked = t.token_masked || '';
                     html += '<tr style="border-bottom:1px solid #eee;">' +
                         '<td style="padding:8px;">' + escapeHtml(t.name || '') + '</td>' +
-                        '<td style="font-family:monospace; cursor:pointer;" title="点击复制" onclick="copyTokenValue(this)" data-token="' + escapeHtml(tok) + '">' + escapeHtml(maskTokenShort(tok)) + '</td>' +
+                        '<td style="font-family:monospace;">' + escapeHtml(masked) + '</td>' +
                         '<td>' + used + ' / ' + escapeHtml(String(quota)) + '</td>' +
                         '<td>' + escapeHtml(models) + '</td>' +
                         '<td>' + (enabled ? '<span style="color:#22a06b;">启用</span>' : '<span style="color:#c33;">禁用</span>') + '</td>' +
                         '<td>' +
-                        '<button class="btn" style="padding:2px 8px;" onclick="toggleToken(\'' + encodeURIComponent(tok) + '\',' + (!enabled) + ')">' + (enabled ? '禁用' : '启用') + '</button> ' +
-                        '<button class="btn" style="padding:2px 8px;" onclick="resetTokenUsage(\'' + encodeURIComponent(tok) + '\')">清零</button> ' +
-                        '<button class="btn" style="padding:2px 8px;" onclick="deleteToken(\'' + encodeURIComponent(tok) + '\')">删除</button>' +
+                        '<button class="btn" style="padding:2px 8px;" onclick="toggleToken(\'' + tid + '\',' + (!enabled) + ')">' + (enabled ? '禁用' : '启用') + '</button> ' +
+                        '<button class="btn" style="padding:2px 8px;" onclick="resetTokenUsage(\'' + tid + '\')">清零</button> ' +
+                        '<button class="btn" style="padding:2px 8px;" onclick="deleteToken(\'' + tid + '\')">删除</button>' +
                         '</td></tr>';
                 }
                 html += '</tbody></table>';

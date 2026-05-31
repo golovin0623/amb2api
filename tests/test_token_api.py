@@ -39,24 +39,28 @@ def test_tokens_crud_requires_auth_and_works(monkeypatch):
     assert c.get("/api/tokens").status_code in (401, 403)
 
     h = {"Authorization": "Bearer panel-pw"}
-    # 新建
+    # 新建：创建响应是唯一返回完整 token 的地方（含稳定 id）
     r = c.post("/api/tokens", headers=h, json={"name": "alice", "quota": 2})
     assert r.status_code == 200
     tok = r.json()["token"]
-    assert tok.startswith("sk-amb-")
+    tid = r.json()["id"]
+    assert tok.startswith("sk-amb-") and tid
     assert r.json()["name"] == "alice" and r.json()["quota"] == 2
 
-    # 列出
+    # 列出：必须脱敏——返回 id + token_masked，绝不返回完整 token
     listing = c.get("/api/tokens", headers=h).json()["tokens"]
-    assert any(t["token"] == tok for t in listing)
+    item = next(t for t in listing if t["id"] == tid)
+    assert "token" not in item, "列表不得返回完整 token"
+    assert item.get("token_masked") and tok not in item["token_masked"]
 
-    # 更新（禁用）
-    r = c.put(f"/api/tokens/{tok}", headers=h, json={"enabled": False})
+    # 更新（按 id 禁用）；响应也不回吐完整 token
+    r = c.put(f"/api/tokens/{tid}", headers=h, json={"enabled": False})
     assert r.status_code == 200 and r.json()["enabled"] is False
+    assert "token" not in r.json()
 
-    # 删除
-    assert c.delete(f"/api/tokens/{tok}", headers=h).status_code == 200
-    assert c.delete(f"/api/tokens/{tok}", headers=h).status_code == 404
+    # 删除（按 id）
+    assert c.delete(f"/api/tokens/{tid}", headers=h).status_code == 200
+    assert c.delete(f"/api/tokens/{tid}", headers=h).status_code == 404
 
 
 class _FakeState:

@@ -12,6 +12,7 @@ import asyncio
 import os
 import secrets
 import time
+import uuid
 from typing import Any, Dict, List, Optional
 
 from log import log
@@ -88,6 +89,7 @@ class TokenManager(DebouncedSaver):
         await self.initialize()
         token = TOKEN_PREFIX + secrets.token_urlsafe(24)
         meta = {
+            "id": uuid.uuid4().hex,          # 稳定 id：用于面板列表展示与 CRUD 引用（不暴露完整 token）
             "token": token,
             "name": name or "token",
             "enabled": True,
@@ -104,18 +106,37 @@ class TokenManager(DebouncedSaver):
         log.info(f"Created user token {mask_token(token)} (name={meta['name']})")
         return meta
 
+    @staticmethod
+    def public_view(meta: Dict[str, Any]) -> Dict[str, Any]:
+        """对外展示视图：用 id 引用、token 仅展示掩码，绝不返回完整 token（防列表泄漏）。"""
+        m = {k: v for k, v in meta.items() if k != "token"}
+        m["id"] = meta.get("id", "")
+        m["token_masked"] = mask_token(meta.get("token", ""))
+        return m
+
     async def list_tokens(self) -> List[Dict[str, Any]]:
+        """返回脱敏视图列表（不含完整 token；完整 token 仅在创建时返回一次）。"""
         await self.initialize()
-        return list(self._tokens.values())
+        return [self.public_view(m) for m in self._tokens.values()]
+
+    def _resolve_ref(self, ref: str) -> Optional[str]:
+        """把引用解析为 token key：ref 可是稳定 id，也可是完整 token（向后兼容）。"""
+        if ref in self._tokens:
+            return ref
+        for tok, meta in self._tokens.items():
+            if meta.get("id") == ref:
+                return tok
+        return None
 
     async def get(self, token: str) -> Optional[Dict[str, Any]]:
         await self.initialize()
         return self._tokens.get(token)
 
-    async def update_token(self, token: str, changes: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def update_token(self, ref: str, changes: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         await self.initialize()
         async with self._lock:
-            meta = self._tokens.get(token)
+            token = self._resolve_ref(ref)
+            meta = self._tokens.get(token) if token else None
             if not meta:
                 return None
             for field in ("name", "enabled", "quota", "allowed_models", "expires_at"):
@@ -127,10 +148,11 @@ class TokenManager(DebouncedSaver):
                 self._mark_dirty()
             return meta
 
-    async def delete_token(self, token: str) -> bool:
+    async def delete_token(self, ref: str) -> bool:
         await self.initialize()
         async with self._lock:
-            if token in self._tokens:
+            token = self._resolve_ref(ref)
+            if token and token in self._tokens:
                 del self._tokens[token]
                 if not await self._save():
                     self._mark_dirty()

@@ -43,6 +43,7 @@ async def list_tokens():
 @router.post("")
 async def create_token(req: CreateTokenRequest):
     tm = await get_token_manager()
+    # 创建响应是唯一返回完整 token 的地方（仅此一次，供运营者复制）
     meta = await tm.create_token(
         name=req.name,
         quota=req.quota,
@@ -52,21 +53,21 @@ async def create_token(req: CreateTokenRequest):
     return meta
 
 
-@router.put("/{token}")
-async def update_token(token: str, req: UpdateTokenRequest):
+@router.put("/{token_id}")
+async def update_token(token_id: str, req: UpdateTokenRequest):
     tm = await get_token_manager()
     # 只应用显式提供的字段（exclude_unset 区分"未传"与"显式 None"）
     changes = req.model_dump(exclude_unset=True)
-    meta = await tm.update_token(token, changes)
+    meta = await tm.update_token(token_id, changes)
     if meta is None:
         raise HTTPException(status_code=404, detail="token not found")
-    return meta
+    return tm.public_view(meta)  # 不在更新响应里回吐完整 token
 
 
-@router.delete("/{token}")
-async def delete_token(token: str):
+@router.delete("/{token_id}")
+async def delete_token(token_id: str):
     tm = await get_token_manager()
-    ok = await tm.delete_token(token)
+    ok = await tm.delete_token(token_id)
     if not ok:
         raise HTTPException(status_code=404, detail="token not found")
     return {"deleted": True}
