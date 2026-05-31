@@ -9012,10 +9012,13 @@
                     if (outOfView) {
                         localStorage.removeItem('themeTogglePosition');
                     } else {
-                        if (pos.top    !== null) themeToggle.style.top    = pos.top    + 'px';
-                        if (pos.right  !== null) themeToggle.style.right  = pos.right  + 'px';
-                        if (pos.bottom !== null) themeToggle.style.bottom = pos.bottom + 'px';
-                        if (pos.left   !== null) themeToggle.style.left   = pos.left   + 'px';
+                        // 把未保存的方向显式置 auto，避免与 CSS 默认 top/right:20px 冲突
+                        // （例如吸附到左边时若不清掉默认 right，按钮会被两侧同时锚定而错位）。
+                        // 用 != null 兼容 null 与 undefined，避免旧/异常存档产生 "undefinedpx"。
+                        themeToggle.style.top    = pos.top    != null ? pos.top    + 'px' : 'auto';
+                        themeToggle.style.right  = pos.right  != null ? pos.right  + 'px' : 'auto';
+                        themeToggle.style.bottom = pos.bottom != null ? pos.bottom + 'px' : 'auto';
+                        themeToggle.style.left   = pos.left   != null ? pos.left   + 'px' : 'auto';
                     }
                 } catch (e) {
                     console.error('Failed to load theme toggle position:', e);
@@ -9162,9 +9165,14 @@
 
             // 所有设备都支持直接点击切换主题
             themeToggle.addEventListener('click', (e) => {
-                // 如果发生了拖动，不触发点击
+                // 如果发生了拖动，不触发点击。
+                // 必须 preventDefault + stopPropagation：theme.js 在 document 上挂了
+                // 委托 click，只要 .theme-toggle 被点击且未 defaultPrevented 就会切换主题。
+                // 若此处仅 return，拖动结束后那个委托监听器仍会触发，表现为「拖不动、一拖就切主题」。
                 if (hasMoved) {
                     hasMoved = false;
+                    e.preventDefault();
+                    e.stopPropagation();
                     return;
                 }
                 e.preventDefault();
