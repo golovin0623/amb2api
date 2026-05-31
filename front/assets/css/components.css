@@ -706,7 +706,10 @@ html body .header-title-row > .noti-center { order: 3; }
   user-select: none;
 }
 html body #loginSection .login-input-wrapper .input-icon[role="button"] {
-  position: relative;
+  /* 必须保持 absolute 浮于输入框左侧；此前误用 relative 会让 emoji
+     掉出叠放层、跌入文档流（显示在输入框下方/旁边，即"图标错乱"）。
+     left/top/transform 由 legacy-bridge.css 的基础规则继续生效。 */
+  position: absolute;
   z-index: 5 !important;
   pointer-events: auto !important;
 }
