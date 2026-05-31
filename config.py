@@ -1,73 +1,67 @@
 """
-Configuration constants for the Geminicli2api proxy server.
-Centralizes all configuration to avoid duplication across modules.
+Configuration for the amb2api proxy server (AssemblyAI LLM Gateway,
+OpenAI + Anthropic compatible). Centralizes config resolution
+(env -> storage -> default) so panel-writable settings stay consistent.
 """
 import os
+import time
 from typing import Any, Optional
 
 from src.storage.storage_adapter import get_storage_adapter
+
+# ----------------------------------------------------------------------------
+# 配置快照缓存（短 TTL）
+#
+# 热路径上一次请求会读取 10+ 个配置项，每次都走 storage adapter（含锁与多次 await）。
+# 这里在 config 层加一个很短 TTL 的内存快照，命中即返回，显著减少存储往返。
+# 正确性：StorageAdapter.set_config/delete_config 会调用 invalidate_config_cache(key)
+# 即时失效；面板保存、key 管理、测试写入都会立刻可见。TTL 仅兜底其他直写路径。
+# 设 CONFIG_CACHE_TTL=0 可完全禁用缓存。
+# ----------------------------------------------------------------------------
+_CONFIG_CACHE: dict[str, tuple[float, Any]] = {}
+try:
+    _CONFIG_CACHE_TTL = float(os.getenv("CONFIG_CACHE_TTL", "3.0"))
+except ValueError:
+    _CONFIG_CACHE_TTL = 3.0
+
+
+def invalidate_config_cache(key: Optional[str] = None) -> None:
+    """失效配置快照缓存。key 为空时清空全部。"""
+    if key is None:
+        _CONFIG_CACHE.clear()
+    else:
+        _CONFIG_CACHE.pop(key, None)
+
+
+async def _get_storage_config_cached(key: str) -> Any:
+    """带短 TTL 的存储配置读取。"""
+    if _CONFIG_CACHE_TTL <= 0:
+        adapter = await get_storage_adapter()
+        return await adapter.get_config(key)
+    now = time.monotonic()
+    hit = _CONFIG_CACHE.get(key)
+    if hit is not None and hit[0] > now:
+        return hit[1]
+    adapter = await get_storage_adapter()
+    value = await adapter.get_config(key)
+    _CONFIG_CACHE[key] = (now + _CONFIG_CACHE_TTL, value)
+    return value
+
 
 # Client Configuration
 
 # 需要自动封禁的错误码 (默认值，可通过环境变量或配置覆盖)
 AUTO_BAN_ERROR_CODES = [401, 403]
 
-# Default Safety Settings for Google API
-DEFAULT_SAFETY_SETTINGS = [
-    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_CIVIC_INTEGRITY", "threshold": "BLOCK_NONE"}
-]
-
-# Helper function to get base model name from any variant
+# 仅保留 usage_stats 用于"模型家族归一化"的辅助函数；其余 Gemini 时代的
+# 安全等级 / thinking-budget / search 辅助已随死代码清理移除。
 def get_base_model_name(model_name):
-    """Convert variant model name to base model name."""
-    # Remove all possible suffixes in order
+    """Strip variant suffixes (-maxthinking/-nothinking/-search) to a base name."""
     suffixes = ["-maxthinking", "-nothinking", "-search"]
     for suffix in suffixes:
         if model_name.endswith(suffix):
             return model_name[:-len(suffix)]
     return model_name
-
-# Helper function to check if model uses search grounding
-def is_search_model(model_name):
-    """Check if model name indicates search grounding should be enabled."""
-    return "-search" in model_name
-
-# Helper function to check if model uses no thinking
-def is_nothinking_model(model_name):
-    """Check if model name indicates thinking should be disabled."""
-    return "-nothinking" in model_name
-
-# Helper function to check if model uses max thinking
-def is_maxthinking_model(model_name):
-    """Check if model name indicates maximum thinking budget should be used."""
-    return "-maxthinking" in model_name
-
-# Helper function to get thinking budget for a model
-def get_thinking_budget(model_name):
-    """Get the appropriate thinking budget for a model based on its name and variant."""
-    
-    if is_nothinking_model(model_name):
-        return 128  # Limited thinking for pro
-    elif is_maxthinking_model(model_name):
-        return 32768
-    else:
-        # Default thinking budget for regular models
-        return None  # Default for all models
-
-# Helper function to check if thinking should be included in output
-def should_include_thoughts(model_name):
-    """Check if thoughts should be included in the response."""
-    if is_nothinking_model(model_name):
-        # For nothinking mode, still include thoughts if it's a pro model
-        base_model = get_base_model_name(model_name)
-        return "pro" in base_model
-    else:
-        # For all other modes, include thoughts
-        return True
 
 # Dynamic Configuration System - Optimized for memory efficiency
 async def get_config_value(key: str, default: Any = None, env_var: Optional[str] = None) -> Any:
@@ -78,8 +72,7 @@ async def get_config_value(key: str, default: Any = None, env_var: Optional[str]
             override_env = True
     if not override_env:
         try:
-            storage_adapter = await get_storage_adapter()
-            ov = await storage_adapter.get_config("override_env")
+            ov = await _get_storage_config_cached("override_env")
             if isinstance(ov, str):
                 override_env = ov.lower() in ("true", "1", "yes", "on")
             else:
@@ -89,8 +82,7 @@ async def get_config_value(key: str, default: Any = None, env_var: Optional[str]
     if (not override_env) and env_var and os.getenv(env_var):
         return os.getenv(env_var)
     try:
-        storage_adapter = await get_storage_adapter()
-        value = await storage_adapter.get_config(key)
+        value = await _get_storage_config_cached(key)
         if value is not None:
             return value
     except Exception:
@@ -218,23 +210,6 @@ async def get_retry_429_interval() -> float:
     return float(await get_config_value("retry_429_interval", 1))
 
 
-# Model name lists for different features
-BASE_MODELS = [
-    "gemini-2.5-pro-preview-06-05",
-    "gemini-2.5-pro", 
-    "gemini-2.5-pro-preview-05-06",
-    "gemini-2.5-flash",
-    "gemini-flash-latest",
-    "gemini-2.5-flash-image",
-    "gemini-2.5-flash-image-preview",
-    "gemini-2.5-flash-preview-09-2025"
-]
-
-PUBLIC_API_MODELS = [
-    "gemini-2.5-flash-image",
-    "gemini-2.5-flash-image-preview"
-]
-
 async def get_available_models_async(router_type: str = "openai"):
     """异步版本：优先返回已选模型或缓存模型"""
     selected = await get_config_value("available_models_selected")
@@ -265,27 +240,12 @@ def is_fake_streaming_model(model_name: str) -> bool:
     """Check if model name indicates fake streaming should be used."""
     return model_name.startswith("假流式/")
 
-def is_anti_truncation_model(model_name: str) -> bool:
-    """Check if model name indicates anti-truncation should be used."""
-    return model_name.startswith("流式抗截断/")
-
 def get_base_model_from_feature_model(model_name: str) -> str:
-    """Get base model name from feature model name."""
-    # Remove feature prefixes
-    for prefix in ["假流式/", "流式抗截断/"]:
+    """Get base model name from feature model name (strips known feature prefixes)."""
+    for prefix in ["假流式/"]:
         if model_name.startswith(prefix):
             return model_name[len(prefix):]
     return model_name
-
-async def get_anti_truncation_max_attempts() -> int:
-    """
-    Get maximum attempts for anti-truncation continuation.
-    
-    Environment variable: ANTI_TRUNCATION_MAX_ATTEMPTS
-    TOML config key: anti_truncation_max_attempts
-    Default: 3
-    """
-    return 3
 
 # Server Configuration
 async def get_server_host() -> str:
@@ -381,19 +341,6 @@ async def get_auto_load_env_creds() -> bool:
         return env_value.lower() in ("true", "1", "yes", "on")
     
     return bool(await get_config_value("auto_load_env_creds", False))
-
-async def get_compatibility_mode_enabled() -> bool:
-    """
-    Get compatibility mode setting.
-    
-    兼容性模式：启用后所有system消息全部转换成user，停用system_instructions。
-    该选项可能会降低模型理解能力，但是能避免流式空回的情况。
-    
-    Environment variable: COMPATIBILITY_MODE
-    TOML config key: compatibility_mode_enabled
-    Default: True
-    """
-    return False
 
 
 

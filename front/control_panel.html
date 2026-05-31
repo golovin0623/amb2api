@@ -6737,12 +6737,35 @@
                         <button class="tab" onclick="switchTab('playground')">操练场</button>
                         <button class="tab" onclick="switchTab('performance')">性能分析</button>
                         <button class="tab" onclick="switchTab('logs')">实时日志</button>
+                        <button class="tab" onclick="switchTab('tokens')">用户令牌</button>
                     </div>
                 </div>
             </div>
 
             <!-- 内容区域 -->
             <div class="tab-content-wrapper">
+
+                <!-- 用户令牌标签页（多租户） -->
+                <div id="tokensTab" class="tab-content">
+                    <h3>用户令牌（多租户）</h3>
+                    <p>为下游用户/客户发放独立 API 令牌，可设配额、模型白名单、过期。令牌可直接用于 <code>/v1/chat/completions</code> 与 <code>/v1/messages</code>，受其配额与模型白名单约束。</p>
+
+                    <div style="margin:16px 0; padding:16px; border:1px solid var(--line-default,#ddd); border-radius:8px;">
+                        <h4 style="margin-top:0;">新建令牌</h4>
+                        <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+                            <label>名称<br><input id="newTokenName" type="text" placeholder="如 alice" style="min-width:140px;"></label>
+                            <label>配额（总次数，留空=无限）<br><input id="newTokenQuota" type="number" min="1" placeholder="无限" style="width:140px;"></label>
+                            <label>模型白名单（逗号分隔，留空=全部）<br><input id="newTokenModels" type="text" placeholder="全部" style="min-width:220px;"></label>
+                            <button class="btn" onclick="createToken()">创建</button>
+                        </div>
+                        <div id="newTokenResult" style="margin-top:10px;"></div>
+                    </div>
+
+                    <div style="margin:10px 0;">
+                        <button class="btn" onclick="loadTokens()">刷新列表</button>
+                    </div>
+                    <div id="tokensTableWrap"><p style="color:#888;">点击"刷新列表"加载令牌。</p></div>
+                </div>
 
                 <!-- 批量上传标签页 -->
                 <div id="uploadTab" class="tab-content">
@@ -9114,7 +9137,6 @@
                 } else if (window.toast) {
                     window.toast({ kind: type || 'info', title: String(message || '') });
                 } else {
-                    console.log('[status]', type, message);
                 }
             }
         }
@@ -9156,7 +9178,8 @@
                 if (res.ok) {
                     authToken = password;
                     // 保存登录状态到 localStorage
-                    localStorage.setItem('amb2api_auth_token', password);
+                    // 安全：口令改存 sessionStorage（关闭标签即清），不再长期落盘到 localStorage
+                    sessionStorage.setItem('amb2api_auth_token', password);
                     // 添加成功动画
                     if (loginBtn) {
                         loginBtn.style.background = 'linear-gradient(135deg, #34a853, #28a745)';
@@ -9239,6 +9262,7 @@
         // 退出登录
         function logout() {
             // 清除 localStorage 中的 token
+            sessionStorage.removeItem('amb2api_auth_token');
             localStorage.removeItem('amb2api_auth_token');
             authToken = '';
 
@@ -9278,7 +9302,17 @@
 
         // 检查自动登录
         async function checkAutoLogin() {
-            const savedToken = localStorage.getItem('amb2api_auth_token');
+            // 迁移：旧版本可能把口令存在 localStorage，这里读出后清掉，转用 sessionStorage
+            let savedToken = sessionStorage.getItem('amb2api_auth_token');
+            const legacyToken = localStorage.getItem('amb2api_auth_token');
+            if (legacyToken) {
+                sessionStorage.removeItem('amb2api_auth_token');
+            localStorage.removeItem('amb2api_auth_token');
+                if (!savedToken) {
+                    savedToken = legacyToken;
+                    sessionStorage.setItem('amb2api_auth_token', legacyToken);
+                }
+            }
             if (!savedToken) return false;
 
             try {
@@ -9296,7 +9330,8 @@
                     return true;
                 } else {
                     // token 无效，清除
-                    localStorage.removeItem('amb2api_auth_token');
+                    sessionStorage.removeItem('amb2api_auth_token');
+            localStorage.removeItem('amb2api_auth_token');
                     return false;
                 }
             } catch (error) {
@@ -9407,6 +9442,9 @@
             }
             if (tabName === 'logs') {
                 connectWebSocket();
+            }
+            if (tabName === 'tokens') {
+                loadTokens();
             }
             if (tabName === 'playground') {
                 initPlayground();
@@ -10133,22 +10171,135 @@
             };
         }
 
+        // ============ 用户令牌（多租户） ============
+        async function loadTokens() {
+            const wrap = document.getElementById('tokensTableWrap');
+            if (!wrap) return;
+            wrap.innerHTML = '<p style="color:#888;">加载中…</p>';
+            try {
+                const res = await fetch('/api/tokens', { headers: getAuthHeaders() });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                const tokens = (data && data.tokens) || [];
+                if (!tokens.length) {
+                    wrap.innerHTML = '<p style="color:#888;">暂无令牌，请在上方创建。</p>';
+                    return;
+                }
+                let html = '<table style="width:100%; border-collapse:collapse;">' +
+                    '<thead><tr style="text-align:left; border-bottom:2px solid #ccc;">' +
+                    '<th style="padding:8px;">名称</th><th>令牌</th><th>已用/配额</th><th>模型白名单</th><th>状态</th><th>操作</th>' +
+                    '</tr></thead><tbody>';
+                for (const t of tokens) {
+                    const used = t.used || 0;
+                    const quota = (t.quota === null || t.quota === undefined) ? '∞' : t.quota;
+                    const models = (t.allowed_models && t.allowed_models.length) ? t.allowed_models.join(', ') : '全部';
+                    const enabled = t.enabled !== false;
+                    // 列表只展示掩码 token（完整 token 仅创建时返回一次）；操作以稳定 id 引用
+                    const tid = encodeURIComponent(t.id || '');
+                    const masked = t.token_masked || '';
+                    html += '<tr style="border-bottom:1px solid #eee;">' +
+                        '<td style="padding:8px;">' + escapeHtml(t.name || '') + '</td>' +
+                        '<td style="font-family:monospace;">' + escapeHtml(masked) + '</td>' +
+                        '<td>' + used + ' / ' + escapeHtml(String(quota)) + '</td>' +
+                        '<td>' + escapeHtml(models) + '</td>' +
+                        '<td>' + (enabled ? '<span style="color:#22a06b;">启用</span>' : '<span style="color:#c33;">禁用</span>') + '</td>' +
+                        '<td>' +
+                        '<button class="btn" style="padding:2px 8px;" onclick="toggleToken(\'' + tid + '\',' + (!enabled) + ')">' + (enabled ? '禁用' : '启用') + '</button> ' +
+                        '<button class="btn" style="padding:2px 8px;" onclick="resetTokenUsage(\'' + tid + '\')">清零</button> ' +
+                        '<button class="btn" style="padding:2px 8px;" onclick="deleteToken(\'' + tid + '\')">删除</button>' +
+                        '</td></tr>';
+                }
+                html += '</tbody></table>';
+                wrap.innerHTML = html;
+            } catch (e) {
+                wrap.innerHTML = '<p style="color:#c33;">加载失败：' + escapeHtml(String(e.message || e)) + '</p>';
+            }
+        }
+
+        function maskTokenShort(t) {
+            if (!t) return '';
+            if (t.length <= 16) return t.slice(0, 6) + '***';
+            return t.slice(0, 12) + '…' + t.slice(-4);
+        }
+
+        function copyTokenValue(el) {
+            const tok = el.getAttribute('data-token');
+            if (tok && navigator.clipboard) {
+                navigator.clipboard.writeText(tok).then(() => showStatus('已复制完整令牌', 'success'),
+                    () => showStatus('复制失败', 'error'));
+            }
+        }
+
+        async function createToken() {
+            const name = (document.getElementById('newTokenName').value || '').trim();
+            const quotaRaw = (document.getElementById('newTokenQuota').value || '').trim();
+            const modelsRaw = (document.getElementById('newTokenModels').value || '').trim();
+            const body = { name: name };
+            if (quotaRaw) body.quota = parseInt(quotaRaw, 10);
+            if (modelsRaw) body.allowed_models = modelsRaw.split(',').map(s => s.trim()).filter(Boolean);
+            try {
+                const res = await fetch('/api/tokens', {
+                    method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(body)
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const meta = await res.json();
+                const rEl = document.getElementById('newTokenResult');
+                rEl.innerHTML = '令牌已创建（请立即复制，仅此一次完整显示）：<br>' +
+                    '<code style="user-select:all; word-break:break-all;">' + escapeHtml(meta.token) + '</code>';
+                document.getElementById('newTokenName').value = '';
+                document.getElementById('newTokenQuota').value = '';
+                document.getElementById('newTokenModels').value = '';
+                showStatus('令牌已创建', 'success');
+                loadTokens();
+            } catch (e) {
+                showStatus('创建失败：' + (e.message || e), 'error');
+            }
+        }
+
+        async function toggleToken(tokEnc, enable) {
+            await updateToken(tokEnc, { enabled: enable });
+        }
+        async function resetTokenUsage(tokEnc) {
+            await updateToken(tokEnc, { reset_used: true });
+        }
+        async function updateToken(tokEnc, changes) {
+            try {
+                const res = await fetch('/api/tokens/' + tokEnc, {
+                    method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(changes)
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                showStatus('已更新', 'success');
+                loadTokens();
+            } catch (e) {
+                showStatus('更新失败：' + (e.message || e), 'error');
+            }
+        }
+        async function deleteToken(tokEnc) {
+            if (!confirm('确认删除该令牌？删除后使用它的客户端将立即失效。')) return;
+            try {
+                const res = await fetch('/api/tokens/' + tokEnc, {
+                    method: 'DELETE', headers: getAuthHeaders()
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                showStatus('已删除', 'success');
+                loadTokens();
+            } catch (e) {
+                showStatus('删除失败：' + (e.message || e), 'error');
+            }
+        }
+
         // 触发后台预加载账户数据（非阻塞，静默执行）
         async function triggerAccountPreload() {
             try {
-                console.log('[Preload] Triggering account preload after panel login');
                 const res = await fetch('/api/account/preload/trigger', {
                     method: 'POST',
                     headers: getAuthHeaders()
                 });
                 if (res.ok) {
                     const data = await res.json();
-                    console.log('[Preload] Preload triggered:', data);
                 } else {
-                    console.log('[Preload] Preload trigger failed:', res.status);
                 }
             } catch (e) {
-                console.log('[Preload] Preload trigger error:', e.message);
             }
         }
 
@@ -10192,9 +10343,10 @@
                 const isZip = file.name.endsWith('.zip');
                 const fileIcon = isZip ? '📦' : '📄';
                 const fileType = isZip ? ' (ZIP压缩包)' : ' (JSON文件)';
+                // 文件名为用户可控，转义后再插入，防止 <img onerror> 之类的 XSS
                 fileItem.innerHTML = `
                     <div>
-                        <span class="file-name">${fileIcon} ${file.name}</span>
+                        <span class="file-name">${fileIcon} ${escapeHtml(file.name)}</span>
                         <span class="file-size">(${formatFileSize(file.size)}${fileType})</span>
                     </div>
                     <button class="remove-btn" onclick="removeFile(${index})">删除</button>
@@ -10655,7 +10807,6 @@
                     headers: getAuthHeaders()
                 });
 
-                console.log('Creds status response:', response.status);
 
                 const data = await response.json();
                 if (response.ok) {
@@ -10900,7 +11051,6 @@
 
             // 调试：记录状态
             if (filename.includes('atomic-affinity')) {
-                console.log(`Creating card for ${filename}:`, status);
             }
 
             // 设置卡片状态样式
@@ -10919,7 +11069,6 @@
 
 
             // 调试：记录 error_codes
-            console.log(`Error codes for ${filename}:`, status.error_codes);
 
             if (status.error_codes && status.error_codes.length > 0) {
                 statusBadges += `<span class="error-codes">错误码: ${status.error_codes.join(', ')}</span>`;
@@ -11015,10 +11164,8 @@
                     body: JSON.stringify(requestBody)
                 });
 
-                console.log('Response status:', response.status);
 
                 const data = await response.json();
-                console.log('Response data:', data);
 
                 if (response.ok) {
                     showStatus(data.message, 'success');
@@ -12722,9 +12869,6 @@
 
         // 页面加载时检查状态
         window.onload = async function () {
-            console.log('Page loaded');
-            console.log('Login section exists:', !!document.getElementById('loginSection'));
-            console.log('Main section exists:', !!document.getElementById('mainSection'));
 
             // 初始化列可见性
             applyTraceColVisible();
@@ -12769,7 +12913,6 @@
                 await refreshUsageStats();
                 triggerAccountPreload();
 
-                console.log('自动登录成功');
             } else {
                 // 显示登录页面
                 const loginSection = document.getElementById('loginSection');
@@ -14528,7 +14671,6 @@
             // 始终更新进度条背景以反映新的 max 值
             updateMaxTokensValue(parseInt(slider.value));
 
-            console.log(`Model ${model}: max_tokens limit set to ${maxTokens}, current value: ${slider.value} `);
         }
 
         async function initPlayground() {
@@ -15108,7 +15250,6 @@
 
         // 预览请求
         async function previewRequest() {
-            console.log('previewRequest called');
 
             const sel = document.getElementById('playgroundModel');
             if (!sel || !sel.value) {
@@ -15124,7 +15265,6 @@
                 return;
             }
 
-            console.log('Request data:', requestData);
 
             try {
                 const response = await fetch('/api/playground/preview', {
@@ -15133,11 +15273,9 @@
                     body: JSON.stringify(requestData)
                 });
 
-                console.log('Response status:', response.status);
 
                 if (response.ok) {
                     const data = await response.json();
-                    console.log('Preview data:', data);
 
                     // 显示预览区域
                     const previewSection = document.getElementById('requestPreviewSection');
@@ -16528,12 +16666,9 @@
                 }
 
                 const el = document.getElementById('accountRatesContent');
-                console.log('Switching to rates tab, cache:', accountCache.rates ? { ts: accountCache.rates.ts, hasHtml: !!accountCache.rates.html } : 'none');
                 if (el && accountCache.rates.html && isFresh(accountCache.rates.ts)) {
-                    console.log('Using cached rates data');
                     el.innerHTML = accountCache.rates.html;
                 } else {
-                    console.log('No valid cache, loading rates data');
                     loadAccountRates();
                 }
             }
@@ -16705,7 +16840,6 @@
                 const res = await fetch('/api/account/billing' + (params.toString() ? '?' + params.toString() : ''), { headers: getAuthHeaders() });
                 if (!res.ok) throw new Error('加载失败');
                 const data = await res.json();
-                console.log('Billing data:', data);
 
                 const balance = data.balance || 0;
                 const totalSpend = data.total_spend_30_days || 0;
@@ -17026,7 +17160,6 @@
                 const res = await fetch('/api/account/usage?' + params.toString(), { headers: getAuthHeaders() });
                 if (!res.ok) throw new Error('加载失败');
                 const data = await res.json();
-                console.log('Usage data received (force=' + force + ', silent=' + silent + '):', data);
 
                 // 归类并复刻使用量分布与列表 - 确保数据始终显示
                 const hasModelData = data.by_model && Array.isArray(data.by_model) && data.by_model.length > 0;
@@ -17134,7 +17267,6 @@
 
                 // 显示调试信息（如果有）- 仅在控制台输出，不显示给用户
                 if (data.debug_info && Object.keys(data.debug_info).length > 0) {
-                    console.log('Debug info:', data.debug_info);
                     // 调试信息仅用于开发，不在界面显示
                 }
 
@@ -17147,7 +17279,6 @@
 
                 // 缓存完整数据
                 accountCache.usage[key] = { ts: Date.now(), html, complete: true };
-                console.log('Usage data cached successfully');
 
                 el.innerHTML = html;
             } catch (e) {
@@ -18218,7 +18349,6 @@
 
         // 切换筛选面板
         function toggleCostFilterPanel(panelType) {
-            console.log('toggleCostFilterPanel called with:', panelType);
             const panels = ['Date', 'Service', 'Model', 'Region'];
             const panelTypeCapitalized = panelType.charAt(0).toUpperCase() + panelType.slice(1);
 
@@ -18860,7 +18990,6 @@
                 }
                 if (yTicks.length === 0) yTicks.push(0, yMax);
 
-                console.log('Y-axis:', { maxAmount, yMax, yStep, yTicks });
 
                 const chartHeight = 200;
                 const chartWidth = 100; // SVG viewBox width
@@ -19438,7 +19567,6 @@
                 const res = await fetch(`/api/account/rates?${params.toString()}`, { headers: getAuthHeaders() });
                 if (!res.ok) throw new Error('加载失败');
                 const data = await res.json();
-                console.log('Rates data received:', data);
                 let html = '<div style="display: grid; gap: 20px;">';
 
                 // LLM Gateway - 合并输入/输出两列并优先展示

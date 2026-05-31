@@ -10,6 +10,16 @@ from typing import Dict, Any, List, Optional, Protocol
 from log import log
 
 
+def _invalidate_config_snapshot(key: str) -> None:
+    """写入配置后失效 config.py 的快照缓存（懒导入避免循环依赖）。"""
+    try:
+        from config import invalidate_config_cache
+
+        invalidate_config_cache(key)
+    except Exception:  # noqa: BLE001 - 缓存失效失败不应影响写入主流程
+        pass
+
+
 class StorageBackend(Protocol):
     """存储后端协议"""
     
@@ -84,20 +94,6 @@ class StorageBackend(Protocol):
     async def get_all_perf(self) -> Dict[str, Any]:
         """获取所有性能追踪数据"""
         ...
-    
-    # 使用统计管理
-    async def update_usage_stats(self, filename: str, stats_updates: Dict[str, Any]) -> bool:
-        """更新使用统计"""
-        ...
-    
-    async def get_usage_stats(self, filename: str) -> Dict[str, Any]:
-        """获取使用统计"""
-        ...
-    
-    async def get_all_usage_stats(self) -> Dict[str, Dict[str, Any]]:
-        """获取所有使用统计"""
-        ...
-
 
 
 class StorageAdapter:
@@ -235,7 +231,9 @@ class StorageAdapter:
     async def set_config(self, key: str, value: Any) -> bool:
         """设置配置项"""
         self._ensure_initialized()
-        return await self._backend.set_config(key, value)
+        result = await self._backend.set_config(key, value)
+        _invalidate_config_snapshot(key)
+        return result
     
     async def get_config(self, key: str, default: Any = None) -> Any:
         """获取配置项"""
@@ -250,7 +248,9 @@ class StorageAdapter:
     async def delete_config(self, key: str) -> bool:
         """删除配置项"""
         self._ensure_initialized()
-        return await self._backend.delete_config(key)
+        result = await self._backend.delete_config(key)
+        _invalidate_config_snapshot(key)
+        return result
     
     # ============ 性能追踪数据管理 (独立存储) ============
     
@@ -284,24 +284,7 @@ class StorageAdapter:
         # 回退: 从 config 中过滤出 perf 数据
         all_config = await self._backend.get_all_config()
         return {k: v for k, v in all_config.items() if k.startswith('perf_')}
-    
-    # ============ 使用统计管理 ============
-    
-    async def update_usage_stats(self, filename: str, stats_updates: Dict[str, Any]) -> bool:
-        """更新使用统计"""
-        self._ensure_initialized()
-        return await self._backend.update_usage_stats(filename, stats_updates)
-    
-    async def get_usage_stats(self, filename: str) -> Dict[str, Any]:
-        """获取使用统计"""
-        self._ensure_initialized()
-        return await self._backend.get_usage_stats(filename)
-    
-    async def get_all_usage_stats(self) -> Dict[str, Dict[str, Any]]:
-        """获取所有使用统计"""
-        self._ensure_initialized()
-        return await self._backend.get_all_usage_stats()
-    
+
     # ============ 工具方法 ============
     
     async def export_credential_to_json(self, filename: str, output_path: str = None) -> bool:

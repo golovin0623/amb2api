@@ -13,7 +13,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.models.models_key import KeyInfo, KeyConfig, RateLimitInfo, KeyStats, KeyStatus, AggregationMode
-from src.services.proxy_manager import ProxyManager
 from src.services.key_manager import KeyManager
 from src.services.key_selector import KeySelector
 from src.services.rate_limiter import RateLimiter
@@ -22,25 +21,6 @@ from src.transform.request_generator import RequestGenerator
 
 
 # ============ 策略定义 ============
-
-# 有效的代理 URL 策略
-valid_proxy_urls = st.sampled_from([
-    "http://localhost:8080",
-    "http://127.0.0.1:3128",
-    "https://proxy.example.com:443",
-    "socks5://localhost:1080",
-    "http://user:pass@proxy.com:8080",
-])
-
-# 无效的代理 URL 策略
-invalid_proxy_urls = st.sampled_from([
-    "not-a-url",
-    "ftp://invalid.com",
-    "http://",
-    "://missing-scheme.com",
-    "http://localhost:99999",  # 端口超出范围
-    "",
-])
 
 # API 密钥策略
 api_key_strategy = st.text(
@@ -55,72 +35,6 @@ key_list_strategy = st.lists(api_key_strategy, min_size=1, max_size=10)
 
 # 密钥索引策略
 key_index_strategy = st.integers(min_value=0, max_value=9)
-
-
-# ============ Property 1: 代理配置应用一致性 ============
-# Feature: api-key-management-enhancement, Property 1: 代理配置应用一致性
-# *For any* 代理配置和 API 请求，当设置代理后，所有后续请求都应该使用该代理配置
-# **Validates: Requirements 1.1**
-
-class TestProxyConfigConsistency:
-    """代理配置应用一致性测试"""
-    
-    @given(proxy_url=valid_proxy_urls)
-    @settings(max_examples=100)
-    def test_valid_proxy_url_validation(self, proxy_url):
-        """测试有效代理 URL 验证"""
-        manager = ProxyManager()
-        assert manager.validate_proxy_url(proxy_url) is True
-    
-    @given(proxy_url=invalid_proxy_urls)
-    @settings(max_examples=100)
-    def test_invalid_proxy_url_validation(self, proxy_url):
-        """测试无效代理 URL 验证"""
-        manager = ProxyManager()
-        # 空字符串和无效格式应该返回 False
-        if proxy_url.strip() == "":
-            assert manager.validate_proxy_url(proxy_url) is False
-        else:
-            # 其他无效格式也应该返回 False
-            result = manager.validate_proxy_url(proxy_url)
-            # 注意：某些格式可能被认为是有效的，取决于实现
-            assert isinstance(result, bool)
-
-
-# ============ Property 2: 代理配置错误处理 ============
-# Feature: api-key-management-enhancement, Property 2: 代理配置错误处理
-# *For any* 无效的代理配置格式，系统应该记录错误并回退到直接连接
-# **Validates: Requirements 1.3**
-
-class TestProxyErrorHandling:
-    """代理配置错误处理测试"""
-    
-    @given(proxy_url=invalid_proxy_urls)
-    @settings(max_examples=100)
-    def test_invalid_proxy_rejected(self, proxy_url):
-        """测试无效代理被拒绝"""
-        manager = ProxyManager()
-        # 无效的代理 URL 不应该通过验证
-        if not proxy_url or not proxy_url.strip():
-            assert manager.validate_proxy_url(proxy_url) is False
-
-
-# ============ Property 3: 代理配置热更新 ============
-# Feature: api-key-management-enhancement, Property 3: 代理配置热更新
-# *For any* 代理配置更新操作，下一次请求应该使用新的代理配置
-# **Validates: Requirements 1.5**
-
-class TestProxyHotUpdate:
-    """代理配置热更新测试"""
-    
-    @given(url1=valid_proxy_urls, url2=valid_proxy_urls)
-    @settings(max_examples=100)
-    def test_proxy_url_change_detection(self, url1, url2):
-        """测试代理 URL 变更检测"""
-        manager = ProxyManager()
-        # 两个不同的有效 URL 都应该通过验证
-        assert manager.validate_proxy_url(url1) is True
-        assert manager.validate_proxy_url(url2) is True
 
 
 # ============ Property 10: 密钥追加操作 ============

@@ -7,8 +7,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi import WebSocket, WebSocketDisconnect
 import asyncio
 import re
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
+from .auth import authenticate, security  # 共享鉴权依赖
 from log import log
 from config import (
     get_api_password,
@@ -25,7 +25,6 @@ from ..services.assembly_client import fetch_assembly_models, get_rate_limit_inf
 
 
 router = APIRouter()
-security = HTTPBearer()
 
 
 def _parse_config_bool(value: Any) -> bool:
@@ -38,17 +37,6 @@ def _parse_config_bool(value: Any) -> bool:
         if normalized in ("false", "0", "no", "off", "disabled", "none", ""):
             return False
     return bool(value)
-
-
-async def authenticate(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    token = credentials.credentials
-    password = await get_panel_password()
-    if token != password:
-        # 兼容 API 密码
-        api_pwd = await get_api_password()
-        if token != api_pwd:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="密码错误")
-    return token
 
 
 def _mask_email(value: Any) -> Optional[str]:
@@ -75,6 +63,7 @@ def _is_sensitive_config_key(key: Any) -> bool:
         "key_states",
         "rate_limit_info",
         "unified_stats",
+        "user_tokens",
     }
     return (
         normalized in sensitive_exact
@@ -85,6 +74,7 @@ def _is_sensitive_config_key(key: Any) -> bool:
         or "private" in normalized
         or normalized == "token"
         or normalized.endswith("_token")
+        or normalized.endswith("_tokens")
         or normalized.endswith("_api_key")
         or "api_token" in normalized
         or "auth_token" in normalized
@@ -409,25 +399,16 @@ async def usage_stats(token: str = Depends(authenticate)):
     await unified_stats.ensure_keys_exist(cfg_keys)
     stats_data = await unified_stats.get_all_stats(valid_keys=cfg_keys)
     
-    # 转换为前端使用格式（保留旧字段兼容）
+    # 转换为前端使用格式（模型无关；不再特例化 gemini-2.5-pro）
     result = {}
     for masked_key, key_data in stats_data.get("keys", {}).items():
         daily_limit_models = key_data.get("daily_limit_models", {}) or {}
-        gemini_limit = (
-            daily_limit_models.get("gemini-2.5-pro")
-            or daily_limit_models.get("gemini-2.5-pro-preview")
-            or daily_limit_models.get("gemini_2_5_pro")
-            or 100
-        )
-        gemini_calls = key_data.get("model_counts", {}).get("gemini-2.5-pro", 0)
         result[masked_key] = {
             "total_calls": key_data.get("total", 0),
             "success_calls": key_data.get("ok", 0),
             "failure_calls": key_data.get("fail", 0),
-            "gemini_2_5_pro_calls": gemini_calls,
             "daily_limit_total": key_data.get("daily_limit_total", 1000),
             "daily_limit_models": daily_limit_models,
-            "daily_limit_gemini_2_5_pro": gemini_limit,
             "model_counts": key_data.get("model_counts", {}),
             "models": key_data.get("models", {}),
             "next_reset_time": key_data.get("next_reset_time"),
@@ -563,9 +544,7 @@ async def usage_aggregated(model: str = None, key: str = None, only: str = None,
     # 构建聚合响应
     agg = {
         "total_files": len(keys),
-        "total_gemini_2_5_pro_calls": 0,  # 兼容旧字段
         "total_all_model_calls": ok_total + fail_total,
-        "avg_gemini_2_5_pro_per_file": 0,
         "avg_total_per_file": (ok_total + fail_total) / max(len(keys), 1),
         "next_reset_time": next_reset_time,
         "log_summary": {

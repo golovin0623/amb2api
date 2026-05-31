@@ -2,23 +2,37 @@
 速率限制管理器模块
 跟踪和管理 API 密钥的速率限制状态
 """
+import os
 import time
 import asyncio
 from typing import Dict, List, Optional, Any
 
 from log import log
+from ..core.debounced_saver import DebouncedSaver
 from ..models.models_key import RateLimitInfo, KeyStatus
 from ..storage.storage_adapter import get_storage_adapter
 
 
-class RateLimiter:
+def _save_interval() -> float:
+    try:
+        return max(0.0, float(os.getenv("RATE_LIMIT_SAVE_INTERVAL", "5")))
+    except ValueError:
+        return 5.0
+
+
+class RateLimiter(DebouncedSaver):
     """速率限制管理器"""
-    
+
     def __init__(self):
         self._rate_limits: Dict[int, RateLimitInfo] = {}  # 速率限制信息缓存
         self._initialized = False
         self._save_lock = asyncio.Lock()
-    
+        # 去抖保存：把每请求的整块写合并为窗口内一次（降低写放大）
+        self._init_debounce(_save_interval())
+
+    async def _do_save(self) -> bool:
+        return await self._save_rate_limits()
+
     async def initialize(self):
         """初始化速率限制管理器"""
         if self._initialized:
@@ -48,16 +62,18 @@ class RateLimiter:
         except Exception as e:
             log.error(f"Failed to load rate limit info: {e}")
     
-    async def _save_rate_limits(self):
-        """保存速率限制信息到存储"""
+    async def _save_rate_limits(self) -> bool:
+        """保存速率限制信息到存储。返回是否成功（失败时调用方保留脏标记重试）。"""
         async with self._save_lock:
             try:
                 adapter = await get_storage_adapter()
                 data = {str(k): v.to_dict() for k, v in self._rate_limits.items()}
                 await adapter.set_config("rate_limit_info", data)
                 log.debug(f"Saved rate limit info for {len(self._rate_limits)} keys")
+                return True
             except Exception as e:
                 log.error(f"Failed to save rate limit info: {e}")
+                return False
     
     async def update_rate_limit(
         self, 
@@ -106,10 +122,10 @@ class RateLimiter:
         self._rate_limits[key_index] = info
         
         log.debug(f"Updated rate limit for key {key_index}: limit={limit}, remaining={remaining}, reset_in={reset_in_seconds}s")
-        
-        # 异步保存
-        asyncio.create_task(self._save_rate_limits())
-    
+
+        # 去抖保存（窗口内合并为一次写）
+        self._mark_dirty()
+
     async def is_key_exhausted(self, key_index: int) -> bool:
         """
         检查密钥是否已用尽
@@ -205,9 +221,9 @@ class RateLimiter:
             info.reset_in_seconds = 0
             
             log.info(f"Key {key_index} rate limit reset (limit={info.limit})")
-            
-            # 异步保存
-            asyncio.create_task(self._save_rate_limits())
+
+            # 去抖保存
+            self._mark_dirty()
             return True
         
         return False
@@ -279,3 +295,9 @@ async def get_rate_limiter() -> RateLimiter:
         _rate_limiter = RateLimiter()
         await _rate_limiter.initialize()
     return _rate_limiter
+
+
+async def flush_rate_limiter() -> None:
+    """进程退出前把未落盘的限流改动刷新到存储（避免去抖窗口内丢更新）。"""
+    if _rate_limiter is not None:
+        await _rate_limiter.flush()

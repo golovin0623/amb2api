@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from config import get_available_models_async, is_fake_streaming_model, is_anti_truncation_model
+from config import get_available_models_async, is_fake_streaming_model
 from log import log
 from ..services.assembly_client import send_assembly_request
 from ..services.assembly_stream_handler import fake_stream_response_for_assembly, convert_streaming_response
@@ -37,14 +37,63 @@ security = HTTPBearer()
 
 # AssemblyAI 适配不需要 Google 凭证管理器
 
-async def authenticate(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    """验证用户密码"""
+async def _resolve_identity(request: Request, token: str) -> bool:
+    """把 token 解析为身份并挂到 request.state.identity。
+
+    接受两类凭证：① 主口令 API_PASSWORD（master，无限制）；② 有效的下游 user token
+    （启用且未过期；配额/模型白名单在拿到 model 后于处理函数内强制）。
+    返回是否通过鉴权。
+    """
     from config import get_api_password
+    from .auth import consteq
     password = await get_api_password()
+    if token and consteq(token, password):  # 恒定时间比较，防计时攻击
+        request.state.identity = {"master": True, "token": token, "meta": None}
+        return True
+    from ..services.token_manager import get_token_manager
+    tm = await get_token_manager()
+    # 鉴权只确立身份（存在/启用/未过期）；配额与模型白名单留给 enforce_token_quota，
+    # 否则配额耗尽的 token 会在此被当成 403 密码错误，而非请求阶段的 429。
+    v = await tm.validate(token, check_quota=False)
+    if v.get("valid"):
+        request.state.identity = {"master": False, "token": token, "meta": v["meta"]}
+        return True
+    return False
+
+
+async def authenticate(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> str:
+    """验证主口令或下游 user token"""
     token = credentials.credentials
-    if token != password:
+    if not await _resolve_identity(request, token):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="密码错误")
     return token
+
+
+async def enforce_token_quota(request: Request, model: str, consume: bool = True) -> None:
+    """对 user token 强制：模型白名单 + 禁用/过期 + 配额。master 不受限。
+
+    在处理函数拿到 model 后调用。配额耗尽 → 429；模型不允许/禁用/过期 → 403。
+    consume=True 原子消费一次配额（计费端点）；consume=False 只校验访问权
+    （白名单/禁用/过期），不消费、且不因配额耗尽而拒绝（用于 count_tokens 这类免费本地端点）。
+    """
+    identity = getattr(request.state, "identity", None)
+    if not identity or identity.get("master"):
+        return
+    from ..services.token_manager import get_token_manager
+    tm = await get_token_manager()
+    if consume:
+        res = await tm.try_consume(identity["token"], model)
+    else:
+        # 免费/本地端点：只校验身份+模型白名单，不消费、不因配额耗尽而拒绝
+        res = await tm.validate(identity["token"], model, check_quota=False)
+    if not res.get("valid"):
+        reason = res.get("reason", "forbidden")
+        if reason == "quota_exceeded":
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=reason)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
 
 @router.get("/v1/models")
 async def list_models(request: Request):
@@ -56,18 +105,14 @@ async def list_models(request: Request):
 
 
 async def authenticate_anthropic_request(request: Request) -> str:
-    """Anthropic-compatible auth: x-api-key first, then Bearer."""
-    from config import get_api_password
-
-    password = await get_api_password()
-
+    """Anthropic-compatible auth: x-api-key first, then Bearer. 支持主口令或 user token。"""
     token = request.headers.get("x-api-key", "").strip()
     if not token:
         auth_header = request.headers.get("authorization", "")
         if auth_header.lower().startswith("bearer "):
             token = auth_header.split(" ", 1)[1].strip()
 
-    if token != password:
+    if not await _resolve_identity(request, token):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="密码错误")
     return token
 
@@ -432,6 +477,17 @@ async def anthropic_messages(
             status_code=400,
         )
 
+    # 多租户：对 user token 强制模型白名单 + 配额（包装成 Anthropic 错误壳）
+    try:
+        await enforce_token_quota(request, request_data.model)
+    except HTTPException as e:
+        return JSONResponse(
+            content=openai_error_to_anthropic_error(
+                e.status_code, {"message": str(e.detail)}, fallback_message=str(e.detail)
+            ),
+            status_code=e.status_code,
+        )
+
     if getattr(request_data, "max_tokens", None) is not None and request_data.max_tokens > 65535:
         request_data.max_tokens = 65535
 
@@ -577,6 +633,17 @@ async def anthropic_count_tokens(
             status_code=400,
         )
 
+    # 多租户：对 user token 强制模型白名单/禁用/过期（不消费配额——count_tokens 是免费本地估算）
+    try:
+        await enforce_token_quota(request, str(openai_payload.get("model", "")), consume=False)
+    except HTTPException as e:
+        return JSONResponse(
+            content=openai_error_to_anthropic_error(
+                e.status_code, {"message": str(e.detail)}, fallback_message=str(e.detail)
+            ),
+            status_code=e.status_code,
+        )
+
     messages = openai_payload.get("messages", [])
     input_tokens = estimate_input_tokens(messages)
     return JSONResponse(content={"input_tokens": input_tokens})
@@ -626,9 +693,13 @@ async def chat_completions(
     except Exception as e:
         log.error(f"Request validation failed: {e}")
         raise HTTPException(status_code=400, detail=f"Request validation error: {str(e)}")
-    
+
+    # 多租户：对 user token 强制模型白名单 + 配额（master 不受限）。放在校验之外，
+    # 避免 429/403 被上面的 except 包装成 400。
+    await enforce_token_quota(request, request_data.model)
+
     # 健康检查
-    if (len(request_data.messages) == 1 and 
+    if (len(request_data.messages) == 1 and
         getattr(request_data.messages[0], "role", None) == "user" and
         getattr(request_data.messages[0], "content", None) == "Hi"):
         return JSONResponse(content={
@@ -728,22 +799,14 @@ async def chat_completions(
     # 处理模型名称和功能检测
     model = request_data.model
     use_fake_streaming = is_fake_streaming_model(model)
-    use_anti_truncation = is_anti_truncation_model(model)
-    
+
     # AssemblyAI 直接使用传入模型名，无需特征前缀转换
-    
+
     # 处理假流式
     if use_fake_streaming and getattr(request_data, "stream", False):
         request_data.stream = False
         return await fake_stream_response_for_assembly(request_data, trace=trace)
-    
-    # 处理抗截断 (仅流式传输时有效)
-    is_streaming = getattr(request_data, "stream", False)
-    if use_anti_truncation and is_streaming:
-        log.warning("AssemblyAI 暂不支持原生流式抗截断，将作为普通请求处理")
-        request_data.stream = False
-        is_streaming = False
-    
+
     # 发送到 AssemblyAI（非流式）
     is_streaming = getattr(request_data, "stream", False)
     if is_streaming:

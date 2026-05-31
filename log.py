@@ -22,6 +22,11 @@ _file_lock = threading.Lock()
 _file_writing_disabled = False
 _disable_reason = None
 
+# 持久文件句柄 + 字节计数（避免每行 open()/getsize 的系统调用开销）
+_log_fh = None
+_log_fh_path = None
+_current_size = 0
+
 def _get_current_log_level():
     """获取当前日志级别"""
     level = os.getenv('LOG_LEVEL', 'info').lower()
@@ -31,28 +36,99 @@ def _get_log_file_path():
     """获取日志文件路径"""
     return os.getenv('LOG_FILE', 'log.txt')
 
+def _get_max_bytes() -> int:
+    """单个日志文件最大字节数，超过则轮转。0 表示不轮转。默认 10MB。"""
+    try:
+        return int(os.getenv('LOG_MAX_BYTES', str(10 * 1024 * 1024)))
+    except ValueError:
+        return 10 * 1024 * 1024
+
+def _get_backup_count() -> int:
+    """保留的历史日志份数（log.txt.1 ... log.txt.N）。默认 3。"""
+    try:
+        return max(0, int(os.getenv('LOG_BACKUP_COUNT', '3')))
+    except ValueError:
+        return 3
+
+def _close_handle():
+    global _log_fh
+    if _log_fh is not None:
+        try:
+            _log_fh.close()
+        except Exception:
+            pass
+        _log_fh = None
+
+def _rotate(log_file: str):
+    """size-based 轮转：log.txt -> log.txt.1 -> ... -> log.txt.N（删除最旧）。"""
+    _close_handle()
+    backup = _get_backup_count()
+    if backup <= 0:
+        try:
+            if os.path.exists(log_file):
+                os.remove(log_file)
+        except OSError:
+            pass
+        return
+    try:
+        oldest = f"{log_file}.{backup}"
+        if os.path.exists(oldest):
+            os.remove(oldest)
+    except OSError:
+        pass
+    for i in range(backup - 1, 0, -1):
+        src, dst = f"{log_file}.{i}", f"{log_file}.{i + 1}"
+        if os.path.exists(src):
+            try:
+                os.replace(src, dst)
+            except OSError:
+                pass
+    try:
+        if os.path.exists(log_file):
+            os.replace(log_file, f"{log_file}.1")
+    except OSError:
+        pass
+
+def _get_handle(log_file: str):
+    """返回持久文件句柄；路径变化或首次打开时重开并刷新字节计数。"""
+    global _log_fh, _log_fh_path, _current_size
+    if _log_fh is not None and _log_fh_path == log_file and not _log_fh.closed:
+        return _log_fh
+    _close_handle()
+    _log_fh = open(log_file, 'a', encoding='utf-8')
+    _log_fh_path = log_file
+    try:
+        _current_size = os.path.getsize(log_file)
+    except OSError:
+        _current_size = 0
+    return _log_fh
+
 def _write_to_file(message: str):
-    """线程安全地写入日志文件"""
-    global _file_writing_disabled, _disable_reason
-    
-    # 如果文件写入已被禁用，直接返回
+    """线程安全地写入日志文件（带 size 轮转，持久句柄）。"""
+    global _file_writing_disabled, _disable_reason, _current_size
+
     if _file_writing_disabled:
         return
-    
+
     try:
         log_file = _get_log_file_path()
+        data = message + '\n'
+        encoded_len = len(data.encode('utf-8'))
         with _file_lock:
-            with open(log_file, 'a', encoding='utf-8') as f:
-                f.write(message + '\n')
-                f.flush()  # 强制刷新到磁盘，确保实时写入
+            max_bytes = _get_max_bytes()
+            # 仅用内存计数判断是否需要轮转，避免每行 getsize 系统调用
+            if max_bytes > 0 and _log_fh is not None and _current_size + encoded_len > max_bytes:
+                _rotate(log_file)  # 关闭句柄；下面 _get_handle 会重开
+            fh = _get_handle(log_file)
+            fh.write(data)
+            fh.flush()  # 保留实时刷新，便于面板日志流
+            _current_size += encoded_len
     except (PermissionError, OSError, IOError) as e:
-        # 检测只读文件系统或权限问题，禁用文件写入
         _file_writing_disabled = True
         _disable_reason = str(e)
         print(f"Warning: File system appears to be read-only or permission denied. Disabling log file writing: {e}", file=sys.stderr)
         print(f"Log messages will continue to display in console only.", file=sys.stderr)
     except Exception as e:
-        # 其他异常仍然输出警告但不禁用写入（可能是临时问题）
         print(f"Warning: Failed to write to log file: {e}", file=sys.stderr)
 
 def _log(level: str, message: str):

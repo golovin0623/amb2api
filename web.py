@@ -11,6 +11,7 @@ load_dotenv()
 
 import os
 from fastapi import FastAPI, Response
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -20,6 +21,7 @@ from src.api.admin_routes import router as admin_router
 from src.api.account_api import router as account_router
 from src.api.key_management_api import router as keys_router
 from src.api.playground_api import router as playground_router
+from src.api.token_management_api import router as tokens_router
 # Google/Gemini 相关路由与控制面板已移除
 
 # Import managers and utilities
@@ -50,7 +52,43 @@ async def lifespan(app: FastAPI):
         log.info("所有异步任务已关闭")
     except Exception as e:
         log.error(f"关闭异步任务时出错: {e}")
-    
+
+    # 刷新限流去抖缓存（避免窗口内的更新丢失）
+    try:
+        from src.services.rate_limiter import flush_rate_limiter
+        await flush_rate_limiter()
+    except Exception as e:
+        log.error(f"刷新限流缓存时出错: {e}")
+
+    # 刷新统计（30s 节流窗口内的改动落盘）
+    try:
+        from src.stats.unified_stats import flush_unified_stats
+        await flush_unified_stats()
+    except Exception as e:
+        log.error(f"刷新统计时出错: {e}")
+
+    # 刷新 user token 配额计数
+    try:
+        from src.services.token_manager import flush_token_manager
+        await flush_token_manager()
+    except Exception as e:
+        log.error(f"刷新 token 配额时出错: {e}")
+
+    # 关闭共享 HTTP 客户端
+    try:
+        from src.core.httpx_client import close_shared_client
+        await close_shared_client()
+    except Exception as e:
+        log.error(f"关闭共享 HTTP 客户端时出错: {e}")
+
+    # 关闭存储适配器（刷新在途写入，避免 SIGTERM 丢数据）
+    try:
+        from src.storage.storage_adapter import close_storage_adapter
+        await close_storage_adapter()
+        log.info("存储适配器已关闭")
+    except Exception as e:
+        log.error(f"关闭存储适配器时出错: {e}")
+
     log.info("AMB2API 主服务已停止")
 
 # 创建FastAPI应用
@@ -62,10 +100,22 @@ app = FastAPI(
 )
 
 # CORS中间件
+# 安全说明：API 通过 Authorization / x-api-key 头鉴权（非 Cookie），因此默认
+# 不开启 allow_credentials。带凭证的通配源（["*"] + credentials）既被浏览器
+# 拒绝又有安全风险，已禁止该组合。可用 CORS_ALLOW_ORIGINS 配置显式白名单。
+_cors_origins_env = os.getenv("CORS_ALLOW_ORIGINS", "*").strip()
+if _cors_origins_env in ("", "*"):
+    _cors_allow_origins = ["*"]
+    _cors_allow_credentials = False
+else:
+    _cors_allow_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+    # 只要结果里含通配 "*"，就强制关闭 credentials（禁止 "*,https://x" 这类误配启用带凭证通配）
+    _cors_allow_credentials = "*" not in _cors_allow_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_allow_origins,
+    allow_credentials=_cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -103,6 +153,12 @@ app.include_router(
     tags=["Playground"]
 )
 
+app.include_router(
+    tokens_router,
+    prefix="",
+    tags=["User Tokens"]
+)
+
 # Gemini原生路由 - 处理Gemini格式请求
 # 仅保留 OpenAI 兼容路由
 
@@ -116,6 +172,34 @@ if os.path.isdir(_ASSETS_DIR):
 @app.head("/keepalive")
 async def keepalive() -> Response:
     return Response(status_code=200)
+
+
+# 健康检查：探测存储后端是否可用，供编排器做就绪/存活探针
+@app.get("/health")
+async def health() -> JSONResponse:
+    from src.storage.storage_adapter import get_storage_adapter
+
+    storage_ok = False
+    backend = "unknown"
+    try:
+        adapter = await get_storage_adapter()
+        backend = type(adapter).__name__
+        # 轻量探测：读取一个配置键不应抛错
+        await adapter.get_config("__health_probe__")
+        storage_ok = True
+    except Exception as e:  # noqa: BLE001 - 健康检查需吞掉异常并降级
+        log.warning(f"/health 存储探测失败: {e}")
+
+    status_code = 200 if storage_ok else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "ok" if storage_ok else "degraded",
+            "version": app.version,
+            "storage": {"backend": backend, "ok": storage_ok},
+        },
+    )
+
 
 __all__ = ['app']
 
@@ -137,11 +221,14 @@ async def main():
     log.info(f"Anthropic 兼容端点: http://127.0.0.1:{port}/v1/messages")
     log.info(f"管理控制面板: http://127.0.0.1:{port}/ui")
     
+    # 安全：不再把口令明文写入日志。仅在仍使用默认弱口令时给出告警提示。
     from config import get_api_password, get_panel_password
     api_pwd = await get_api_password()
     panel_pwd = await get_panel_password()
-    log.info(f"API 访问密码: {api_pwd}")
-    log.info(f"控制面板密码: {panel_pwd}")
+    if api_pwd == "pwd" or panel_pwd == "pwd":
+        log.warning("检测到仍在使用默认口令 'pwd'，请尽快通过 API_PASSWORD/PANEL_PASSWORD 修改！")
+    else:
+        log.info("API/面板口令已配置（已隐藏，不在日志中输出明文）")
     log.info("=" * 60)
     # 仅保留 OpenAI 兼容端点日志
 

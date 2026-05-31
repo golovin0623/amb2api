@@ -156,10 +156,8 @@ class PostgresManager:
 
     def _get_default_stats(self) -> Dict[str, Any]:
         return {
-            'gemini_2_5_pro_calls': 0,
             'total_calls': 0,
             'next_reset_time': None,
-            'daily_limit_gemini_2_5_pro': 100,
             'daily_limit_total': 1000
         }
 
@@ -260,37 +258,4 @@ class PostgresManager:
     async def delete_config(self, key: str) -> bool:
         self._ensure_initialized()
         return await self._config_cache_manager.delete(key)
-
-    async def update_usage_stats(self, filename: str, stats_updates: Dict[str, Any]) -> bool:
-        self._ensure_initialized()
-        try:
-            existing_data = await self._credentials_cache_manager.get(filename, {})
-            if not existing_data:
-                existing_data = {'credential': {}, 'state': self._get_default_state(), 'stats': self._get_default_stats()}
-            existing_data['stats'].update(stats_updates)
-            return await self._credentials_cache_manager.set(filename, existing_data)
-        except Exception as e:
-            log.error(f'Error updating usage stats for {filename} in Postgres: {e}')
-            return False
-
-    async def get_usage_stats(self, filename: str) -> Dict[str, Any]:
-        self._ensure_initialized()
-        try:
-            credential_entry = await self._credentials_cache_manager.get(filename)
-            if credential_entry and 'stats' in credential_entry:
-                return credential_entry['stats']
-            return self._get_default_stats()
-        except Exception as e:
-            log.error(f'Error getting usage stats for {filename} from Postgres: {e}')
-            return self._get_default_stats()
-
-    async def get_all_usage_stats(self) -> Dict[str, Dict[str, Any]]:
-        self._ensure_initialized()
-        try:
-            all_data = await self._credentials_cache_manager.get_all()
-            stats = {fn: data.get('stats', self._get_default_stats()) for fn, data in all_data.items()}
-            return stats
-        except Exception as e:
-            log.error(f'Error getting all usage stats from Postgres: {e}')
-            return {}
 
