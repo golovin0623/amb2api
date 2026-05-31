@@ -16866,11 +16866,14 @@
                 // 重新加载账户列表
                 await loadAccountsList();
 
-                // 如果没有任何账户了，显示登录界面
+                // 如果没有任何账户了，显示登录界面；否则继续对新的当前账户保活
                 if (accountsList.length === 0) {
                     document.getElementById('accountLoginSection').classList.remove('hidden');
                     document.getElementById('accountLoggedInSection').classList.add('hidden');
                     stopAccountSessionKeepAlive();
+                } else if (currentAccountEmail) {
+                    // 登出当前账户后 loadAccountsList 会切到剩余账户，需重启保活
+                    startAccountSessionKeepAlive();
                 }
 
                 showAccountStatus('已登出', 'success');
