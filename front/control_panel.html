@@ -11364,6 +11364,7 @@
         async function loadConfig(silent = false) {
             const configLoading = document.getElementById('configLoading');
             const configForm = document.getElementById('configForm');
+            let ok = false;
             try {
                 if (!silent) {
                     configLoading.style.display = 'block';
@@ -11397,6 +11398,7 @@
                     if (!silent) {
                         showStatus('配置加载成功', 'success');
                     }
+                    ok = true;
                 } else {
                     if (!silent) {
                         showStatus(`加载配置失败: ${data.detail || data.error || '未知错误'}`, 'error');
@@ -11411,6 +11413,7 @@
                     configLoading.style.display = 'none';
                 }
             }
+            return ok;
         }
 
         function populateConfigForm() {
@@ -11724,10 +11727,8 @@
         }
 
         function floatingReload(btn) {
-            return runFloatingAction(btn, async () => {
-                await loadConfig();
-                return true;
-            });
+            // 直接透传 loadConfig 的成功/失败，避免重载失败仍显示「✓ 成功」
+            return runFloatingAction(btn, () => loadConfig());
         }
 
         async function refreshAllConfig(showBtnLoading = true, silent = false) {
