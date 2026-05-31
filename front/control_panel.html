@@ -9014,10 +9014,11 @@
                     } else {
                         // 把未保存的方向显式置 auto，避免与 CSS 默认 top/right:20px 冲突
                         // （例如吸附到左边时若不清掉默认 right，按钮会被两侧同时锚定而错位）。
-                        themeToggle.style.top    = pos.top    !== null ? pos.top    + 'px' : 'auto';
-                        themeToggle.style.right  = pos.right  !== null ? pos.right  + 'px' : 'auto';
-                        themeToggle.style.bottom = pos.bottom !== null ? pos.bottom + 'px' : 'auto';
-                        themeToggle.style.left   = pos.left   !== null ? pos.left   + 'px' : 'auto';
+                        // 用 != null 兼容 null 与 undefined，避免旧/异常存档产生 "undefinedpx"。
+                        themeToggle.style.top    = pos.top    != null ? pos.top    + 'px' : 'auto';
+                        themeToggle.style.right  = pos.right  != null ? pos.right  + 'px' : 'auto';
+                        themeToggle.style.bottom = pos.bottom != null ? pos.bottom + 'px' : 'auto';
+                        themeToggle.style.left   = pos.left   != null ? pos.left   + 'px' : 'auto';
                     }
                 } catch (e) {
                     console.error('Failed to load theme toggle position:', e);
