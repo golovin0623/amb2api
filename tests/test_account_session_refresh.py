@@ -246,8 +246,9 @@ async def test_renew_session_without_credentials_returns_none():
 
 
 @pytest.mark.asyncio
-async def test_renew_session_clears_session_on_401():
-    """凭据失效（401，如改了密码）时应清除会话，避免保活循环反复登录。"""
+async def test_renew_session_drops_credentials_but_keeps_session_on_401():
+    """凭据失效（401，如改了密码）时只移除 enc_password 停止重试，但保留会话，
+    其长效 cookie 可能仍可用，避免误登出。"""
     fake = FakeAdapter()
     email = "changed-pw@example.com"
     now = int(time.time())
@@ -260,6 +261,7 @@ async def test_renew_session_clears_session_on_401():
             "email": email,
             "auth_type": "dashboard",
             "session_jwt": make_jwt(now - 10),
+            "aai_extended_session": "still-good-cookie",
             "enc_password": encrypt_secret(key, "old-password"),
             "logged_in_at": "2026-01-01T00:00:00",
         }
@@ -271,8 +273,10 @@ async def test_renew_session_clears_session_on_401():
             renewed = await account_api._renew_session(email)
 
     assert renewed is None
-    # 失效会话被清除
-    assert session_key not in fake.store
+    # 会话保留（cookie 兜底），但失效的 enc_password 被移除以停止重试
+    assert session_key in fake.store
+    assert "enc_password" not in fake.store[session_key]
+    assert fake.store[session_key].get("aai_extended_session") == "still-good-cookie"
 
 
 # ---------------------------------------------------------------------------
@@ -394,3 +398,5 @@ async def test_refresh_endpoint_401_when_truly_dead():
         with pytest.raises(account_api.HTTPException) as exc:
             await account_api.refresh_session(account_email=email)
     assert exc.value.status_code == 401
+    # 真正失效的死会话在 401 前被清除，避免前端把它当作已登录
+    assert session_key not in fake.store

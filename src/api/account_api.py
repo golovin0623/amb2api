@@ -639,10 +639,15 @@ async def _renew_session(account_email: str) -> Optional[Dict[str, Any]]:
                 log.warning(
                     f"[Session] Credential renew failed for {account_email}: {e.detail}"
                 )
-                # 凭据已失效（如改了密码）：清除会话，避免保活循环用错误密码反复
-                # 登录触发风控 / 账户锁定。
-                if e.status_code == 401:
-                    await _clear_session(account_email)
+                # 凭据已失效（如改了密码）：仅移除加密密码以停止用错误密码反复登录
+                # （避免风控/锁号），但保留会话本身——其长效 aai_extended_session /
+                # session_token 可能仍可用，留给真实请求在确实 401 时再清理。
+                if e.status_code == 401 and session_data.get("enc_password"):
+                    session_data.pop("enc_password", None)
+                    try:
+                        await _save_session(session_data)
+                    except Exception:
+                        pass
             except Exception as e:
                 log.warning(f"[Session] Credential renew error for {account_email}: {e}")
         else:
