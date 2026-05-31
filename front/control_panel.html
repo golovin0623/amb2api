@@ -2969,10 +2969,24 @@
 
             #allConfigTable tbody td {
                 display: block;
-                padding: 6px 0;
-                border: none;
+                padding: 6px 0 !important;
+                border: none !important;
+                /* 卡片内单元格之间用统一全宽分隔线 */
+                border-bottom: 1px solid var(--border-color) !important;
+                background: transparent !important;
                 width: 100% !important;
+                /* 抵消通用 .table td:first-child 的 max-width:60px 截断，避免名称变成「密…」 */
+                max-width: 100% !important;
                 min-width: 0 !important;
+                /* 抵消通用 .table td 的 white-space:nowrap，让名称/键完整换行显示 */
+                white-space: normal !important;
+                overflow: visible !important;
+                text-overflow: clip !important;
+            }
+
+            /* 卡片最后一行不再画分隔线，避免与卡片底边重合 */
+            #allConfigTable tbody tr td:last-child {
+                border-bottom: none !important;
             }
 
             #allConfigTable tbody td:first-child {
@@ -2981,27 +2995,24 @@
                 font-size: 11px;
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
-                margin-bottom: 4px;
-                padding-bottom: 2px;
+                padding: 0 0 8px 0 !important;
+                margin-bottom: 8px;
+                word-break: break-word;
             }
 
             #allConfigTable tbody td:nth-child(2) {
                 font-weight: 500;
                 color: var(--text-color);
                 font-size: 13px;
-                margin-bottom: 6px;
                 word-break: break-word;
-                padding-bottom: 4px;
-                border-bottom: 1px solid var(--border-color);
+                padding: 8px 0 !important;
             }
 
             #allConfigTable tbody td:nth-child(3) {
                 color: var(--text-color);
                 font-size: 12px;
                 line-height: 1.5;
-                padding-top: 6px;
-                padding-bottom: 6px;
-                border-bottom: 1px solid var(--border-color);
+                padding: 8px 0 !important;
             }
 
             /* 移动端操作列优化 */
@@ -6485,6 +6496,7 @@
 
         /* 按钮加载中 (通用): 文字隐藏 + 旋转 spinner */
         .btn.bf-busy, .btn-sm.bf-busy {
+            position: relative;          /* 确保 spinner 以按钮自身定位 */
             pointer-events: none;
             color: transparent !important;
         }
@@ -7111,8 +7123,8 @@
 
                     <!-- 配置页面浮动操作按钮 -->
                     <div class="config-floating-actions" id="configFloatingActions">
-                        <button class="config-floating-btn refresh" onclick="loadConfig()">刷新</button>
-                        <button class="config-floating-btn save" onclick="saveConfig()">保存</button>
+                        <button class="config-floating-btn refresh" onclick="floatingReload(this)">刷新</button>
+                        <button class="config-floating-btn save" onclick="floatingSave(this)">保存</button>
                     </div>
 
                     <div id="configSection">
@@ -7191,12 +7203,12 @@
                                         style="min-height:36px; display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px">
                                     </div>
                                     <div class="manage-actions">
-                                        <button class="btn btn-sm" onclick="queryModels()">获取模型列表</button>
+                                        <button class="btn btn-sm" onclick="queryModels(this)">获取模型列表</button>
                                         <button class="btn btn-sm" style="background:#ffc107"
-                                            onclick="fillAllModels()">填入所有模型</button>
+                                            onclick="fillAllModels(this)">填入所有模型</button>
                                         <button class="btn btn-sm" style="background:#6c757d"
                                             onclick="clearSelectedModels()">清除所有模型</button>
-                                        <button class="btn btn-sm" onclick="saveSelectedModels()">保存所选模型</button>
+                                        <button class="btn btn-sm" onclick="saveSelectedModels(this)">保存所选模型</button>
                                     </div>
                                 </div>
                                 <small class="config-note">查询后按供应商分组展示模型，勾选并保存即可用于接口列表与操练场</small>
@@ -11664,12 +11676,51 @@
                         // 静默加载配置，不覆盖之前的提示消息
                         setTimeout(() => loadConfig(true), 500);
                     }
+                    return true;
                 } else {
                     showStatus(`保存配置失败: ${data.detail || data.error || '未知错误'}`, 'error');
+                    return false;
                 }
             } catch (error) {
                 showStatus(`网络错误: ${error.message}`, 'error');
+                return false;
             }
+        }
+
+        /* ── 浮动操作条：保存/重载的即时按钮反馈 ──────────────
+           接口本身有网络往返，按钮立刻进入「忙碌」spinner 态，成功后短暂 ✓，
+           让用户清楚知道「点到了 / 正在保存 / 已保存」，不再以为没生效。 */
+        async function runFloatingAction(btn, fn) {
+            if (!btn || btn.classList.contains('is-busy')) return;
+            btn.classList.remove('is-success');
+            btn.classList.add('is-busy');
+            btn.setAttribute('aria-busy', 'true');
+            let ok = false;
+            try {
+                ok = await fn();
+            } catch (e) {
+                ok = false;
+            } finally {
+                btn.classList.remove('is-busy');
+                btn.removeAttribute('aria-busy');
+            }
+            // fn 返回 undefined（无显式状态）时视为成功
+            if (ok !== false) {
+                btn.classList.add('is-success');
+                setTimeout(() => btn.classList.remove('is-success'), 1100);
+            }
+            return ok;
+        }
+
+        function floatingSave(btn) {
+            return runFloatingAction(btn, () => saveConfig());
+        }
+
+        function floatingReload(btn) {
+            return runFloatingAction(btn, async () => {
+                await loadConfig();
+                return true;
+            });
         }
 
         async function refreshAllConfig(showBtnLoading = true, silent = false) {
@@ -14670,7 +14721,7 @@
             <div class="modal-body models-modal-body" id="modelsModalBody"></div>
             <div class="modal-footer models-modal-footer">
                 <button class="btn btn-outline-secondary" onclick="closeModelsModal()">取消</button>
-                <button class="btn models-save-btn" onclick="saveSelectedModels()">确定</button>
+                <button class="btn models-save-btn" onclick="saveSelectedModels(this)">确定</button>
             </div>
         </div>
     </div>
@@ -16073,7 +16124,16 @@
             }
         }
 
-        async function queryModels() {
+        async function queryModels(btn) {
+            // 上游 /models 接口是一次真实网络往返（最长 30s），并非前端逻辑慢。
+            // 因此立刻把弹窗以「加载中」骨架打开、按钮进入忙碌态，给出明确等待反馈。
+            const modal = document.getElementById('modelsModal');
+            const body = document.getElementById('modelsModalBody');
+            if (btn) btn.classList.add('bf-busy');
+            if (modal && body) {
+                body.innerHTML = '<div class="loading-spinner" style="padding:48px 0;"><div class="spinner"></div><div class="spinner-text">正在获取模型列表…</div></div>';
+                setModalVisibility(modal, true);
+            }
             try {
                 const res = await fetch('/models/query', { headers: getAuthHeaders() });
                 const data = await res.json();
@@ -16081,7 +16141,12 @@
                 refreshUsageLimitModelOptions();
                 openModelsModal();
             } catch (e) {
+                if (body) {
+                    body.innerHTML = `<div class="models-empty">获取模型列表失败：${escapeHtml(e.message)}</div>`;
+                }
                 showStatus('获取模型列表失败: ' + e.message, 'error');
+            } finally {
+                if (btn) btn.classList.remove('bf-busy');
             }
         }
 
@@ -16148,7 +16213,8 @@
             return checks.filter(c => c.checked).map(c => c.value);
         }
 
-        async function fillAllModels() {
+        async function fillAllModels(btn) {
+            if (btn) btn.classList.add('bf-busy');
             try {
                 if (!queriedModels.models || queriedModels.models.length === 0) {
                     const res = await fetch('/models/query', { headers: getAuthHeaders() });
@@ -16167,6 +16233,8 @@
                 }
             } catch (e) {
                 showStatus('填充失败: ' + e.message, 'error');
+            } finally {
+                if (btn) btn.classList.remove('bf-busy');
             }
         }
 
@@ -16176,12 +16244,13 @@
             renderSelectedModelsChips();
         }
 
-        async function saveSelectedModels() {
+        async function saveSelectedModels(btn) {
             // 如果弹窗打开，优先从弹窗勾选收集
             const modal = document.getElementById('modelsModal');
             if (modal && modal.style.display && modal.style.display !== 'none') {
                 selectedModels = collectCheckedModels();
             }
+            if (btn) btn.classList.add('bf-busy');
             try {
                 const res = await fetch('/models/save', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ selected_models: selectedModels }) });
                 const data = await res.json();
@@ -16195,6 +16264,8 @@
                 }
             } catch (e) {
                 showStatus('保存失败: ' + e.message, 'error');
+            } finally {
+                if (btn) btn.classList.remove('bf-busy');
             }
         }
 

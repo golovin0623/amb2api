@@ -212,40 +212,62 @@ html body #configTab .config-sensitive-badge {
   color: var(--ink-muted);
 }
 
-/* 浮动 save / refresh */
+/* ── 浮动操作条（重载 / 保存）─────────────────────────────
+   桌面端把两枚按钮收进一个磨砂玻璃药丸条里，与移动端底栏视觉统一；
+   去掉旧版无限上下浮动的「怪异」动画，改为明确的 hover/按下/忙碌/成功反馈。 */
 html body .config-floating-actions {
   position: fixed !important;
   right: var(--s-5) !important;
   bottom: var(--s-5) !important;
-  display: flex !important;
-  gap: var(--s-2);
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: var(--s-2) !important;
+  padding: var(--s-2) !important;
+  background: color-mix(in oklch, var(--bg-leaf) 86%, transparent) !important;
+  border: 1px solid var(--line-default) !important;
+  border-radius: var(--r-full) !important;
+  box-shadow: var(--elev-4) !important;
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
   z-index: var(--z-fixed) !important;
 }
 html body .config-floating-btn {
+  position: relative;
   display: inline-flex !important;
   align-items: center;
+  justify-content: center;
   gap: var(--s-2);
+  min-width: 92px;
   padding: 0 var(--s-4) !important;
   height: 40px !important;
   font-family: var(--font-sans) !important;
   font-size: var(--fs-caption) !important;
   font-weight: var(--fw-medium) !important;
-  background: var(--bg-leaf) !important;
+  background: transparent !important;
   color: var(--ink-primary) !important;
   border: 1px solid var(--line-default) !important;
   border-radius: var(--r-full) !important;
-  box-shadow: var(--elev-2) !important;
+  box-shadow: none !important;
   cursor: pointer;
+  /* 关键：取消 inline 样式里的 floatBtn 无限浮动动画 */
+  animation: none !important;
+  transition: transform var(--dur-fast) var(--ease-standard),
+              background-color var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard),
+              color var(--dur-fast) var(--ease-standard) !important;
 }
+html body .config-floating-btn svg { flex: 0 0 auto; }
 html body .config-floating-btn:hover {
   border-color: var(--line-strong) !important;
   background: var(--bg-overlay) !important;
+  transform: none !important;
 }
+html body .config-floating-btn:active { transform: scale(0.96) !important; }
 html body .config-floating-btn.save {
   background: var(--ink-pure) !important;
   color: var(--ink-inverse) !important;
   border-color: var(--ink-pure) !important;
-  box-shadow: var(--elev-3) !important;
 }
 html body .config-floating-btn.save:hover {
   background: oklch(0.30 0.012 270) !important;
@@ -256,6 +278,35 @@ html[data-theme="dark"] body .config-floating-btn.save {
   color: oklch(0.10 0.005 270) !important;
   border-color: oklch(0.96 0.005 270) !important;
 }
+
+/* 忙碌：图标换成旋转 spinner，文字保留（「保存」/「重载」），按钮锁定 */
+html body .config-floating-btn.is-busy,
+html body .config-floating-btn.is-success { pointer-events: none; }
+html body .config-floating-btn.is-busy svg,
+html body .config-floating-btn.is-success svg { display: none !important; }
+html body .config-floating-btn.is-busy::before {
+  content: '';
+  width: 15px; height: 15px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: cfgBtnSpin 0.6s linear infinite;
+}
+/* 成功：短暂变绿并显示 ✓，让「是否已保存」一目了然 */
+html body .config-floating-btn.is-success {
+  background: var(--sig-success) !important;
+  border-color: var(--sig-success) !important;
+  color: #fff !important;
+}
+html body .config-floating-btn.is-success::before {
+  content: '✓';
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1;
+  animation: cfgBtnPop 0.3s var(--ease-standard);
+}
+@keyframes cfgBtnSpin { to { transform: rotate(360deg); } }
+@keyframes cfgBtnPop { 0% { transform: scale(0.3); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 
 /* key-mode-row */
 html body #configTab .key-mode-row {
