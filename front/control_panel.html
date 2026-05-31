@@ -13370,6 +13370,75 @@
             }
         }
 
+        // 把操练场 Gateway 参数面板里的原生 <select> 升级成与全站统一的自定义下拉，
+        // 避免在移动端弹出割裂整体设计的系统原生选择器。原生 <select> 保留作隐藏取值源
+        // （initCustomSelects 通过 data-select-id 读写它的 .value，现有读取逻辑不受影响）。
+        function enhancePlaygroundSelects(container = document) {
+            if (!container.querySelectorAll) return;
+            container.querySelectorAll('#playgroundTab .playground-feature-panel select.config-input:not(.pg-select-enhanced)').forEach(select => {
+                if (!select.id) return;
+                select.classList.add('pg-select-enhanced');
+
+                const onchange = select.getAttribute('onchange') || '';
+                select.removeAttribute('onchange');
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'custom-select-wrapper playground-select-wrapper';
+                wrapper.dataset.selectId = select.id;
+                if (onchange) wrapper.dataset.onchange = onchange;
+
+                const trigger = document.createElement('div');
+                trigger.className = 'custom-select-trigger';
+                const box = document.createElement('div');
+                box.className = 'custom-select-options';
+
+                const currentValue = select.value;
+                const addOption = (opt) => {
+                    const el = document.createElement('div');
+                    el.className = 'custom-select-option';
+                    el.dataset.value = opt.value;
+                    el.textContent = (opt.textContent || '').trim();
+                    if (opt.value === currentValue) el.classList.add('selected');
+                    box.appendChild(el);
+                };
+
+                Array.from(select.children).forEach(node => {
+                    if (node.tagName === 'OPTGROUP') {
+                        const groupLabel = document.createElement('div');
+                        groupLabel.className = 'custom-select-group-label';
+                        groupLabel.textContent = node.label || '';
+                        box.appendChild(groupLabel);
+                        Array.from(node.children).forEach(addOption);
+                    } else if (node.tagName === 'OPTION') {
+                        addOption(node);
+                    }
+                });
+
+                const selectedOption = box.querySelector('.custom-select-option.selected')
+                    || box.querySelector('.custom-select-option');
+                trigger.textContent = selectedOption ? selectedOption.textContent : '';
+
+                wrapper.appendChild(trigger);
+                wrapper.appendChild(box);
+
+                const label = select.closest('label');
+                select.parentNode.insertBefore(wrapper, select.nextSibling);
+
+                // 把隐藏的原生 <select> 移出 <label>，断开隐式关联：否则点击 <label>
+                // 文字（如"Reasoning Effort"）浏览器会把点击派发给隐藏 <select>，自定义下拉打不开。
+                // 移出后由 <label> 上的监听把点击代理到 trigger（点在下拉自身上时跳过，交给其自有逻辑），
+                // 避免 trigger 直接点击与 label 默认行为重复触发导致的开/合抖动。
+                if (label && label.parentNode) {
+                    label.parentNode.insertBefore(select, label.nextSibling);
+                    label.addEventListener('click', (e) => {
+                        if (e.target.closest('.custom-select-wrapper')) return;
+                        trigger.click();
+                    });
+                }
+            });
+            initCustomSelects(container);
+        }
+
         // 页面加载时检查状态
         window.onload = async function () {
 
@@ -13378,6 +13447,9 @@
 
             // 初始化自定义下拉框
             initCustomSelects();
+
+            // 把操练场参数面板的原生下拉升级为自定义下拉
+            enhancePlaygroundSelects();
 
             // 初始化固定头部滚动效果
             initFixedHeaderScroll();
