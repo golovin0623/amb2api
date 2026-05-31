@@ -52,12 +52,20 @@ class DebouncedSaver:
             pass
 
     async def _flush(self) -> None:
-        # 循环直到没有新的脏数据：覆盖在 _do_save() 期间（唯一的 await 点）到来的改动。
-        # 由于最后一次 `while self._dirty` 判定到函数返回之间没有 await，期间不会有协程切入，
-        # 故不存在"判定为干净后又被弄脏却无人保存"的窗口。
+        # 先清脏标记再保存：这样 _do_save() 期间（唯一 await 点）到来的改动会把 _dirty 重新置 True，
+        # while 循环再保存一轮，覆盖"保存期间的改动"。最后一次判定到返回之间无 await，无残留窗口。
+        # 失败处理：_do_save 返回 False 或抛异常 → 恢复 _dirty 以便下次触发/shutdown flush 重试，
+        # 并 break 避免忙循环（持续失败时不空转）。
         while self._dirty:
             self._dirty = False
-            await self._do_save()
+            try:
+                ok = await self._do_save()
+            except Exception:
+                self._dirty = True   # 保存异常：保留脏标记待重试（具体异常由 _do_save 内部记录）
+                break
+            if ok is False:
+                self._dirty = True   # 保存失败：同上
+                break
 
     async def flush(self) -> None:
         """进程退出前调用：取消挂起的定时器并立即落盘未保存改动。"""

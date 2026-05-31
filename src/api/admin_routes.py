@@ -63,6 +63,7 @@ def _is_sensitive_config_key(key: Any) -> bool:
         "key_states",
         "rate_limit_info",
         "unified_stats",
+        "user_tokens",
     }
     return (
         normalized in sensitive_exact
@@ -73,6 +74,7 @@ def _is_sensitive_config_key(key: Any) -> bool:
         or "private" in normalized
         or normalized == "token"
         or normalized.endswith("_token")
+        or normalized.endswith("_tokens")
         or normalized.endswith("_api_key")
         or "api_token" in normalized
         or "auth_token" in normalized

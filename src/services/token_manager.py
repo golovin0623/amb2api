@@ -63,15 +63,18 @@ class TokenManager(DebouncedSaver):
         except Exception as e:
             log.error(f"Failed to load user tokens: {e}")
 
-    async def _save(self):
+    async def _save(self) -> bool:
+        """持久化 token 表。返回是否成功；失败时调用方标记脏以便重试。"""
         try:
             adapter = await get_storage_adapter()
             await adapter.set_config(_CONFIG_KEY, self._tokens)
+            return True
         except Exception as e:
             log.error(f"Failed to save user tokens: {e}")
+            return False
 
-    async def _do_save(self):  # DebouncedSaver hook
-        await self._save()
+    async def _do_save(self) -> bool:  # DebouncedSaver hook
+        return await self._save()
 
     # ---- CRUD ----------------------------------------------------------------
 
@@ -96,7 +99,8 @@ class TokenManager(DebouncedSaver):
         }
         async with self._lock:
             self._tokens[token] = meta
-            await self._save()
+            if not await self._save():
+                self._mark_dirty()
         log.info(f"Created user token {mask_token(token)} (name={meta['name']})")
         return meta
 
@@ -119,7 +123,8 @@ class TokenManager(DebouncedSaver):
                     meta[field] = changes[field]
             if changes.get("reset_used"):
                 meta["used"] = 0
-            await self._save()
+            if not await self._save():
+                self._mark_dirty()
             return meta
 
     async def delete_token(self, token: str) -> bool:
@@ -127,7 +132,8 @@ class TokenManager(DebouncedSaver):
         async with self._lock:
             if token in self._tokens:
                 del self._tokens[token]
-                await self._save()
+                if not await self._save():
+                    self._mark_dirty()
                 log.info(f"Deleted user token {mask_token(token)}")
                 return True
         return False

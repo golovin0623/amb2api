@@ -30,8 +30,8 @@ class RateLimiter(DebouncedSaver):
         # 去抖保存：把每请求的整块写合并为窗口内一次（降低写放大）
         self._init_debounce(_save_interval())
 
-    async def _do_save(self):
-        await self._save_rate_limits()
+    async def _do_save(self) -> bool:
+        return await self._save_rate_limits()
 
     async def initialize(self):
         """初始化速率限制管理器"""
@@ -62,16 +62,18 @@ class RateLimiter(DebouncedSaver):
         except Exception as e:
             log.error(f"Failed to load rate limit info: {e}")
     
-    async def _save_rate_limits(self):
-        """保存速率限制信息到存储"""
+    async def _save_rate_limits(self) -> bool:
+        """保存速率限制信息到存储。返回是否成功（失败时调用方保留脏标记重试）。"""
         async with self._save_lock:
             try:
                 adapter = await get_storage_adapter()
                 data = {str(k): v.to_dict() for k, v in self._rate_limits.items()}
                 await adapter.set_config("rate_limit_info", data)
                 log.debug(f"Saved rate limit info for {len(self._rate_limits)} keys")
+                return True
             except Exception as e:
                 log.error(f"Failed to save rate limit info: {e}")
+                return False
     
     async def update_rate_limit(
         self, 
