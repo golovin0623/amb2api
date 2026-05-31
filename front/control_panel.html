@@ -7565,14 +7565,16 @@
 
                             <div class="playground-feature-panel">
                                 <div class="playground-feature-panel__head">
-                                    <span>Gateway Features</span>
-                                    <small>OpenAI / GPT-5 / Prompt Cache</small>
+                                    <span>Gateway 参数</span>
+                                    <small>AssemblyAI LLM Gateway</small>
                                 </div>
+
+                                <div class="playground-feature-subhead">采样 · 推理</div>
                                 <div class="playground-feature-grid">
                                     <label>
                                         <span>Token 字段</span>
                                         <select id="playgroundTokenFieldMode" class="config-input" onchange="updateRequestPreview()">
-                                            <option value="max_tokens">max_tokens</option>
+                                            <option value="max_tokens">max_tokens（官方）</option>
                                             <option value="max_completion_tokens">max_completion_tokens</option>
                                             <option value="both">两个字段同时发送</option>
                                         </select>
@@ -7582,19 +7584,28 @@
                                         <input type="number" id="playgroundTopP" class="config-input" min="0" max="1" step="0.05"
                                             placeholder="默认" onchange="updateRequestPreview()" />
                                     </label>
-                                    <label>
-                                        <span>Reasoning</span>
+                                    <label title="官方文档只支持 low/medium/high（嵌套 reasoning.effort）；none/minimal/xhigh 是 GPT-5.x 模型层透传，官方未文档化">
+                                        <span>Reasoning Effort</span>
                                         <select id="playgroundReasoningEffort" class="config-input" onchange="updateRequestPreview()">
                                             <option value="">默认</option>
-                                            <option value="none">none</option>
-                                            <option value="minimal">minimal</option>
-                                            <option value="low">low</option>
-                                            <option value="medium">medium</option>
-                                            <option value="high">high</option>
-                                            <option value="xhigh">xhigh</option>
+                                            <optgroup label="官方文档">
+                                                <option value="low">low</option>
+                                                <option value="medium">medium</option>
+                                                <option value="high">high</option>
+                                            </optgroup>
+                                            <optgroup label="GPT-5.x 透传（未文档化）">
+                                                <option value="none">none</option>
+                                                <option value="minimal">minimal</option>
+                                                <option value="xhigh">xhigh</option>
+                                            </optgroup>
                                         </select>
                                     </label>
-                                    <label>
+                                    <label title="嵌套 reasoning.max_tokens：思考预算上限">
+                                        <span>Reasoning Max Tokens</span>
+                                        <input type="number" id="playgroundReasoningMaxTokens" class="config-input" min="1" step="1"
+                                            placeholder="默认" onchange="updateRequestPreview()" />
+                                    </label>
+                                    <label title="OpenAI 透传字段，AssemblyAI 原生 schema 未承诺">
                                         <span>Verbosity</span>
                                         <select id="playgroundVerbosity" class="config-input" onchange="updateRequestPreview()">
                                             <option value="">默认</option>
@@ -7602,6 +7613,23 @@
                                             <option value="medium">medium</option>
                                             <option value="high">high</option>
                                         </select>
+                                    </label>
+                                </div>
+
+                                <div class="playground-feature-subhead">工具 · 结构化输出</div>
+                                <div class="playground-feature-grid">
+                                    <label title="none / auto；“强制函数名”填写后会强制调用该函数（required 官方不支持）">
+                                        <span>Tool Choice</span>
+                                        <select id="playgroundToolChoice" class="config-input" onchange="updateRequestPreview()">
+                                            <option value="">默认（有工具时 auto）</option>
+                                            <option value="auto">auto</option>
+                                            <option value="none">none</option>
+                                        </select>
+                                    </label>
+                                    <label>
+                                        <span>强制函数名</span>
+                                        <input type="text" id="playgroundToolChoiceFunction" class="config-input"
+                                            placeholder="留空=不强制" oninput="updateRequestPreview()" />
                                     </label>
                                     <label>
                                         <span>Parallel Tools</span>
@@ -7611,20 +7639,63 @@
                                             <option value="false">false</option>
                                         </select>
                                     </label>
-                                    <label class="playground-feature-check">
-                                        <input type="checkbox" id="playgroundStreamIncludeUsage" onchange="updateRequestPreview()">
-                                        <span>stream_options.include_usage</span>
+                                    <label title="结构化输出：json_object 或带 schema 的 json_schema（GPT-4.1/5.x、Gemini、Claude 4.5+、Qwen、Kimi）">
+                                        <span>Response Format</span>
+                                        <select id="playgroundResponseFormat" class="config-input" onchange="togglePlaygroundResponseSchema(); updateRequestPreview()">
+                                            <option value="">默认</option>
+                                            <option value="json_object">json_object</option>
+                                            <option value="json_schema">json_schema</option>
+                                        </select>
                                     </label>
-                                    <label>
+                                    <label class="playground-feature-schema" id="playgroundResponseSchemaNameWrap" style="display:none">
+                                        <span>Schema 名称</span>
+                                        <input type="text" id="playgroundResponseSchemaName" class="config-input"
+                                            placeholder="response" oninput="updateRequestPreview()" />
+                                    </label>
+                                    <label class="playground-feature-wide playground-feature-schema" id="playgroundResponseSchemaWrap" style="display:none">
+                                        <span>JSON Schema（建议 strict + additionalProperties:false）</span>
+                                        <textarea id="playgroundResponseSchema" class="config-input" rows="4"
+                                            placeholder='{"type":"object","properties":{},"required":[],"additionalProperties":false}'
+                                            oninput="updateRequestPreview()"></textarea>
+                                    </label>
+                                </div>
+
+                                <div class="playground-feature-subhead">可靠性</div>
+                                <div class="playground-feature-grid">
+                                    <label class="playground-feature-wide" title="主模型失败时按顺序回退；逗号分隔多个模型 id">
+                                        <span>Fallbacks（逗号分隔模型）</span>
+                                        <input type="text" id="playgroundFallbacks" class="config-input"
+                                            placeholder="例如 gpt-5, gpt-4.1" oninput="updateRequestPreview()" />
+                                    </label>
+                                    <label title="fallback_config.retry">
+                                        <span>Fallback Retry</span>
+                                        <select id="playgroundFallbackRetry" class="config-input" onchange="updateRequestPreview()">
+                                            <option value="">默认</option>
+                                            <option value="true">true</option>
+                                            <option value="false">false</option>
+                                        </select>
+                                    </label>
+                                    <label title="fallback_config.depth：回退深度（官方上限 2）">
+                                        <span>Fallback Depth</span>
+                                        <input type="number" id="playgroundFallbackDepth" class="config-input" min="1" max="2" step="1"
+                                            placeholder="默认 1（上限 2）" onchange="updateRequestPreview()" />
+                                    </label>
+                                    <label class="playground-feature-check" title="post_processing_steps: [{type: json-repair}] —— 自动修复返回的 JSON">
+                                        <input type="checkbox" id="playgroundPostJsonRepair" onchange="updateRequestPreview()">
+                                        <span>json-repair 后处理</span>
+                                    </label>
+                                </div>
+
+                                <div class="playground-feature-subhead">缓存 · 流式 · 其他</div>
+                                <div class="playground-feature-grid">
+                                    <label title="OpenAI / Kimi 系模型的 prompt_cache_retention；官方取值是默认(in-memory，约 5–10 分钟)或 24h。5m/1h 是 cache_control.ttl 的取值，不属于这里。">
                                         <span>Cache Retention</span>
                                         <select id="playgroundPromptCacheRetention" class="config-input" onchange="updateRequestPreview()">
-                                            <option value="">默认</option>
-                                            <option value="5m">5m</option>
-                                            <option value="1h">1h</option>
+                                            <option value="">默认 (in-memory)</option>
                                             <option value="24h">24h</option>
                                         </select>
                                     </label>
-                                    <label>
+                                    <label title="Claude 系模型的 cache_control.ttl（ephemeral 5m / 1h）">
                                         <span>Cache TTL</span>
                                         <select id="playgroundCacheControlTtl" class="config-input" onchange="updateRequestPreview()">
                                             <option value="">不显式设置</option>
@@ -7636,6 +7707,15 @@
                                         <span>Prompt Cache Key</span>
                                         <input type="text" id="playgroundPromptCacheKey" class="config-input"
                                             placeholder="例如 support-bot-v1" oninput="updateRequestPreview()" />
+                                    </label>
+                                    <label title="AssemblyAI 转录注入：把某条转录文本通过 {{ transcript }} 注入 prompt">
+                                        <span>Transcript ID</span>
+                                        <input type="text" id="playgroundTranscriptId" class="config-input"
+                                            placeholder="可选" oninput="updateRequestPreview()" />
+                                    </label>
+                                    <label class="playground-feature-check" title="勾选后在流式请求里附带 stream_options.include_usage，让上游在最后一帧返回 token 用量统计">
+                                        <input type="checkbox" id="playgroundStreamIncludeUsage" onchange="updateRequestPreview()">
+                                        <span>include_usage</span>
                                     </label>
                                 </div>
                             </div>
@@ -10525,10 +10605,15 @@
                     !value.includes(' ');
             }) || '';
             let message = text;
-            if (timeMatch) message = message.replace(timeMatch[0], '').trim();
+            // 连同时间戳两侧的方括号一起剥离，否则会残留一个空 "[]"（在小号等宽字体里看着
+            // 就是个 □ 豆腐块）。^ 锚定到行首：只剥行首那枚时间戳，绝不动正文里出现的时间戳。
+            if (timeMatch) {
+                message = message.replace(new RegExp(`^\\s*\\[?\\s*${escapeRegExp(timeMatch[0])}\\s*\\]?`), '').trim();
+            }
             message = message.replace(/\[(ERROR|WARNING|WARN|INFO|DEBUG|CRITICAL|FATAL)\]/i, '').trim();
             if (source) message = message.replace(new RegExp(`\\[${escapeRegExp(source)}\\]`, 'i'), '').trim();
-            message = message.replace(/^[-|:]\s*/, '');
+            // 收尾：只清行首残留的空方括号 / 分隔符 —— 正文里的 [] 可能是 tools=[] 之类真实数据，不能全局删。
+            message = message.replace(/^(?:\[\s*\]\s*)+/, '').replace(/^[\s\-|:]+/, '').trim();
             return {
                 index: displayIndex + 1,
                 level,
@@ -15187,18 +15272,85 @@
             return value;
         }
 
+        // 仅在选了 json_schema 时显示 Schema 名称 / JSON 两个输入
+        function togglePlaygroundResponseSchema() {
+            const show = (document.getElementById('playgroundResponseFormat')?.value || '') === 'json_schema';
+            const nameWrap = document.getElementById('playgroundResponseSchemaNameWrap');
+            const schemaWrap = document.getElementById('playgroundResponseSchemaWrap');
+            if (nameWrap) nameWrap.style.display = show ? '' : 'none';
+            if (schemaWrap) schemaWrap.style.display = show ? '' : 'none';
+        }
+
         function applyPlaygroundFeatureOptions(body) {
             const topP = getOptionalNumber('playgroundTopP', 0, 1);
             if (topP !== null) body.top_p = topP;
 
-            const reasoning = document.getElementById('playgroundReasoningEffort')?.value || '';
-            if (reasoning) body.reasoning_effort = reasoning;
+            // 推理：官方嵌套 reasoning.effort 只认 low/medium/high；none/minimal/xhigh 是
+            // GPT-5.x 模型层透传值，仍走扁平 reasoning_effort，避免被网关嵌套 schema 拒绝。
+            const effort = document.getElementById('playgroundReasoningEffort')?.value || '';
+            const reasoningMax = getOptionalNumber('playgroundReasoningMaxTokens', 1);
+            const NESTED_EFFORTS = ['low', 'medium', 'high'];
+            if (effort && NESTED_EFFORTS.includes(effort)) {
+                body.reasoning = { effort };
+                if (reasoningMax !== null) body.reasoning.max_tokens = reasoningMax;
+            } else {
+                if (effort) body.reasoning_effort = effort;
+                if (reasoningMax !== null) body.reasoning = { max_tokens: reasoningMax };
+            }
 
             const verbosity = document.getElementById('playgroundVerbosity')?.value || '';
             if (verbosity) body.verbosity = verbosity;
 
             const parallel = document.getElementById('playgroundParallelToolCalls')?.value || '';
             if (parallel) body.parallel_tool_calls = parallel === 'true';
+
+            // tool_choice：none / auto / 指定函数（required 官方不支持）。强制函数名优先。
+            const forceFn = (document.getElementById('playgroundToolChoiceFunction')?.value || '').trim();
+            const toolChoice = document.getElementById('playgroundToolChoice')?.value || '';
+            if (forceFn) {
+                body.tool_choice = { type: 'function', function: { name: forceFn } };
+            } else if (toolChoice) {
+                body.tool_choice = toolChoice;
+            }
+
+            // response_format：结构化输出（json_object / json_schema）
+            const rf = document.getElementById('playgroundResponseFormat')?.value || '';
+            if (rf === 'json_object') {
+                body.response_format = { type: 'json_object' };
+            } else if (rf === 'json_schema') {
+                const name = (document.getElementById('playgroundResponseSchemaName')?.value || '').trim() || 'response';
+                const schemaStr = (document.getElementById('playgroundResponseSchema')?.value || '').trim();
+                let schema = {};
+                if (schemaStr) {
+                    try { schema = JSON.parse(schemaStr); }
+                    catch (e) { throw new Error('Response Schema JSON 解析失败: ' + e.message); }
+                }
+                body.response_format = { type: 'json_schema', json_schema: { name, schema, strict: true } };
+            }
+
+            // 模型回退：官方要求 fallbacks 是对象数组 [{model: id}, ...]，不是字符串数组
+            const fb = (document.getElementById('playgroundFallbacks')?.value || '').trim();
+            if (fb) {
+                const fbModels = fb.split(',').map(s => s.trim()).filter(Boolean);
+                if (fbModels.length) body.fallbacks = fbModels.map(m => ({ model: m }));
+            }
+            const fbRetry = document.getElementById('playgroundFallbackRetry')?.value || '';
+            const fbDepth = getOptionalNumber('playgroundFallbackDepth', 1, 2); // 官方上限 2
+            if (fbRetry || fbDepth !== null) {
+                const cfg = {};
+                if (fbRetry) cfg.retry = fbRetry === 'true';
+                if (fbDepth !== null) cfg.depth = fbDepth;
+                body.fallback_config = cfg;
+            }
+
+            // 响应后处理：json-repair
+            if (document.getElementById('playgroundPostJsonRepair')?.checked) {
+                body.post_processing_steps = [{ type: 'json-repair' }];
+            }
+
+            // AssemblyAI 转录注入
+            const transcriptId = (document.getElementById('playgroundTranscriptId')?.value || '').trim();
+            if (transcriptId) body.transcript_id = transcriptId;
 
             if (body.stream && document.getElementById('playgroundStreamIncludeUsage')?.checked) {
                 body.stream_options = { include_usage: true };
@@ -19887,33 +20039,12 @@
                 }
             };
 
-            // ---------- 与既有 showStatus 联动 ----------
-            // 很多保存操作 (配置 / 模型列表 / 限额) 调用 showStatus(msg, 'success')。
-            // 既有 ui.js 已接管 showStatus, 但其策略是: error/warning 才弹顶部 toast,
-            // success/info 只静默进入"消息中心"铃铛 —— 这正是用户"点了保存却看不到
-            // 反馈"的根因。这里只为 success 补一个醒目的浮动确认, 避免与 ui.js 对
-            // error/warning 的 toast 重复。在 DOMContentLoaded 后再包装, 确保位于
-            // ui.js wrapper 之外, 必定执行。
-            function installShowStatusBridge() {
-                if (typeof window.showStatus !== 'function' || window.__bfStatusBridged) return;
-                window.__bfStatusBridged = true;
-                const prev = window.showStatus;
-                window.showStatus = function (message, type) {
-                    let result;
-                    try { result = prev.apply(this, arguments); } catch (_) {}
-                    // 仅补 success: error/warning 由 ui.js 负责弹出, 不重复
-                    if (type === 'success') {
-                        window.bfToast(message, 'success');
-                    }
-                    // 透传原函数返回值, 不假定调用方不关心结果
-                    return result;
-                };
-            }
-            if (document.readyState === 'loading') {
-                window.addEventListener('DOMContentLoaded', () => setTimeout(installShowStatusBridge, 0));
-            } else {
-                setTimeout(installShowStatusBridge, 0);
-            }
+            // ---------- showStatus × 消息收纳 ----------
+            // 这里曾经给每条 success 再补一个浮动 toast，本意是解决"点了保存看不到反馈"，
+            // 但副作用是"配置加载成功 / 全部配置刷新成功"这类被动提示一进页面就反复弹窗
+            // （PC 端尤其明显）。现已移除：success / info 统一沉淀到右上角"消息中心"铃铛
+            // （由 ui.js 负责归档），按钮自带 bf-success 动画、配置等页面还会就地写入 inline
+            // status 作为即时反馈，error / warning 仍照常弹出。这样既保留反馈又不打扰。
         })();
     </script>
 

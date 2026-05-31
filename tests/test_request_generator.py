@@ -194,6 +194,64 @@ class TestRequestGenerator:
         assert not is_valid
         assert "none, minimal, low, medium, high, xhigh" in error
     
+    def test_request_preview_includes_gateway_native_params(self, generator):
+        """预览应包含 AssemblyAI Gateway 原生扩展字段（嵌套 reasoning / 回退 / 后处理 / 转录）。"""
+        params = {
+            "model": "gpt-5.5",
+            "messages": [{"role": "user", "content": "hi"}],
+            "reasoning": {"effort": "high", "max_tokens": 2048},
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": "x", "schema": {"type": "object"}, "strict": True},
+            },
+            "fallbacks": [{"model": "gpt-5"}, {"model": "gpt-4.1"}],
+            "fallback_config": {"retry": True, "depth": 1},
+            "post_processing_steps": [{"type": "json-repair"}],
+            "transcript_id": "abc123",
+        }
+        body = generator.generate_request_preview(params)["body"]
+        assert body["reasoning"] == {"effort": "high", "max_tokens": 2048}
+        assert body["response_format"]["type"] == "json_schema"
+        assert body["fallbacks"] == [{"model": "gpt-5"}, {"model": "gpt-4.1"}]
+        assert body["fallback_config"] == {"retry": True, "depth": 1}
+        assert body["post_processing_steps"] == [{"type": "json-repair"}]
+        assert body["transcript_id"] == "abc123"
+
+    def test_custom_request_accepts_gateway_native_params(self, generator):
+        """自定义报文校验应接受 Gateway 原生扩展字段。"""
+        request_json = json.dumps({
+            "model": "gpt-5.5",
+            "messages": [{"role": "user", "content": "hi"}],
+            "reasoning": {"effort": "medium"},
+            "response_format": {"type": "json_schema",
+                                "json_schema": {"name": "x", "schema": {}, "strict": True}},
+            "fallbacks": [{"model": "gpt-5"}],
+            "fallback_config": {"retry": True, "depth": 2},
+            "post_processing_steps": [{"type": "json-repair"}],
+            "transcript_id": "t-1",
+        })
+        is_valid, error = generator.validate_custom_request(request_json)
+        assert is_valid, f"should pass validation: {error}"
+
+    def test_custom_request_rejects_malformed_gateway_native_params(self, generator):
+        """Gateway 原生扩展字段类型不对时应被拦下。"""
+        bad = [
+            ('{"model":"m","messages":[{"role":"user","content":"hi"}],"reasoning":"high"}',
+             "Field 'reasoning' must be an object"),
+            ('{"model":"m","messages":[{"role":"user","content":"hi"}],"fallbacks":"gpt-5"}',
+             "Field 'fallbacks' must be an array"),
+            ('{"model":"m","messages":[{"role":"user","content":"hi"}],"fallbacks":["gpt-5"]}',
+             "must be an object with a 'model' string"),
+            ('{"model":"m","messages":[{"role":"user","content":"hi"}],"post_processing_steps":{}}',
+             "Field 'post_processing_steps' must be an array"),
+            ('{"model":"m","messages":[{"role":"user","content":"hi"}],"transcript_id":123}',
+             "Field 'transcript_id' must be a string"),
+        ]
+        for request_json, expected in bad:
+            is_valid, error = generator.validate_custom_request(request_json)
+            assert not is_valid, f"should fail: {request_json}"
+            assert expected in error, f"expected '{expected}', got '{error}'"
+
     def test_parse_custom_request(self, generator):
         """测试解析自定义请求"""
         # 有效请求

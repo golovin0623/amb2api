@@ -38,6 +38,12 @@ class RequestGenerator:
         "parallel_tool_calls",
         "reasoning_effort",
         "verbosity",
+        # AssemblyAI Gateway 原生扩展
+        "reasoning",
+        "fallbacks",
+        "fallback_config",
+        "post_processing_steps",
+        "transcript_id",
     ]
     
     def __init__(self, endpoint: str = "", api_key: str = ""):
@@ -206,7 +212,36 @@ class RequestGenerator:
 
         if "prompt_cache_key" in data and not isinstance(data["prompt_cache_key"], str):
             return False, "Field 'prompt_cache_key' must be a string"
-        
+
+        if "reasoning" in data and not isinstance(data["reasoning"], dict):
+            return False, "Field 'reasoning' must be an object"
+
+        if "response_format" in data and not isinstance(data["response_format"], dict):
+            return False, "Field 'response_format' must be an object"
+
+        if "fallbacks" in data:
+            fbs = data["fallbacks"]
+            if not isinstance(fbs, list):
+                return False, "Field 'fallbacks' must be an array"
+            # 官方 schema：每个 fallback 是带 model 的对象，拒绝旧的字符串写法，
+            # 否则自定义报文会在本地通过、却在网关被判非法。
+            for i, fb in enumerate(fbs):
+                model_id = fb.get("model") if isinstance(fb, dict) else None
+                if not isinstance(model_id, str) or not model_id.strip():
+                    return False, (
+                        f"Field 'fallbacks[{i}]' must be an object with a 'model' string "
+                        "(e.g. {\"model\": \"gpt-5\"})"
+                    )
+
+        if "fallback_config" in data and not isinstance(data["fallback_config"], dict):
+            return False, "Field 'fallback_config' must be an object"
+
+        if "post_processing_steps" in data and not isinstance(data["post_processing_steps"], list):
+            return False, "Field 'post_processing_steps' must be an array"
+
+        if "transcript_id" in data and not isinstance(data["transcript_id"], str):
+            return False, "Field 'transcript_id' must be a string"
+
         return True, ""
     
     def generate_initial_custom_request(self, params: Dict[str, Any]) -> str:

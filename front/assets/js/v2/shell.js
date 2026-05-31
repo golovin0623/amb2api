@@ -52,7 +52,13 @@
 
     aside.innerHTML = `
       <div class="v2-sidebar__brand">
-        <span class="v2-sidebar__brand-logo">A</span>
+        <span class="v2-sidebar__brand-logo" aria-hidden="true">
+          <svg class="v2-brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+            <path d="M9.5 7 5 12l4.5 5" />
+            <path d="M14.5 7 19 12l-4.5 5" />
+          </svg>
+        </span>
         <span class="v2-sidebar__brand-text">
           <span class="v2-sidebar__brand-name">AMB2API</span>
           <span class="v2-sidebar__brand-tag">Console</span>

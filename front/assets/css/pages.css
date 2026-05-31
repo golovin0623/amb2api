@@ -1303,15 +1303,21 @@ html body #logsTab #logContainer {
   height: min(68vh, 720px) !important;
   min-height: 430px !important;
   max-height: none !important;
-  padding: var(--s-3) !important;
+  padding: var(--s-2) var(--s-3) !important;
   border: 0 !important;
   border-radius: 0 !important;
-  background:
-    radial-gradient(circle at 10% 0%, oklch(0.70 0.080 230 / 0.07), transparent 34%),
-    linear-gradient(180deg, oklch(0.10 0.006 270), oklch(0.075 0.005 270)) !important;
+  background: var(--bg-sunken) !important;
   color: var(--ink-primary) !important;
   white-space: normal !important;
   word-break: normal !important;
+}
+/* 暗色主题保留"终端"质感；亮色主题用下沉浅底，与整体浅色面板保持一致，
+   避免在浅色 UI 里突兀地嵌一块纯黑控制台。 */
+html[data-theme="dark"] body #logsTab .log-console,
+html[data-theme="dark"] body #logsTab #logContainer {
+  background:
+    radial-gradient(circle at 10% 0%, oklch(0.70 0.080 230 / 0.07), transparent 34%),
+    linear-gradient(180deg, oklch(0.10 0.006 270), oklch(0.075 0.005 270)) !important;
 }
 html body #logsTab .log-content {
   display: grid;
@@ -1323,10 +1329,10 @@ html body #logsTab .log-row {
   grid-template-columns: 44px 92px 64px minmax(0, 1fr);
   gap: var(--s-3);
   align-items: start;
-  padding: 7px var(--s-3);
+  padding: 5px var(--s-3);
   border: 1px solid transparent;
   border-radius: var(--r-2);
-  color: oklch(0.85 0.008 270);
+  color: var(--ink-secondary);
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.45;
@@ -1335,13 +1341,13 @@ html body #logsTab .log-row {
     border-color var(--dur-instant) var(--ease-standard);
 }
 html body #logsTab .log-row:hover {
-  background: oklch(0.16 0.008 270 / 0.76);
-  border-color: oklch(0.96 0.005 270 / 0.08);
+  background: color-mix(in oklch, var(--ink-pure) 6%, transparent);
+  border-color: var(--line-default);
 }
 html body #logsTab .log-row__index,
 html body #logsTab .log-row__time,
 html body #logsTab .log-row__source {
-  color: oklch(0.58 0.010 270);
+  color: var(--ink-muted);
 }
 html body #logsTab .log-row__level {
   justify-self: start;
@@ -1353,8 +1359,8 @@ html body #logsTab .log-row__level {
   font-weight: var(--fw-semibold);
   letter-spacing: var(--tracking-wide);
   color: var(--ink-muted);
-  background: oklch(0.20 0.010 270);
-  border: 1px solid oklch(0.96 0.005 270 / 0.08);
+  background: color-mix(in oklch, var(--ink-pure) 8%, transparent);
+  border: 1px solid var(--line-default);
 }
 html body #logsTab .log-row__body {
   min-width: 0;
@@ -1369,31 +1375,31 @@ html body #logsTab .log-row__message {
   overflow-wrap: anywhere;
 }
 html body #logsTab .log-row--error {
-  background: oklch(0.20 0.060 25 / 0.24);
+  background: color-mix(in oklch, var(--sig-danger) 8%, transparent);
 }
 html body #logsTab .log-row--error .log-row__level {
-  color: oklch(0.90 0.070 25);
-  border-color: oklch(0.70 0.205 25 / 0.26);
-  background: oklch(0.25 0.080 25 / 0.60);
+  color: var(--sig-danger);
+  border-color: color-mix(in oklch, var(--sig-danger) 30%, transparent);
+  background: color-mix(in oklch, var(--sig-danger) 16%, transparent);
 }
 html body #logsTab .log-row--warning .log-row__level {
-  color: oklch(0.90 0.110 78);
-  border-color: oklch(0.82 0.150 75 / 0.26);
-  background: oklch(0.25 0.060 78 / 0.52);
+  color: var(--sig-warning);
+  border-color: color-mix(in oklch, var(--sig-warning) 30%, transparent);
+  background: color-mix(in oklch, var(--sig-warning) 16%, transparent);
 }
 html body #logsTab .log-row--info .log-row__level {
-  color: oklch(0.86 0.060 230);
-  border-color: oklch(0.72 0.155 240 / 0.24);
-  background: oklch(0.22 0.045 240 / 0.48);
+  color: var(--sig-info);
+  border-color: color-mix(in oklch, var(--sig-info) 30%, transparent);
+  background: color-mix(in oklch, var(--sig-info) 16%, transparent);
 }
 html body #logsTab .log-row--debug {
-  opacity: 0.72;
+  opacity: 0.66;
 }
 html body #logsTab .log-row mark {
   padding: 0 2px;
   border-radius: 3px;
-  background: oklch(0.82 0.150 75 / 0.34);
-  color: oklch(0.96 0.030 80);
+  background: color-mix(in oklch, var(--sig-warning) 30%, transparent);
+  color: var(--ink-pure);
 }
 html body #logsTab .log-empty-state {
   display: grid;
@@ -2120,17 +2126,37 @@ html body #playgroundTab .playground-feature-grid .config-input {
 html body #playgroundTab .playground-feature-wide {
   grid-column: span 2;
 }
-html body #playgroundTab .playground-feature-check {
-  justify-content: center;
+html body #playgroundTab .playground-feature-grid .playground-feature-check {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
   gap: var(--s-2) !important;
   padding: 0 var(--s-3);
   min-height: 38px;
   border: 1px solid var(--line-default);
   border-radius: var(--r-3);
   background: var(--bg-overlay);
+  cursor: pointer;
+  overflow: hidden;
 }
 html body #playgroundTab .playground-feature-check input {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
   margin: 0;
+  accent-color: #4285f4;
+  cursor: pointer;
+}
+/* 该勾选项展示的是真实字段名，保持小写等宽，别被网格的大写标签样式吞掉 */
+html body #playgroundTab .playground-feature-grid .playground-feature-check > span {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 html body #playgroundTab #requestPreviewSection,
 html body #playgroundTab .config-group:has(#playgroundRawJson) {
@@ -2140,6 +2166,33 @@ html[data-theme="dark"] body #playgroundTab .playground-feature-panel,
 html[data-theme="dark"] body #playgroundTab .playground-feature-check {
   background: oklch(0.135 0.008 270) !important;
   border-color: oklch(0.96 0.005 270 / 0.10) !important;
+}
+/* 分组小标题：把一长串 Gateway 参数切成 采样·推理 / 工具·结构化 / 可靠性 / 缓存 几块，
+   配一条细分隔线，做出"被设计过"的层次感而不是一锅端的网格。 */
+html body #playgroundTab .playground-feature-subhead {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin: var(--s-4) 0 var(--s-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+html body #playgroundTab .playground-feature-subhead::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-default);
+}
+html body #playgroundTab .playground-feature-grid textarea.config-input {
+  width: 100% !important;
+  min-height: 72px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 /* 表单分块 - 用细分隔线替代过大留白 */
