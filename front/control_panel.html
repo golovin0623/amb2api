@@ -10605,15 +10605,15 @@
                     !value.includes(' ');
             }) || '';
             let message = text;
-            // 连同时间戳两侧的方括号一起剥离，否则会残留一个空 "[]"（在小号等宽字体里
-            // 看起来就是个 □ 豆腐块）顶在每条日志最前面。
+            // 连同时间戳两侧的方括号一起剥离，否则会残留一个空 "[]"（在小号等宽字体里看着
+            // 就是个 □ 豆腐块）。^ 锚定到行首：只剥行首那枚时间戳，绝不动正文里出现的时间戳。
             if (timeMatch) {
-                message = message.replace(new RegExp(`\\[?\\s*${escapeRegExp(timeMatch[0])}\\s*\\]?`), '').trim();
+                message = message.replace(new RegExp(`^\\s*\\[?\\s*${escapeRegExp(timeMatch[0])}\\s*\\]?`), '').trim();
             }
             message = message.replace(/\[(ERROR|WARNING|WARN|INFO|DEBUG|CRITICAL|FATAL)\]/i, '').trim();
             if (source) message = message.replace(new RegExp(`\\[${escapeRegExp(source)}\\]`, 'i'), '').trim();
-            // 收尾：清掉任何残留的空方括号与行首分隔符
-            message = message.replace(/\[\s*\]/g, '').replace(/^[\s\-|:]+/, '').trim();
+            // 收尾：只清行首残留的空方括号 / 分隔符 —— 正文里的 [] 可能是 tools=[] 之类真实数据，不能全局删。
+            message = message.replace(/^(?:\[\s*\]\s*)+/, '').replace(/^[\s\-|:]+/, '').trim();
             return {
                 index: displayIndex + 1,
                 level,
@@ -15285,14 +15285,17 @@
             const topP = getOptionalNumber('playgroundTopP', 0, 1);
             if (topP !== null) body.top_p = topP;
 
-            // 推理：官方网关用嵌套 reasoning {effort, max_tokens}，扁平 reasoning_effort 会被忽略
+            // 推理：官方嵌套 reasoning.effort 只认 low/medium/high；none/minimal/xhigh 是
+            // GPT-5.x 模型层透传值，仍走扁平 reasoning_effort，避免被网关嵌套 schema 拒绝。
             const effort = document.getElementById('playgroundReasoningEffort')?.value || '';
             const reasoningMax = getOptionalNumber('playgroundReasoningMaxTokens', 1);
-            if (effort || reasoningMax !== null) {
-                const reasoning = {};
-                if (effort) reasoning.effort = effort;
-                if (reasoningMax !== null) reasoning.max_tokens = reasoningMax;
-                body.reasoning = reasoning;
+            const NESTED_EFFORTS = ['low', 'medium', 'high'];
+            if (effort && NESTED_EFFORTS.includes(effort)) {
+                body.reasoning = { effort };
+                if (reasoningMax !== null) body.reasoning.max_tokens = reasoningMax;
+            } else {
+                if (effort) body.reasoning_effort = effort;
+                if (reasoningMax !== null) body.reasoning = { max_tokens: reasoningMax };
             }
 
             const verbosity = document.getElementById('playgroundVerbosity')?.value || '';
