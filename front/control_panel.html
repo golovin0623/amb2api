@@ -7675,10 +7675,10 @@
                                             <option value="false">false</option>
                                         </select>
                                     </label>
-                                    <label title="fallback_config.depth：回退深度">
+                                    <label title="fallback_config.depth：回退深度（官方上限 2）">
                                         <span>Fallback Depth</span>
-                                        <input type="number" id="playgroundFallbackDepth" class="config-input" min="1" step="1"
-                                            placeholder="默认 1" onchange="updateRequestPreview()" />
+                                        <input type="number" id="playgroundFallbackDepth" class="config-input" min="1" max="2" step="1"
+                                            placeholder="默认 1（上限 2）" onchange="updateRequestPreview()" />
                                     </label>
                                     <label class="playground-feature-check" title="post_processing_steps: [{type: json-repair}] —— 自动修复返回的 JSON">
                                         <input type="checkbox" id="playgroundPostJsonRepair" onchange="updateRequestPreview()">
@@ -15328,11 +15328,14 @@
                 body.response_format = { type: 'json_schema', json_schema: { name, schema, strict: true } };
             }
 
-            // 模型回退 fallbacks + fallback_config
+            // 模型回退：官方要求 fallbacks 是对象数组 [{model: id}, ...]，不是字符串数组
             const fb = (document.getElementById('playgroundFallbacks')?.value || '').trim();
-            if (fb) body.fallbacks = fb.split(',').map(s => s.trim()).filter(Boolean);
+            if (fb) {
+                const fbModels = fb.split(',').map(s => s.trim()).filter(Boolean);
+                if (fbModels.length) body.fallbacks = fbModels.map(m => ({ model: m }));
+            }
             const fbRetry = document.getElementById('playgroundFallbackRetry')?.value || '';
-            const fbDepth = getOptionalNumber('playgroundFallbackDepth', 1);
+            const fbDepth = getOptionalNumber('playgroundFallbackDepth', 1, 2); // 官方上限 2
             if (fbRetry || fbDepth !== null) {
                 const cfg = {};
                 if (fbRetry) cfg.retry = fbRetry === 'true';

@@ -204,7 +204,7 @@ class TestRequestGenerator:
                 "type": "json_schema",
                 "json_schema": {"name": "x", "schema": {"type": "object"}, "strict": True},
             },
-            "fallbacks": ["gpt-5", "gpt-4.1"],
+            "fallbacks": [{"model": "gpt-5"}, {"model": "gpt-4.1"}],
             "fallback_config": {"retry": True, "depth": 1},
             "post_processing_steps": [{"type": "json-repair"}],
             "transcript_id": "abc123",
@@ -212,7 +212,7 @@ class TestRequestGenerator:
         body = generator.generate_request_preview(params)["body"]
         assert body["reasoning"] == {"effort": "high", "max_tokens": 2048}
         assert body["response_format"]["type"] == "json_schema"
-        assert body["fallbacks"] == ["gpt-5", "gpt-4.1"]
+        assert body["fallbacks"] == [{"model": "gpt-5"}, {"model": "gpt-4.1"}]
         assert body["fallback_config"] == {"retry": True, "depth": 1}
         assert body["post_processing_steps"] == [{"type": "json-repair"}]
         assert body["transcript_id"] == "abc123"

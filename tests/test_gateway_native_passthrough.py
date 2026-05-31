@@ -32,7 +32,7 @@ def test_collect_passthrough_forwards_gateway_native_extensions():
             "type": "json_schema",
             "json_schema": {"name": "x", "schema": {"type": "object"}, "strict": True},
         },
-        fallbacks=["gpt-5", "gpt-4.1"],
+        fallbacks=[{"model": "gpt-5"}, {"model": "gpt-4.1"}],
         fallback_config={"retry": True, "depth": 1},
         post_processing_steps=[{"type": "json-repair"}],
         transcript_id="abc123",
@@ -42,7 +42,7 @@ def test_collect_passthrough_forwards_gateway_native_extensions():
 
     assert out["reasoning"] == {"effort": "high", "max_tokens": 2048}
     assert out["response_format"]["type"] == "json_schema"
-    assert out["fallbacks"] == ["gpt-5", "gpt-4.1"]
+    assert out["fallbacks"] == [{"model": "gpt-5"}, {"model": "gpt-4.1"}]
     assert out["fallback_config"] == {"retry": True, "depth": 1}
     assert out["post_processing_steps"] == [{"type": "json-repair"}]
     assert out["transcript_id"] == "abc123"
