@@ -102,6 +102,36 @@ def test_concurrent_reservations_do_not_overshoot():
     asyncio.run(_run())
 
 
+def test_model_limit_pending_is_scoped_per_model():
+    """每模型限额只计同 (key, model) 的在途预占：A 模型挂起请求不占 B 模型每模型配额。"""
+    async def _run():
+        us = _make_stats(100)
+        api_key = "k" * 40
+        masked = mask_key(api_key)
+        us._stats[masked] = {
+            "full_key_hash": get_key_hash(api_key),
+            "success_count": 0,
+            "failure_count": 0,
+            "daily_limit_total": 100,
+            "daily_limit_models": {"gpt-4": 1},
+            "model_counts": {},
+            "next_reset_time": time.time() + 100000,
+        }
+        # 预占一个 claude 在途请求（同 key，不同模型）
+        assert (await us.reserve_key_for_model(api_key, "claude"))["allowed"]
+        # gpt-4 首个请求应放行：claude 的在途不应占用 gpt-4 的每模型配额(=1)
+        r = await us.reserve_key_for_model(api_key, "gpt-4")
+        assert r["allowed"], f"claude 在途不应阻塞 gpt-4，reason={r.get('reason')}"
+        # gpt-4 已有 1 个在途(==限额)，第二个 gpt-4 被每模型限额拦
+        r2 = await us.reserve_key_for_model(api_key, "gpt-4")
+        assert not r2["allowed"] and r2["reason"] == "model_limit_reached"
+        # 释放 gpt-4 的一个预占后，gpt-4 再次可预占
+        us.release_reservation(api_key, "gpt-4")
+        assert (await us.reserve_key_for_model(api_key, "gpt-4"))["allowed"]
+
+    asyncio.run(_run())
+
+
 def test_ttl_self_heals_leaked_reservation():
     async def _run():
         us = _make_stats(1)

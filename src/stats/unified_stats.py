@@ -122,41 +122,56 @@ class UnifiedStats:
         self._dirty = False
         self._last_save_time = 0
         self._save_interval = 30  # 保存间隔（秒）
-        # 配额预占：记录每个 key 的 in-flight 预占到期时间戳（仅内存）。
+        # 配额预占：按 (masked_key -> model -> [到期时间戳]) 记录 in-flight 预占（仅内存）。
+        # 按模型分桶是为了让"每模型限额"只计同模型的在途预占，而"总限额"汇总该 key 所有模型；
+        # 否则一个长时间挂起的 A 模型请求会错误占用 B 模型的每模型配额。
         # 用 TTL 自愈：即便某些重试路径漏释放，过期后自动归还，limit 检查始终偏保守
         #（宁可早一点拦，绝不超计），消除"选 key↔记账"之间的 TOCTOU 超计。
-        self._pending: Dict[str, list] = {}
+        self._pending: Dict[str, Dict[str, list]] = {}
         self._reserve_lock = asyncio.Lock()
         try:
             self._pending_ttl = max(1.0, float(os.getenv("QUOTA_RESERVATION_TTL", "120")))
         except ValueError:
             self._pending_ttl = 120.0
 
-    def _live_pending(self, masked: str) -> int:
-        """剪除过期预占，返回当前存活的预占数。"""
-        lst = self._pending.get(masked)
-        if not lst:
-            return 0
+    def _prune_key_pending(self, masked: str) -> Dict[str, int]:
+        """剪除该 key 所有模型桶里的过期预占，返回 {model: 存活数}。"""
+        buckets = self._pending.get(masked)
+        if not buckets:
+            return {}
         now = time.time()
-        lst = [exp for exp in lst if exp > now]
-        if lst:
-            self._pending[masked] = lst
-        else:
+        counts: Dict[str, int] = {}
+        for m in list(buckets.keys()):
+            live = [exp for exp in buckets[m] if exp > now]
+            if live:
+                buckets[m] = live
+                counts[m] = len(live)
+            else:
+                del buckets[m]
+        if not buckets:
             self._pending.pop(masked, None)
-        return len(lst)
+        return counts
 
-    def _release_one_pending(self, masked: str) -> None:
-        """归还一个预占槽（弹出最早到期的一个）。"""
-        lst = self._pending.get(masked)
-        if not lst:
+    def _release_one_pending(self, masked: str, model: Optional[str] = None) -> None:
+        """归还一个预占槽。指定 model 则从该模型桶弹出最早到期的一个；
+        未指定则跨所有模型桶弹出最早到期的一个（兜底）。"""
+        buckets = self._pending.get(masked)
+        if not buckets:
             return
-        now = time.time()
-        lst = [exp for exp in lst if exp > now]
-        if lst:
-            lst.pop(0)
-        if lst:
-            self._pending[masked] = lst
-        else:
+        self._prune_key_pending(masked)  # 先剪枝
+        buckets = self._pending.get(masked)
+        if not buckets:
+            return
+        target = model if (model is not None and model in buckets) else None
+        if target is None and model is None:
+            # 跨桶选最早到期的那个模型
+            target = min(buckets.keys(), key=lambda m: buckets[m][0])
+        if target is None or target not in buckets:
+            return
+        buckets[target].pop(0)
+        if not buckets[target]:
+            del buckets[target]
+        if not buckets:
             self._pending.pop(masked, None)
 
     def _build_default_entry(self, key_hash: str = "") -> Dict[str, Any]:
@@ -442,11 +457,19 @@ class UnifiedStats:
         # 异步保存
         asyncio.create_task(self._save_stats())
 
-    def _quota_state(self, stats: Dict[str, Any], masked: str, model: str, pending: int = 0) -> Dict[str, Any]:
+    def _quota_state(
+        self,
+        stats: Dict[str, Any],
+        masked: str,
+        model: str,
+        pending_total: int = 0,
+        pending_model: int = 0,
+    ) -> Dict[str, Any]:
         """计算配额状态字典（can_use / reserve 共用，避免两处规则漂移）。
 
-        pending = 当前 in-flight 预占数，计入限额判定（reserve 传 live pending，
-        只读检查 can_use 传 0）。
+        pending_total = 该 key 所有模型的在途预占（计入总限额）；
+        pending_model = 该 (key, model) 的在途预占（计入每模型限额）。
+        只读检查 can_use 两者都传 0。
         """
         success_count = _as_non_negative_int(stats.get("success_count", 0))
         total_limit = _as_positive_int(
@@ -459,15 +482,15 @@ class UnifiedStats:
 
         allowed = True
         reason = ""
-        if success_count + pending >= total_limit:
+        if success_count + pending_total >= total_limit:
             allowed = False
             reason = "total_limit_reached"
-        elif model_limit is not None and model_success + pending >= model_limit:
+        elif model_limit is not None and model_success + pending_model >= model_limit:
             allowed = False
             reason = "model_limit_reached"
 
-        total_remaining = max(total_limit - success_count - pending, 0)
-        model_remaining = max(model_limit - model_success - pending, 0) if model_limit is not None else None
+        total_remaining = max(total_limit - success_count - pending_total, 0)
+        model_remaining = max(model_limit - model_success - pending_model, 0) if model_limit is not None else None
         effective_limit = total_limit if model_limit is None else min(total_limit, model_limit)
 
         return {
@@ -494,28 +517,36 @@ class UnifiedStats:
         stats = self._touch_entry(masked, key_hash=get_key_hash(api_key))
         if self._dirty:
             asyncio.create_task(self._save_stats())
-        return self._quota_state(stats, masked, model, pending=0)
+        return self._quota_state(stats, masked, model, pending_total=0, pending_model=0)
 
     async def reserve_key_for_model(self, api_key: str, model: str) -> Dict[str, Any]:
         """原子地"预占"一个配额槽，消除选 key 与记账之间的 TOCTOU 超计。
 
-        在锁内用 (success_count + pending) 对比限额：未满则 pending+1 并返回 allowed=True，
-        已满返回 allowed=False（不预占）。每次成功预占都由请求循环 finally 的
-        release_reservation 归还。
+        总限额计该 key 全部在途预占；每模型限额只计同 (key, model) 的在途预占。
+        未满则在 (masked, model) 桶 +1 并返回 allowed=True；已满返回 allowed=False（不预占）。
+        每次成功预占都由请求循环 finally 的 release_reservation(api_key, model) 归还。
         """
         if not self._initialized:
             await self.initialize()
         masked = mask_key(api_key)
         async with self._reserve_lock:
             stats = self._touch_entry(masked, key_hash=get_key_hash(api_key))
-            state = self._quota_state(stats, masked, model, pending=self._live_pending(masked))
+            counts = self._prune_key_pending(masked)
+            pending_total = sum(counts.values())
+            pending_model = counts.get(model, 0)
+            state = self._quota_state(
+                stats, masked, model, pending_total=pending_total, pending_model=pending_model
+            )
             if state["allowed"]:
-                self._pending.setdefault(masked, []).append(time.time() + self._pending_ttl)
+                self._pending.setdefault(masked, {}).setdefault(model, []).append(
+                    time.time() + self._pending_ttl
+                )
             return state
 
-    def release_reservation(self, api_key: str) -> None:
-        """释放一个预占槽（用于预占后未走到 record_call 的兜底路径）。"""
-        self._release_one_pending(mask_key(api_key))
+    def release_reservation(self, api_key: str, model: Optional[str] = None) -> None:
+        """释放一个预占槽（预占后未走到 record_call 的兜底路径）。
+        指定 model 则归还该 (key, model) 桶；未指定则跨桶归还最早到期的一个。"""
+        self._release_one_pending(mask_key(api_key), model)
 
     async def update_daily_limits(
         self,

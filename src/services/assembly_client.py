@@ -2204,6 +2204,6 @@ async def send_assembly_request(
                 try:
                     from ..stats.unified_stats import get_unified_stats
                     _us = await get_unified_stats()
-                    _us.release_reservation(keys[idx])
+                    _us.release_reservation(keys[idx], openai_request.model)
                 except Exception:
                     pass
