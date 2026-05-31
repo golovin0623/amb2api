@@ -6605,6 +6605,217 @@
             .btn:active:not(:disabled),
             .btn-sm:active:not(:disabled) { transform: none; }
         }
+
+        /* ============ 用户令牌页面 重构样式 ============ */
+        .tk-page { --tk-accent:#4285f4; --tk-accent-dark:#3367d6; }
+
+        /* 顶部介绍 */
+        .tk-hero {
+            display:flex; flex-wrap:wrap; align-items:flex-start; gap:14px;
+            margin: 4px 0 22px;
+        }
+        .tk-hero-icon {
+            flex:0 0 auto; width:48px; height:48px; border-radius:14px;
+            display:flex; align-items:center; justify-content:center; font-size:24px;
+            background: linear-gradient(135deg, var(--tk-accent), #6ea8ff);
+            box-shadow: 0 6px 16px rgba(66,133,244,.35);
+        }
+        .tk-hero-text { flex:1 1 260px; min-width:0; }
+        .tk-hero-text h3 { margin:0 0 4px; font-size:22px; font-weight:700; color:var(--text-color); }
+        .tk-hero-text p { margin:0; color:var(--text-secondary); font-size:13.5px; line-height:1.6; }
+        .tk-hero-text code {
+            background: var(--code-bg); padding:1px 6px; border-radius:5px;
+            font-size:12px; color: var(--tk-accent);
+        }
+
+        /* 概览统计 */
+        .tk-stats { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:22px; }
+        .tk-stat {
+            flex:1 1 130px; min-width:120px;
+            background: var(--container-bg); border:1px solid var(--border-color);
+            border-radius:14px; padding:14px 16px;
+            box-shadow: 0 1px 3px var(--shadow-color);
+        }
+        .tk-stat-label { font-size:12px; color:var(--text-muted); margin-bottom:6px; letter-spacing:.3px; }
+        .tk-stat-value { font-size:26px; font-weight:700; color:var(--text-color); line-height:1; }
+        .tk-stat-value small { font-size:13px; font-weight:500; color:var(--text-muted); }
+        .tk-stat.accent .tk-stat-value { color: var(--tk-accent); }
+        .tk-stat.good .tk-stat-value { color:#22a06b; }
+
+        /* 卡片容器 */
+        .tk-card {
+            background: var(--container-bg); border:1px solid var(--border-color);
+            border-radius:16px; padding:22px; margin-bottom:22px;
+            box-shadow: 0 1px 3px var(--shadow-color);
+        }
+        .tk-card-head { display:flex; align-items:center; gap:10px; margin-bottom:18px; }
+        .tk-card-head h4 { margin:0; font-size:17px; font-weight:700; color:var(--text-color); }
+        .tk-card-head .tk-chip {
+            margin-left:auto; font-size:12px; color:var(--text-muted);
+        }
+
+        /* 新建表单网格 */
+        .tk-form-grid {
+            display:grid; gap:16px;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        }
+        .tk-field { display:flex; flex-direction:column; gap:6px; min-width:0; }
+        .tk-field label {
+            font-size:13px; font-weight:600; color:var(--text-color);
+            display:flex; align-items:center; gap:6px;
+        }
+        .tk-field .tk-hint { font-size:11px; font-weight:400; color:var(--text-muted); }
+        .tk-field input {
+            width:100%; padding:11px 12px; border:2px solid var(--input-border);
+            border-radius:10px; font-size:14px; background:var(--input-bg);
+            color:var(--text-color); box-sizing:border-box;
+            transition: border-color .2s ease, box-shadow .2s ease;
+        }
+        .tk-field input:focus {
+            border-color: var(--tk-accent); outline:none;
+            box-shadow: 0 0 0 3px rgba(66,133,244,.15);
+        }
+        .tk-form-actions { display:flex; justify-content:flex-end; margin-top:18px; }
+        .tk-btn-primary {
+            background: linear-gradient(135deg, var(--tk-accent), var(--tk-accent-dark));
+            color:#fff; border:none; border-radius:10px; padding:11px 28px;
+            font-size:14px; font-weight:600; cursor:pointer; width:auto; margin:0;
+            display:inline-flex; align-items:center; gap:7px;
+            box-shadow: 0 4px 12px rgba(66,133,244,.3);
+            transition: transform .15s ease, box-shadow .15s ease;
+        }
+        .tk-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(66,133,244,.4); }
+        .tk-btn-primary:active { transform: translateY(0); }
+
+        /* 创建成功 banner */
+        .tk-reveal {
+            margin-top:16px; padding:16px 18px; border-radius:12px;
+            background: linear-gradient(135deg, rgba(34,160,107,.1), rgba(66,133,244,.08));
+            border:1px solid rgba(34,160,107,.35);
+        }
+        .tk-reveal-title { font-size:13px; font-weight:600; color:#22a06b; margin-bottom:10px; display:flex; align-items:center; gap:7px; }
+        .tk-reveal-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+        .tk-reveal code {
+            flex:1 1 auto; min-width:0; user-select:all; word-break:break-all;
+            font-family:monospace; font-size:13px; background:var(--container-bg);
+            padding:10px 12px; border-radius:8px; border:1px solid var(--border-color);
+            color:var(--text-color);
+        }
+
+        /* 工具条 */
+        .tk-toolbar { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+        .tk-toolbar h4 { margin:0; font-size:17px; font-weight:700; color:var(--text-color); }
+        .tk-btn-ghost {
+            background: var(--container-bg); color:var(--text-color);
+            border:1px solid var(--border-color); border-radius:9px;
+            padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer;
+            width:auto; margin:0; display:inline-flex; align-items:center; gap:6px;
+            transition: background .15s ease, border-color .15s ease;
+        }
+        .tk-btn-ghost:hover { background: var(--hover-bg); border-color: var(--tk-accent); }
+
+        /* 令牌卡片网格 */
+        .tk-grid {
+            display:grid; gap:16px;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        }
+        .tk-token {
+            background: var(--container-bg); border:1px solid var(--border-color);
+            border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:14px;
+            box-shadow: 0 1px 3px var(--shadow-color);
+            transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+            position:relative; overflow:hidden;
+        }
+        .tk-token::before {
+            content:''; position:absolute; top:0; left:0; right:0; height:3px;
+            background: linear-gradient(90deg, var(--tk-accent), #6ea8ff);
+        }
+        .tk-token.disabled::before { background: var(--border-color); }
+        .tk-token:hover { transform: translateY(-2px); box-shadow: 0 8px 20px var(--shadow-color); border-color: var(--tk-accent); }
+
+        .tk-token-top { display:flex; align-items:flex-start; gap:10px; }
+        .tk-avatar {
+            flex:0 0 auto; width:38px; height:38px; border-radius:10px;
+            display:flex; align-items:center; justify-content:center;
+            font-size:16px; font-weight:700; color:#fff; text-transform:uppercase;
+            background: linear-gradient(135deg, var(--tk-accent), #6ea8ff);
+        }
+        .tk-token.disabled .tk-avatar { background: linear-gradient(135deg,#9aa5b1,#cbd2d9); }
+        .tk-token-name { flex:1 1 auto; min-width:0; }
+        .tk-token-name .nm { font-size:15px; font-weight:700; color:var(--text-color); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .tk-token-name .sub { font-size:11.5px; color:var(--text-muted); margin-top:2px; }
+
+        .tk-badge {
+            flex:0 0 auto; font-size:11.5px; font-weight:600; padding:3px 10px;
+            border-radius:999px; display:inline-flex; align-items:center; gap:5px;
+        }
+        .tk-badge.on { color:#22a06b; background: rgba(34,160,107,.12); }
+        .tk-badge.off { color:#c0392b; background: rgba(192,57,43,.12); }
+        .tk-badge.exp { color:#d97706; background: rgba(217,119,6,.12); }
+        .tk-badge .dot { width:6px; height:6px; border-radius:50%; background: currentColor; }
+
+        /* 令牌字符串行 */
+        .tk-token-key {
+            display:flex; align-items:center; gap:8px;
+            background: var(--card-bg); border:1px solid var(--border-color);
+            border-radius:9px; padding:8px 10px;
+        }
+        .tk-token-key code {
+            flex:1 1 auto; min-width:0; font-family:monospace; font-size:12.5px;
+            color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+        }
+
+        /* 配额进度 */
+        .tk-quota-row { display:flex; justify-content:space-between; align-items:baseline; font-size:12px; margin-bottom:6px; }
+        .tk-quota-row .lbl { color:var(--text-muted); }
+        .tk-quota-row .val { color:var(--text-color); font-weight:600; font-variant-numeric:tabular-nums; }
+        .tk-bar { height:7px; border-radius:999px; background: var(--card-bg); overflow:hidden; }
+        .tk-bar > span { display:block; height:100%; border-radius:999px; background: linear-gradient(90deg,#22a06b,#3ec98a); transition: width .4s ease; }
+        .tk-bar.warn > span { background: linear-gradient(90deg,#e0992a,#fbbc05); }
+        .tk-bar.danger > span { background: linear-gradient(90deg,#c0392b,#ff6b5e); }
+        .tk-bar.inf > span { background: linear-gradient(90deg, var(--tk-accent), #6ea8ff); width:100%; opacity:.35; }
+
+        /* 模型标签 */
+        .tk-models { display:flex; flex-wrap:wrap; gap:6px; }
+        .tk-models .mtag {
+            font-size:11.5px; padding:3px 9px; border-radius:7px;
+            background: var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary);
+            max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+        }
+        .tk-models .mtag.all { color: var(--tk-accent); border-color: rgba(66,133,244,.3); background: rgba(66,133,244,.08); }
+
+        /* 卡片操作 */
+        .tk-token-actions { display:flex; gap:8px; margin-top:auto; padding-top:4px; }
+        .tk-act {
+            flex:1 1 0; background: var(--card-bg); color:var(--text-secondary);
+            border:1px solid var(--border-color); border-radius:8px;
+            padding:7px 0; font-size:12.5px; font-weight:600; cursor:pointer;
+            width:auto; margin:0; display:inline-flex; align-items:center; justify-content:center; gap:5px;
+            transition: all .15s ease;
+        }
+        .tk-act:hover { background: var(--hover-bg); }
+        .tk-act.toggle:hover { color: var(--tk-accent); border-color: var(--tk-accent); }
+        .tk-act.reset:hover { color:#d97706; border-color:#d97706; }
+        .tk-act.del:hover { color:#c0392b; border-color:#c0392b; background: rgba(192,57,43,.08); }
+
+        /* 空状态 / 加载 */
+        .tk-empty {
+            text-align:center; padding:48px 20px; color:var(--text-muted);
+            border:1px dashed var(--border-color); border-radius:14px; background: var(--card-bg);
+        }
+        .tk-empty .ico { font-size:40px; margin-bottom:12px; opacity:.6; }
+        .tk-empty .ttl { font-size:15px; color:var(--text-secondary); margin-bottom:4px; font-weight:600; }
+        .tk-empty .desc { font-size:13px; }
+        .tk-skel { display:grid; gap:16px; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); }
+        .tk-skel-card { height:210px; border-radius:14px; border:1px solid var(--border-color);
+            background: linear-gradient(100deg, var(--card-bg) 30%, var(--hover-bg) 50%, var(--card-bg) 70%);
+            background-size:200% 100%; animation: tkShimmer 1.3s ease-in-out infinite; }
+        @keyframes tkShimmer { from { background-position:200% 0; } to { background-position:-200% 0; } }
+
+        @media (max-width:640px) {
+            .tk-card { padding:16px; }
+            .tk-stat { flex-basis:calc(50% - 6px); }
+        }
     </style>
 
     <!-- ================ Aether Codex Refactor (2026-05) ================ -->
@@ -6746,25 +6957,59 @@
             <div class="tab-content-wrapper">
 
                 <!-- 用户令牌标签页（多租户） -->
-                <div id="tokensTab" class="tab-content">
-                    <h3>用户令牌（多租户）</h3>
-                    <p>为下游用户/客户发放独立 API 令牌，可设配额、模型白名单、过期。令牌可直接用于 <code>/v1/chat/completions</code> 与 <code>/v1/messages</code>，受其配额与模型白名单约束。</p>
-
-                    <div style="margin:16px 0; padding:16px; border:1px solid var(--line-default,#ddd); border-radius:8px;">
-                        <h4 style="margin-top:0;">新建令牌</h4>
-                        <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
-                            <label>名称<br><input id="newTokenName" type="text" placeholder="如 alice" style="min-width:140px;"></label>
-                            <label>配额（总次数，留空=无限）<br><input id="newTokenQuota" type="number" min="1" placeholder="无限" style="width:140px;"></label>
-                            <label>模型白名单（逗号分隔，留空=全部）<br><input id="newTokenModels" type="text" placeholder="全部" style="min-width:220px;"></label>
-                            <button class="btn" onclick="createToken()">创建</button>
+                <div id="tokensTab" class="tab-content tk-page">
+                    <div class="tk-hero">
+                        <div class="tk-hero-icon">🔑</div>
+                        <div class="tk-hero-text">
+                            <h3>用户令牌 · 多租户</h3>
+                            <p>为下游用户/客户发放独立 API 令牌，可设配额、模型白名单与过期时间。令牌可直接用于 <code>/v1/chat/completions</code> 与 <code>/v1/messages</code>，受其配额与模型白名单约束。</p>
                         </div>
-                        <div id="newTokenResult" style="margin-top:10px;"></div>
                     </div>
 
-                    <div style="margin:10px 0;">
-                        <button class="btn" onclick="loadTokens()">刷新列表</button>
+                    <!-- 概览统计 -->
+                    <div class="tk-stats" id="tokenStats" style="display:none;">
+                        <div class="tk-stat accent"><div class="tk-stat-label">令牌总数</div><div class="tk-stat-value" id="tkStatTotal">0</div></div>
+                        <div class="tk-stat good"><div class="tk-stat-label">启用中</div><div class="tk-stat-value" id="tkStatEnabled">0</div></div>
+                        <div class="tk-stat"><div class="tk-stat-label">已禁用</div><div class="tk-stat-value" id="tkStatDisabled">0</div></div>
+                        <div class="tk-stat"><div class="tk-stat-label">累计调用</div><div class="tk-stat-value" id="tkStatUsed">0</div></div>
                     </div>
-                    <div id="tokensTableWrap"><p style="color:#888;">点击"刷新列表"加载令牌。</p></div>
+
+                    <!-- 新建令牌 -->
+                    <div class="tk-card">
+                        <div class="tk-card-head">
+                            <h4>✨ 新建令牌</h4>
+                            <span class="tk-chip">创建后完整令牌仅显示一次</span>
+                        </div>
+                        <div class="tk-form-grid">
+                            <div class="tk-field">
+                                <label>名称</label>
+                                <input id="newTokenName" type="text" placeholder="如 alice">
+                            </div>
+                            <div class="tk-field">
+                                <label>配额 <span class="tk-hint">总次数 · 留空=无限</span></label>
+                                <input id="newTokenQuota" type="number" min="1" placeholder="无限">
+                            </div>
+                            <div class="tk-field">
+                                <label>过期时间 <span class="tk-hint">留空=永不过期</span></label>
+                                <input id="newTokenExpires" type="date">
+                            </div>
+                            <div class="tk-field">
+                                <label>模型白名单 <span class="tk-hint">逗号分隔 · 留空=全部</span></label>
+                                <input id="newTokenModels" type="text" placeholder="全部">
+                            </div>
+                        </div>
+                        <div class="tk-form-actions">
+                            <button class="tk-btn-primary" onclick="createToken()">＋ 创建令牌</button>
+                        </div>
+                        <div id="newTokenResult"></div>
+                    </div>
+
+                    <!-- 令牌列表 -->
+                    <div class="tk-toolbar">
+                        <h4>📋 已发放令牌</h4>
+                        <button class="tk-btn-ghost" style="margin-left:auto;" onclick="loadTokens()">⟳ 刷新</button>
+                    </div>
+                    <div id="tokensTableWrap"><div class="tk-empty"><div class="ico">🔑</div><div class="ttl">尚未加载令牌</div><div class="desc">点击右上角"刷新"加载列表。</div></div></div>
                 </div>
 
                 <!-- 批量上传标签页 -->
@@ -10260,47 +10505,132 @@
         }
 
         // ============ 用户令牌（多租户） ============
+        function tkFmtDate(ts) {
+            // ts 可为 unix 秒或毫秒；返回 YYYY-MM-DD
+            if (ts === null || ts === undefined || ts === '') return '';
+            let n = Number(ts);
+            if (!isFinite(n)) return '';
+            if (n < 1e12) n = n * 1000; // 秒 -> 毫秒
+            const d = new Date(n);
+            if (isNaN(d.getTime())) return '';
+            const p = (x) => String(x).padStart(2, '0');
+            return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+        }
+
+        // 属性安全转义：escapeHtml 基于 textContent，不会转义引号，放进 title="" 等属性时
+        // 含双引号的 token 名称可能闭合属性并注入事件处理器，故属性场景额外转义引号。
+        function tkAttr(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        function tkRenderTokenCard(t) {
+            const used = t.used || 0;
+            const unlimited = (t.quota === null || t.quota === undefined);
+            const quota = unlimited ? '∞' : t.quota;
+            const enabled = t.enabled !== false;
+            const tid = encodeURIComponent(t.id || '');
+            const masked = t.token_masked || '';
+            const name = t.name || 'token';
+            const initial = name.trim().charAt(0) || '?';
+
+            // 过期判断：expires_at 为 null/undefined = 永不过期；任意其它值按时间戳判定
+            // （与后端一致：0 或不可解析值都视为已过期，fail-safe）
+            const hasExp = (t.expires_at !== null && t.expires_at !== undefined);
+            const expStr = tkFmtDate(t.expires_at);
+            let expMs = hasExp ? Number(t.expires_at) : 0;
+            if (hasExp && isFinite(expMs) && expMs < 1e12) expMs *= 1000; // 秒 -> 毫秒
+            const isExpired = hasExp ? (!isFinite(expMs) || expMs < Date.now()) : false;
+
+            // 配额进度条
+            let pct = 0, barClass = unlimited ? 'inf' : '';
+            if (!unlimited) {
+                if (t.quota > 0) {
+                    pct = Math.min(100, Math.round((used / t.quota) * 100));
+                    barClass = pct >= 90 ? 'danger' : (pct >= 70 ? 'warn' : '');
+                } else {
+                    // 配额为 0：已耗尽，按危险态满格显示（而非误判为无限）
+                    pct = 100;
+                    barClass = 'danger';
+                }
+            }
+            const barWidth = unlimited ? 100 : pct;
+
+            // 状态徽章
+            let badge;
+            if (isExpired) badge = '<span class="tk-badge exp"><span class="dot"></span>已过期</span>';
+            else if (enabled) badge = '<span class="tk-badge on"><span class="dot"></span>启用</span>';
+            else badge = '<span class="tk-badge off"><span class="dot"></span>禁用</span>';
+
+            // 模型标签
+            let modelsHtml;
+            if (t.allowed_models && t.allowed_models.length) {
+                modelsHtml = t.allowed_models.slice(0, 6).map(m =>
+                    '<span class="mtag" title="' + tkAttr(m) + '">' + escapeHtml(m) + '</span>').join('');
+                if (t.allowed_models.length > 6) modelsHtml += '<span class="mtag">+' + (t.allowed_models.length - 6) + '</span>';
+            } else {
+                modelsHtml = '<span class="mtag all">全部模型</span>';
+            }
+
+            // 子标题：创建/过期信息
+            const subParts = [];
+            const created = tkFmtDate(t.created_at);
+            if (created) subParts.push('建于 ' + created);
+            if (expStr) subParts.push(isExpired ? '已于 ' + expStr + ' 过期' : '到期 ' + expStr);
+            const sub = subParts.join(' · ');
+
+            return '<div class="tk-token' + (enabled && !isExpired ? '' : ' disabled') + '">' +
+                '<div class="tk-token-top">' +
+                    '<div class="tk-avatar">' + escapeHtml(initial) + '</div>' +
+                    '<div class="tk-token-name"><div class="nm" title="' + tkAttr(name) + '">' + escapeHtml(name) + '</div>' +
+                        (sub ? '<div class="sub">' + escapeHtml(sub) + '</div>' : '') + '</div>' +
+                    badge +
+                '</div>' +
+                '<div class="tk-token-key"><code title="完整令牌仅创建时显示一次">' + escapeHtml(masked) + '</code></div>' +
+                '<div>' +
+                    '<div class="tk-quota-row"><span class="lbl">配额使用</span>' +
+                        '<span class="val">' + used + ' / ' + escapeHtml(String(quota)) + (unlimited ? '' : ' (' + barWidth + '%)') + '</span></div>' +
+                    '<div class="tk-bar ' + barClass + '"><span style="width:' + barWidth + '%;"></span></div>' +
+                '</div>' +
+                '<div class="tk-models">' + modelsHtml + '</div>' +
+                '<div class="tk-token-actions">' +
+                    '<button class="tk-act toggle" onclick="toggleToken(\'' + tid + '\',' + (!enabled) + ')">' + (enabled ? '⏸ 禁用' : '▶ 启用') + '</button>' +
+                    '<button class="tk-act reset" onclick="resetTokenUsage(\'' + tid + '\')">↺ 清零</button>' +
+                    '<button class="tk-act del" onclick="deleteToken(\'' + tid + '\')">🗑 删除</button>' +
+                '</div>' +
+            '</div>';
+        }
+
         async function loadTokens() {
             const wrap = document.getElementById('tokensTableWrap');
+            const statsBar = document.getElementById('tokenStats');
             if (!wrap) return;
-            wrap.innerHTML = '<p style="color:#888;">加载中…</p>';
+            wrap.innerHTML = '<div class="tk-skel"><div class="tk-skel-card"></div><div class="tk-skel-card"></div><div class="tk-skel-card"></div></div>';
             try {
                 const res = await fetch('/api/tokens', { headers: getAuthHeaders() });
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 const data = await res.json();
                 const tokens = (data && data.tokens) || [];
                 if (!tokens.length) {
-                    wrap.innerHTML = '<p style="color:#888;">暂无令牌，请在上方创建。</p>';
+                    if (statsBar) statsBar.style.display = 'none';
+                    wrap.innerHTML = '<div class="tk-empty"><div class="ico">📭</div><div class="ttl">暂无令牌</div><div class="desc">请在上方"新建令牌"卡片中创建第一个令牌。</div></div>';
                     return;
                 }
-                let html = '<table style="width:100%; border-collapse:collapse;">' +
-                    '<thead><tr style="text-align:left; border-bottom:2px solid #ccc;">' +
-                    '<th style="padding:8px;">名称</th><th>令牌</th><th>已用/配额</th><th>模型白名单</th><th>状态</th><th>操作</th>' +
-                    '</tr></thead><tbody>';
-                for (const t of tokens) {
-                    const used = t.used || 0;
-                    const quota = (t.quota === null || t.quota === undefined) ? '∞' : t.quota;
-                    const models = (t.allowed_models && t.allowed_models.length) ? t.allowed_models.join(', ') : '全部';
-                    const enabled = t.enabled !== false;
-                    // 列表只展示掩码 token（完整 token 仅创建时返回一次）；操作以稳定 id 引用
-                    const tid = encodeURIComponent(t.id || '');
-                    const masked = t.token_masked || '';
-                    html += '<tr style="border-bottom:1px solid #eee;">' +
-                        '<td style="padding:8px;">' + escapeHtml(t.name || '') + '</td>' +
-                        '<td style="font-family:monospace;">' + escapeHtml(masked) + '</td>' +
-                        '<td>' + used + ' / ' + escapeHtml(String(quota)) + '</td>' +
-                        '<td>' + escapeHtml(models) + '</td>' +
-                        '<td>' + (enabled ? '<span style="color:#22a06b;">启用</span>' : '<span style="color:#c33;">禁用</span>') + '</td>' +
-                        '<td>' +
-                        '<button class="btn" style="padding:2px 8px;" onclick="toggleToken(\'' + tid + '\',' + (!enabled) + ')">' + (enabled ? '禁用' : '启用') + '</button> ' +
-                        '<button class="btn" style="padding:2px 8px;" onclick="resetTokenUsage(\'' + tid + '\')">清零</button> ' +
-                        '<button class="btn" style="padding:2px 8px;" onclick="deleteToken(\'' + tid + '\')">删除</button>' +
-                        '</td></tr>';
+                // 统计
+                let enabledCnt = 0, totalUsed = 0;
+                for (const t of tokens) { if (t.enabled !== false) enabledCnt++; totalUsed += (t.used || 0); }
+                if (statsBar) {
+                    statsBar.style.display = '';
+                    document.getElementById('tkStatTotal').textContent = tokens.length;
+                    document.getElementById('tkStatEnabled').textContent = enabledCnt;
+                    document.getElementById('tkStatDisabled').textContent = tokens.length - enabledCnt;
+                    document.getElementById('tkStatUsed').textContent = totalUsed.toLocaleString();
                 }
-                html += '</tbody></table>';
-                wrap.innerHTML = html;
+                wrap.innerHTML = '<div class="tk-grid">' + tokens.map(tkRenderTokenCard).join('') + '</div>';
             } catch (e) {
-                wrap.innerHTML = '<p style="color:#c33;">加载失败：' + escapeHtml(String(e.message || e)) + '</p>';
+                if (statsBar) statsBar.style.display = 'none';
+                wrap.innerHTML = '<div class="tk-empty"><div class="ico">⚠️</div><div class="ttl">加载失败</div><div class="desc">' + escapeHtml(String(e.message || e)) + '</div></div>';
             }
         }
 
@@ -10322,9 +10652,24 @@
             const name = (document.getElementById('newTokenName').value || '').trim();
             const quotaRaw = (document.getElementById('newTokenQuota').value || '').trim();
             const modelsRaw = (document.getElementById('newTokenModels').value || '').trim();
+            const expiresRaw = (document.getElementById('newTokenExpires').value || '').trim();
             const body = { name: name };
             if (quotaRaw) body.quota = parseInt(quotaRaw, 10);
             if (modelsRaw) body.allowed_models = modelsRaw.split(',').map(s => s.trim()).filter(Boolean);
+            if (expiresRaw) {
+                // <input type="date"> 给出 YYYY-MM-DD；按当天结束（23:59:59 本地）转 unix 秒。
+                // 用数值构造 Date（而非解析字符串）以避免 Safari/旧引擎的本地/UTC 解析差异。
+                const parts = expiresRaw.split('-');
+                if (parts.length === 3) {
+                    const d = new Date(
+                        parseInt(parts[0], 10),
+                        parseInt(parts[1], 10) - 1,
+                        parseInt(parts[2], 10),
+                        23, 59, 59
+                    );
+                    if (!isNaN(d.getTime())) body.expires_at = Math.floor(d.getTime() / 1000);
+                }
+            }
             try {
                 const res = await fetch('/api/tokens', {
                     method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(body)
@@ -10332,11 +10677,17 @@
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 const meta = await res.json();
                 const rEl = document.getElementById('newTokenResult');
-                rEl.innerHTML = '令牌已创建（请立即复制，仅此一次完整显示）：<br>' +
-                    '<code style="user-select:all; word-break:break-all;">' + escapeHtml(meta.token) + '</code>';
+                rEl.innerHTML = '<div class="tk-reveal">' +
+                    '<div class="tk-reveal-title">✓ 令牌已创建 — 请立即复制，完整内容仅显示这一次</div>' +
+                    '<div class="tk-reveal-row">' +
+                        '<code id="tkRevealCode">' + escapeHtml(meta.token) + '</code>' +
+                        '<button class="tk-btn-ghost" onclick="copyTokenValue(this)" data-token="' + tkAttr(meta.token) + '">📋 复制</button>' +
+                    '</div>' +
+                '</div>';
                 document.getElementById('newTokenName').value = '';
                 document.getElementById('newTokenQuota').value = '';
                 document.getElementById('newTokenModels').value = '';
+                document.getElementById('newTokenExpires').value = '';
                 showStatus('令牌已创建', 'success');
                 loadTokens();
             } catch (e) {
