@@ -219,8 +219,19 @@ class RequestGenerator:
         if "response_format" in data and not isinstance(data["response_format"], dict):
             return False, "Field 'response_format' must be an object"
 
-        if "fallbacks" in data and not isinstance(data["fallbacks"], list):
-            return False, "Field 'fallbacks' must be an array"
+        if "fallbacks" in data:
+            fbs = data["fallbacks"]
+            if not isinstance(fbs, list):
+                return False, "Field 'fallbacks' must be an array"
+            # 官方 schema：每个 fallback 是带 model 的对象，拒绝旧的字符串写法，
+            # 否则自定义报文会在本地通过、却在网关被判非法。
+            for i, fb in enumerate(fbs):
+                model_id = fb.get("model") if isinstance(fb, dict) else None
+                if not isinstance(model_id, str) or not model_id.strip():
+                    return False, (
+                        f"Field 'fallbacks[{i}]' must be an object with a 'model' string "
+                        "(e.g. {\"model\": \"gpt-5\"})"
+                    )
 
         if "fallback_config" in data and not isinstance(data["fallback_config"], dict):
             return False, "Field 'fallback_config' must be an object"
