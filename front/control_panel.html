@@ -7611,16 +7611,14 @@
                                             <option value="false">false</option>
                                         </select>
                                     </label>
-                                    <label class="playground-feature-check">
+                                    <label class="playground-feature-check" title="勾选后在流式请求里附带 stream_options.include_usage，让上游在最后一帧返回 token 用量统计">
                                         <input type="checkbox" id="playgroundStreamIncludeUsage" onchange="updateRequestPreview()">
-                                        <span>stream_options.include_usage</span>
+                                        <span>include_usage</span>
                                     </label>
-                                    <label>
+                                    <label title="OpenAI / Kimi 系模型的 prompt_cache_retention；官方取值是默认(in-memory，约 5–10 分钟)或 24h。5m/1h 是 cache_control.ttl 的取值，不属于这里。">
                                         <span>Cache Retention</span>
                                         <select id="playgroundPromptCacheRetention" class="config-input" onchange="updateRequestPreview()">
-                                            <option value="">默认</option>
-                                            <option value="5m">5m</option>
-                                            <option value="1h">1h</option>
+                                            <option value="">默认 (in-memory)</option>
                                             <option value="24h">24h</option>
                                         </select>
                                     </label>
@@ -10525,10 +10523,15 @@
                     !value.includes(' ');
             }) || '';
             let message = text;
-            if (timeMatch) message = message.replace(timeMatch[0], '').trim();
+            // 连同时间戳两侧的方括号一起剥离，否则会残留一个空 "[]"（在小号等宽字体里
+            // 看起来就是个 □ 豆腐块）顶在每条日志最前面。
+            if (timeMatch) {
+                message = message.replace(new RegExp(`\\[?\\s*${escapeRegExp(timeMatch[0])}\\s*\\]?`), '').trim();
+            }
             message = message.replace(/\[(ERROR|WARNING|WARN|INFO|DEBUG|CRITICAL|FATAL)\]/i, '').trim();
             if (source) message = message.replace(new RegExp(`\\[${escapeRegExp(source)}\\]`, 'i'), '').trim();
-            message = message.replace(/^[-|:]\s*/, '');
+            // 收尾：清掉任何残留的空方括号与行首分隔符
+            message = message.replace(/\[\s*\]/g, '').replace(/^[\s\-|:]+/, '').trim();
             return {
                 index: displayIndex + 1,
                 level,
@@ -19887,33 +19890,12 @@
                 }
             };
 
-            // ---------- 与既有 showStatus 联动 ----------
-            // 很多保存操作 (配置 / 模型列表 / 限额) 调用 showStatus(msg, 'success')。
-            // 既有 ui.js 已接管 showStatus, 但其策略是: error/warning 才弹顶部 toast,
-            // success/info 只静默进入"消息中心"铃铛 —— 这正是用户"点了保存却看不到
-            // 反馈"的根因。这里只为 success 补一个醒目的浮动确认, 避免与 ui.js 对
-            // error/warning 的 toast 重复。在 DOMContentLoaded 后再包装, 确保位于
-            // ui.js wrapper 之外, 必定执行。
-            function installShowStatusBridge() {
-                if (typeof window.showStatus !== 'function' || window.__bfStatusBridged) return;
-                window.__bfStatusBridged = true;
-                const prev = window.showStatus;
-                window.showStatus = function (message, type) {
-                    let result;
-                    try { result = prev.apply(this, arguments); } catch (_) {}
-                    // 仅补 success: error/warning 由 ui.js 负责弹出, 不重复
-                    if (type === 'success') {
-                        window.bfToast(message, 'success');
-                    }
-                    // 透传原函数返回值, 不假定调用方不关心结果
-                    return result;
-                };
-            }
-            if (document.readyState === 'loading') {
-                window.addEventListener('DOMContentLoaded', () => setTimeout(installShowStatusBridge, 0));
-            } else {
-                setTimeout(installShowStatusBridge, 0);
-            }
+            // ---------- showStatus × 消息收纳 ----------
+            // 这里曾经给每条 success 再补一个浮动 toast，本意是解决"点了保存看不到反馈"，
+            // 但副作用是"配置加载成功 / 全部配置刷新成功"这类被动提示一进页面就反复弹窗
+            // （PC 端尤其明显）。现已移除：success / info 统一沉淀到右上角"消息中心"铃铛
+            // （由 ui.js 负责归档），按钮自带 bf-success 动画、配置等页面还会就地写入 inline
+            // status 作为即时反馈，error / warning 仍照常弹出。这样既保留反馈又不打扰。
         })();
     </script>
 
