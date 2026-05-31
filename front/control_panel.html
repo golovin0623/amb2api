@@ -11694,6 +11694,8 @@
             if (!btn || btn.classList.contains('is-busy')) return;
             btn.classList.remove('is-success');
             btn.classList.add('is-busy');
+            // 用原生 disabled 拦截点击（替代 CSS pointer-events:none），并提供 not-allowed 光标
+            btn.disabled = true;
             btn.setAttribute('aria-busy', 'true');
             let ok = false;
             try {
@@ -11707,7 +11709,12 @@
             // fn 返回 undefined（无显式状态）时视为成功
             if (ok !== false) {
                 btn.classList.add('is-success');
-                setTimeout(() => btn.classList.remove('is-success'), 1100);
+                setTimeout(() => {
+                    btn.classList.remove('is-success');
+                    btn.disabled = false;
+                }, 1100);
+            } else {
+                btn.disabled = false;
             }
             return ok;
         }
@@ -16129,14 +16136,21 @@
             // 因此立刻把弹窗以「加载中」骨架打开、按钮进入忙碌态，给出明确等待反馈。
             const modal = document.getElementById('modelsModal');
             const body = document.getElementById('modelsModalBody');
+            const modalSaveBtn = modal ? modal.querySelector('.models-save-btn') : null;
             if (btn) btn.classList.add('bf-busy');
             if (modal && body) {
+                // 加载/错误占位态下禁用「确定」，防止误点清空已选模型（见 openModelsModal）
+                if (modalSaveBtn) modalSaveBtn.disabled = true;
                 body.innerHTML = '<div class="loading-spinner" style="padding:48px 0;"><div class="spinner"></div><div class="spinner-text">正在获取模型列表…</div></div>';
                 setModalVisibility(modal, true);
             }
             try {
                 const res = await fetch('/models/query', { headers: getAuthHeaders() });
                 const data = await res.json();
+                // fetch 在 4xx/5xx 时不会抛错，必须显式校验 res.ok，否则会用空数据打开弹窗
+                if (!res.ok) {
+                    throw new Error(data.detail || data.error || `请求失败 (${res.status})`);
+                }
                 queriedModels = { grouped: data.grouped || {}, models: data.models || [], meta: data.meta || {} };
                 refreshUsageLimitModelOptions();
                 openModelsModal();
@@ -16194,6 +16208,9 @@
                 html += `</div></section>`;
             });
             body.innerHTML = totalCount ? html : '<div class="models-empty">未查询到模型</div>';
+            // 只有真正渲染出可勾选模型时才允许「确定」，避免空列表保存把已选模型清空
+            const saveBtn = modal.querySelector('.models-save-btn');
+            if (saveBtn) saveBtn.disabled = !totalCount;
             body.onchange = (event) => {
                 if (!event.target || !event.target.classList || !event.target.classList.contains('model-check')) return;
                 const selectedCount = body.querySelectorAll('.model-check:checked').length;
@@ -16248,6 +16265,12 @@
             // 如果弹窗打开，优先从弹窗勾选收集
             const modal = document.getElementById('modelsModal');
             if (modal && modal.style.display && modal.style.display !== 'none') {
+                // 弹窗处于加载/错误占位态（尚未渲染出复选框）时不可保存，
+                // 否则会把空选择写回、误清空已保存模型。
+                if (document.querySelectorAll('.model-check').length === 0) {
+                    showStatus('模型列表尚未加载完成，请稍候再保存', 'warning');
+                    return;
+                }
                 selectedModels = collectCheckedModels();
             }
             if (btn) btn.classList.add('bf-busy');

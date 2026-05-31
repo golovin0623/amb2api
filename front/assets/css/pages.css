@@ -258,12 +258,13 @@ html body .config-floating-btn {
               color var(--dur-fast) var(--ease-standard) !important;
 }
 html body .config-floating-btn svg { flex: 0 0 auto; }
-html body .config-floating-btn:hover {
+/* hover/按下仅在可交互态生效，忙碌/成功/禁用时不触发，避免闪烁 */
+html body .config-floating-btn:hover:not(:disabled):not(.is-busy):not(.is-success) {
   border-color: var(--line-strong) !important;
   background: var(--bg-overlay) !important;
   transform: none !important;
 }
-html body .config-floating-btn:active { transform: scale(0.96) !important; }
+html body .config-floating-btn:active:not(:disabled):not(.is-busy):not(.is-success) { transform: scale(0.96) !important; }
 html body .config-floating-btn.save {
   background: var(--ink-pure) !important;
   color: var(--ink-inverse) !important;
@@ -279,9 +280,12 @@ html[data-theme="dark"] body .config-floating-btn.save {
   border-color: oklch(0.96 0.005 270) !important;
 }
 
-/* 忙碌：图标换成旋转 spinner，文字保留（「保存」/「重载」），按钮锁定 */
+/* 忙碌/成功/禁用：用原生 disabled + not-allowed 指针反馈替代 pointer-events:none，
+   保留可访问性与正确光标（实际拦截点击由 JS 设置 btn.disabled 完成） */
+html body .config-floating-btn:disabled,
 html body .config-floating-btn.is-busy,
-html body .config-floating-btn.is-success { pointer-events: none; }
+html body .config-floating-btn.is-success { cursor: not-allowed !important; }
+/* 忙碌：图标换成旋转 spinner，文字保留（「保存」/「重载」） */
 html body .config-floating-btn.is-busy svg,
 html body .config-floating-btn.is-success svg { display: none !important; }
 html body .config-floating-btn.is-busy::before {
