@@ -1032,7 +1032,9 @@ async def refresh_session(account_email: Optional[str] = None) -> Dict[str, Any]
             # 不强制下线，交给真实请求在确实 401 时再清理，避免误判"已过期"。
             cookie_fallback = True
         else:
-            # 既无法续期、也无可用的长效 cookie，才视为真正失效
+            # 既无法续期、也无可用的长效 cookie：清除死会话再 401，否则 /session
+            # 仅看 7 天 expires_at，前端会把死账户当作已登录并重启保活循环。
+            await _clear_session(account_email)
             raise HTTPException(
                 status_code=401,
                 detail="Session expired and could not be renewed. Please login again.",
