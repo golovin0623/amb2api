@@ -38,6 +38,12 @@ class RequestGenerator:
         "parallel_tool_calls",
         "reasoning_effort",
         "verbosity",
+        # AssemblyAI Gateway 原生扩展
+        "reasoning",
+        "fallbacks",
+        "fallback_config",
+        "post_processing_steps",
+        "transcript_id",
     ]
     
     def __init__(self, endpoint: str = "", api_key: str = ""):
@@ -206,7 +212,25 @@ class RequestGenerator:
 
         if "prompt_cache_key" in data and not isinstance(data["prompt_cache_key"], str):
             return False, "Field 'prompt_cache_key' must be a string"
-        
+
+        if "reasoning" in data and not isinstance(data["reasoning"], dict):
+            return False, "Field 'reasoning' must be an object"
+
+        if "response_format" in data and not isinstance(data["response_format"], dict):
+            return False, "Field 'response_format' must be an object"
+
+        if "fallbacks" in data and not isinstance(data["fallbacks"], list):
+            return False, "Field 'fallbacks' must be an array"
+
+        if "fallback_config" in data and not isinstance(data["fallback_config"], dict):
+            return False, "Field 'fallback_config' must be an object"
+
+        if "post_processing_steps" in data and not isinstance(data["post_processing_steps"], list):
+            return False, "Field 'post_processing_steps' must be an array"
+
+        if "transcript_id" in data and not isinstance(data["transcript_id"], str):
+            return False, "Field 'transcript_id' must be a string"
+
         return True, ""
     
     def generate_initial_custom_request(self, params: Dict[str, Any]) -> str:

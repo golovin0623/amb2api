@@ -39,6 +39,12 @@ class PreviewRequest(BaseModel):
     cache_control: Optional[Dict[str, Any]] = Field(None, description="顶层缓存控制")
     prompt_cache_retention: Optional[str] = Field(None, description="OpenAI prompt cache retention")
     prompt_cache_key: Optional[str] = Field(None, description="OpenAI prompt cache key")
+    reasoning: Optional[Dict[str, Any]] = Field(None, description="嵌套推理参数 {effort, max_tokens}")
+    response_format: Optional[Dict[str, Any]] = Field(None, description="结构化输出 response_format")
+    fallbacks: Optional[list] = Field(None, description="模型回退列表 fallbacks")
+    fallback_config: Optional[Dict[str, Any]] = Field(None, description="模型回退配置 {retry, depth}")
+    post_processing_steps: Optional[list] = Field(None, description="响应后处理步骤，如 [{type: json-repair}]")
+    transcript_id: Optional[str] = Field(None, description="AssemblyAI 转录注入 id")
 
 
 class CustomRequest(BaseModel):
@@ -122,7 +128,19 @@ async def generate_request_preview(request: PreviewRequest):
             params["prompt_cache_retention"] = request.prompt_cache_retention
         if request.prompt_cache_key is not None:
             params["prompt_cache_key"] = request.prompt_cache_key
-        
+        if request.reasoning is not None:
+            params["reasoning"] = request.reasoning
+        if request.response_format is not None:
+            params["response_format"] = request.response_format
+        if request.fallbacks is not None:
+            params["fallbacks"] = request.fallbacks
+        if request.fallback_config is not None:
+            params["fallback_config"] = request.fallback_config
+        if request.post_processing_steps is not None:
+            params["post_processing_steps"] = request.post_processing_steps
+        if request.transcript_id is not None:
+            params["transcript_id"] = request.transcript_id
+
         preview = generator.generate_request_preview(params)
         
         return PreviewResponse(
@@ -240,7 +258,19 @@ async def generate_initial_request(request: PreviewRequest):
             params["prompt_cache_retention"] = request.prompt_cache_retention
         if request.prompt_cache_key is not None:
             params["prompt_cache_key"] = request.prompt_cache_key
-        
+        if request.reasoning is not None:
+            params["reasoning"] = request.reasoning
+        if request.response_format is not None:
+            params["response_format"] = request.response_format
+        if request.fallbacks is not None:
+            params["fallbacks"] = request.fallbacks
+        if request.fallback_config is not None:
+            params["fallback_config"] = request.fallback_config
+        if request.post_processing_steps is not None:
+            params["post_processing_steps"] = request.post_processing_steps
+        if request.transcript_id is not None:
+            params["transcript_id"] = request.transcript_id
+
         initial_json = generator.generate_initial_custom_request(params)
         
         return {

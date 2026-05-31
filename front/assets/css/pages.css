@@ -2167,6 +2167,33 @@ html[data-theme="dark"] body #playgroundTab .playground-feature-check {
   background: oklch(0.135 0.008 270) !important;
   border-color: oklch(0.96 0.005 270 / 0.10) !important;
 }
+/* 分组小标题：把一长串 Gateway 参数切成 采样·推理 / 工具·结构化 / 可靠性 / 缓存 几块，
+   配一条细分隔线，做出"被设计过"的层次感而不是一锅端的网格。 */
+html body #playgroundTab .playground-feature-subhead {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin: var(--s-4) 0 var(--s-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+html body #playgroundTab .playground-feature-subhead::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-default);
+}
+html body #playgroundTab .playground-feature-grid textarea.config-input {
+  width: 100% !important;
+  min-height: 72px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
 
 /* 表单分块 - 用细分隔线替代过大留白 */
 html body #playgroundTab .config-group .form-group > div[style*="margin-bottom"] {

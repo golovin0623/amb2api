@@ -1579,6 +1579,48 @@ async def fetch_assembly_models() -> Dict[str, Any]:
         log.error(f"Fetch models error: {e}")
         return {"models": [], "meta": {}}
 
+# 直接透传给上游 Gateway 的请求字段白名单。
+# 前半段是 OpenAI 兼容字段；后半段 reasoning / fallbacks / fallback_config /
+# post_processing_steps / transcript_id 是 AssemblyAI LLM Gateway 的原生扩展。
+# 注意 reasoning 用嵌套 {effort, max_tokens} —— 那是官方文档的形状，扁平的
+# reasoning_effort 会被网关忽略；两者都列在这里以兼容老客户端。
+_UPSTREAM_PASSTHROUGH_KEYS = (
+    "max_tokens",
+    "max_completion_tokens",
+    "stop",
+    "seed",
+    "response_format",
+    "tools",
+    "tool_choice",
+    # AssemblyAI Gateway prompt-caching pass-through
+    "cache_control",
+    "prompt_cache_retention",
+    "prompt_cache_key",
+    # OpenAI 标准字段
+    "stream_options",
+    "parallel_tool_calls",
+    # GPT-5 系列推理 / 输出长度控制
+    "reasoning_effort",
+    "verbosity",
+    # AssemblyAI Gateway 原生扩展
+    "reasoning",
+    "fallbacks",
+    "fallback_config",
+    "post_processing_steps",
+    "transcript_id",
+)
+
+
+def _collect_passthrough_params(openai_request: "ChatCompletionRequest") -> Dict[str, Any]:
+    """从请求对象收集需原样透传给上游的字段（值为 None 的不传）。"""
+    out: Dict[str, Any] = {}
+    for key in _UPSTREAM_PASSTHROUGH_KEYS:
+        val = getattr(openai_request, key, None)
+        if val is not None:
+            out[key] = val
+    return out
+
+
 async def send_assembly_request(
     openai_request: ChatCompletionRequest,
     is_streaming: bool = False,
@@ -1649,29 +1691,8 @@ async def send_assembly_request(
         "messages": request_messages,
     }
     
-    # 透传常用参数
-    for key in [
-        "max_tokens",
-        "max_completion_tokens",
-        "stop",
-        "seed",
-        "response_format",
-        "tools",
-        "tool_choice",
-        # AssemblyAI Gateway prompt-caching pass-through
-        "cache_control",
-        "prompt_cache_retention",
-        "prompt_cache_key",
-        # OpenAI 标准字段
-        "stream_options",
-        "parallel_tool_calls",
-        # GPT-5 系列推理 / 输出长度控制
-        "reasoning_effort",
-        "verbosity",
-    ]:
-        val = getattr(openai_request, key, None)
-        if val is not None:
-            payload[key] = val
+    # 透传常用参数 + AssemblyAI Gateway 原生扩展（白名单见 _UPSTREAM_PASSTHROUGH_KEYS）
+    payload.update(_collect_passthrough_params(openai_request))
     
     # temperature 和 top_p 处理
     temp = getattr(openai_request, "temperature", None)
