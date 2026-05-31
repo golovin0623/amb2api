@@ -6764,12 +6764,6 @@
             flex:1 1 auto; min-width:0; font-family:monospace; font-size:12.5px;
             color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
         }
-        .tk-copy {
-            flex:0 0 auto; background:transparent; border:none; cursor:pointer;
-            color:var(--text-muted); padding:4px; border-radius:6px; width:auto; margin:0;
-            display:flex; align-items:center; transition: color .15s ease, background .15s ease;
-        }
-        .tk-copy:hover { color: var(--tk-accent); background: var(--hover-bg); }
 
         /* 配额进度 */
         .tk-quota-row { display:flex; justify-content:space-between; align-items:baseline; font-size:12px; margin-bottom:6px; }
@@ -10533,17 +10527,25 @@
             const name = t.name || 'token';
             const initial = name.trim().charAt(0) || '?';
 
-            // 过期判断
+            // 过期判断：expires_at 为 null/undefined = 永不过期；任意其它值按时间戳判定
+            // （与后端一致：0 或不可解析值都视为已过期，fail-safe）
+            const hasExp = (t.expires_at !== null && t.expires_at !== undefined);
             const expStr = tkFmtDate(t.expires_at);
-            let expMs = t.expires_at ? Number(t.expires_at) : 0;
-            if (expMs && expMs < 1e12) expMs *= 1000;
-            const isExpired = expMs ? (expMs < Date.now()) : false;
+            let expMs = hasExp ? Number(t.expires_at) : 0;
+            if (hasExp && isFinite(expMs) && expMs < 1e12) expMs *= 1000; // 秒 -> 毫秒
+            const isExpired = hasExp ? (!isFinite(expMs) || expMs < Date.now()) : false;
 
             // 配额进度条
-            let pct = 0, barClass = 'inf';
-            if (!unlimited && t.quota > 0) {
-                pct = Math.min(100, Math.round((used / t.quota) * 100));
-                barClass = pct >= 90 ? 'danger' : (pct >= 70 ? 'warn' : '');
+            let pct = 0, barClass = unlimited ? 'inf' : '';
+            if (!unlimited) {
+                if (t.quota > 0) {
+                    pct = Math.min(100, Math.round((used / t.quota) * 100));
+                    barClass = pct >= 90 ? 'danger' : (pct >= 70 ? 'warn' : '');
+                } else {
+                    // 配额为 0：已耗尽，按危险态满格显示（而非误判为无限）
+                    pct = 100;
+                    barClass = 'danger';
+                }
             }
             const barWidth = unlimited ? 100 : pct;
 
@@ -10647,9 +10649,18 @@
             if (quotaRaw) body.quota = parseInt(quotaRaw, 10);
             if (modelsRaw) body.allowed_models = modelsRaw.split(',').map(s => s.trim()).filter(Boolean);
             if (expiresRaw) {
-                // <input type="date"> 给出 YYYY-MM-DD；按当天结束（23:59:59 本地）转 unix 秒
-                const d = new Date(expiresRaw + 'T23:59:59');
-                if (!isNaN(d.getTime())) body.expires_at = Math.floor(d.getTime() / 1000);
+                // <input type="date"> 给出 YYYY-MM-DD；按当天结束（23:59:59 本地）转 unix 秒。
+                // 用数值构造 Date（而非解析字符串）以避免 Safari/旧引擎的本地/UTC 解析差异。
+                const parts = expiresRaw.split('-');
+                if (parts.length === 3) {
+                    const d = new Date(
+                        parseInt(parts[0], 10),
+                        parseInt(parts[1], 10) - 1,
+                        parseInt(parts[2], 10),
+                        23, 59, 59
+                    );
+                    if (!isNaN(d.getTime())) body.expires_at = Math.floor(d.getTime() / 1000);
+                }
             }
             try {
                 const res = await fetch('/api/tokens', {
