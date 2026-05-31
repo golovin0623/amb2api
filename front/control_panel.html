@@ -2429,15 +2429,20 @@
             font-weight: 600;
             font-size: 15px;
             color: var(--text-secondary);
-            transition: color 0.3s ease;
+            transition: color 0.3s ease, transform 0.12s ease;
             white-space: nowrap;
             flex-shrink: 0;
             position: relative;
             z-index: 1;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .tab:hover {
             color: var(--text-color);
+        }
+
+        .tab:active {
+            transform: scale(0.96);
         }
 
         .tab.active {
@@ -2502,46 +2507,95 @@
             }
         }
 
-        /* 账户管理子标签页移动端优化 */
+        /* 账户管理子标签页：分段控件 + 滑动指示器 */
         .account-sub-tabs {
+            position: relative;
             display: flex;
-            gap: 8px;
+            gap: 4px;
             margin-bottom: 20px;
+            padding: 4px;
+            background: #f0f0f0;
+            border-radius: 12px;
             flex-wrap: nowrap;
             align-items: center;
             overflow-x: auto;
             overflow-y: hidden;
             -webkit-overflow-scrolling: touch;
-            scrollbar-width: thin;
-            scrollbar-color: var(--border-color) transparent;
-            padding-bottom: 8px;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        [data-theme="dark"] .account-sub-tabs {
+            background: #1e2a3a;
         }
 
         .account-sub-tabs::-webkit-scrollbar {
-            height: 4px;
+            display: none;
         }
 
-        .account-sub-tabs::-webkit-scrollbar-track {
+        /* 子标签滑动指示器 */
+        .sub-tab-indicator {
+            position: absolute;
+            top: 4px;
+            left: 0;
+            height: calc(100% - 8px);
+            background: var(--card-bg, #fff);
+            border-radius: 9px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        [data-theme="dark"] .sub-tab-indicator {
+            background: #3a4a5a;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+        }
+
+        .sub-tab {
+            position: relative;
+            z-index: 1;
+            flex: 0 0 auto;
+            border: none;
             background: transparent;
+            color: var(--text-secondary);
+            font-size: 14px;
+            font-weight: 600;
+            padding: 8px 18px;
+            border-radius: 9px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: color 0.25s ease, transform 0.12s ease;
+            -webkit-tap-highlight-color: transparent;
         }
 
-        .account-sub-tabs::-webkit-scrollbar-thumb {
-            background: var(--border-color);
-            border-radius: 2px;
+        .sub-tab:hover {
+            color: var(--text-color);
+        }
+
+        .sub-tab.active {
+            color: var(--text-color);
+            font-weight: 700;
+        }
+
+        [data-theme="dark"] .sub-tab.active {
+            color: #ffffff;
+        }
+
+        .sub-tab:active {
+            transform: scale(0.94);
         }
 
         @media (max-width: 480px) {
             .account-sub-tabs {
-                gap: 6px;
-                margin-left: -12px;
-                margin-right: -12px;
-                padding-left: 12px;
-                padding-right: 12px;
+                gap: 3px;
+                padding: 3px;
+                border-radius: 10px;
             }
 
-            .account-sub-tabs .btn-sm {
-                flex-shrink: 0;
-                white-space: nowrap;
+            .sub-tab {
+                padding: 7px 14px;
+                font-size: 13px;
             }
         }
 
@@ -8326,15 +8380,15 @@
                         <!-- 账户详情区域（只有选择了账户后才显示） -->
                         <div id="accountDetailsSection" class="hidden">
                             <!-- 子标签页导航 -->
-                            <div class="account-sub-tabs">
-                                <button class="btn btn-sm" id="accountSubTabOverview"
-                                    onclick="switchAccountSubTab('overview')" style="background: #4285f4;">概览</button>
-                                <button class="btn btn-sm" id="accountSubTabCost" onclick="switchAccountSubTab('cost')"
-                                    style="background: #6c757d;">成本</button>
-                                <button class="btn btn-sm" id="accountSubTabUsage"
-                                    onclick="switchAccountSubTab('usage')" style="background: #6c757d;">使用量</button>
-                                <button class="btn btn-sm" id="accountSubTabRates"
-                                    onclick="switchAccountSubTab('rates')" style="background: #6c757d;">费率</button>
+                            <div class="account-sub-tabs" id="accountSubTabs">
+                                <div class="sub-tab-indicator" id="accountSubTabIndicator"></div>
+                                <button class="sub-tab active" id="accountSubTabOverview"
+                                    onclick="switchAccountSubTab('overview')">概览</button>
+                                <button class="sub-tab" id="accountSubTabCost" onclick="switchAccountSubTab('cost')">成本</button>
+                                <button class="sub-tab" id="accountSubTabUsage"
+                                    onclick="switchAccountSubTab('usage')">使用量</button>
+                                <button class="sub-tab" id="accountSubTabRates"
+                                    onclick="switchAccountSubTab('rates')">费率</button>
                             </div>
 
                             <!-- 概览子页面 -->
@@ -9738,7 +9792,39 @@
             if (activeTab) {
                 updateTabIndicator(activeTab);
             }
+            const activeSubTab = document.querySelector('#accountSubTabs .sub-tab.active');
+            if (activeSubTab) {
+                updateSubTabIndicator(activeSubTab);
+            }
         });
+
+        // 账户子标签：滑动指示器
+        function updateSubTabIndicator(targetBtn) {
+            const indicator = document.getElementById('accountSubTabIndicator');
+            const container = document.getElementById('accountSubTabs');
+            if (!indicator || !targetBtn || !container) return;
+            if (!container.offsetWidth) return;
+            indicator.style.width = targetBtn.offsetWidth + 'px';
+            indicator.style.transform = `translateX(${targetBtn.offsetLeft}px)`;
+        }
+
+        // 设置激活的账户子标签（class 切换 + 指示器滑动）
+        function setActiveSubTab(tabName) {
+            const subTabs = ['overview', 'usage', 'cost', 'rates'];
+            let activeBtn = null;
+            subTabs.forEach(t => {
+                const btn = document.getElementById('accountSubTab' + t.charAt(0).toUpperCase() + t.slice(1));
+                if (btn) {
+                    const on = (t === tabName);
+                    btn.classList.toggle('active', on);
+                    if (on) activeBtn = btn;
+                }
+            });
+            if (activeBtn) {
+                updateSubTabIndicator(activeBtn);
+                activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            }
+        }
 
         // 标签页切换
         function switchTab(tabName) {
@@ -16757,6 +16843,47 @@
             }, ACCOUNT_CACHE_TTL_MS);
         }
 
+        // ===== 账户会话保活：定期续期后端会话，避免 5 分钟 JWT 过期导致被动失效 =====
+        let accountSessionKeepAliveTimer = null;
+        const SESSION_KEEPALIVE_MS = 3 * 60 * 1000; // 3 分钟（< 5 分钟 JWT 寿命）
+
+        async function refreshAccountSession() {
+            if (!currentAccountEmail) return;
+            try {
+                const params = `?account_email=${encodeURIComponent(currentAccountEmail)}`;
+                const res = await fetch('/api/account/refresh' + params, {
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+                if (res.status === 401) {
+                    stopAccountSessionKeepAlive();
+                    showAccountStatus('会话已过期，请重新登录', 'error');
+                    await checkAccountSession();
+                }
+            } catch (e) {
+                console.debug('Session keep-alive ping failed:', e);
+            }
+        }
+
+        function startAccountSessionKeepAlive() {
+            if (accountSessionKeepAliveTimer) clearInterval(accountSessionKeepAliveTimer);
+            accountSessionKeepAliveTimer = setInterval(refreshAccountSession, SESSION_KEEPALIVE_MS);
+        }
+
+        function stopAccountSessionKeepAlive() {
+            if (accountSessionKeepAliveTimer) {
+                clearInterval(accountSessionKeepAliveTimer);
+                accountSessionKeepAliveTimer = null;
+            }
+        }
+
+        // 页面重新可见时立即续期一次（移动端切回前台的常见场景）
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && currentAccountEmail) {
+                refreshAccountSession();
+            }
+        });
+
         // 初始化账户管理标签页
         async function initAccountTab() {
             await checkAccountSession();
@@ -16961,13 +17088,12 @@
 
                     // 先设置子标签页状态，但不触发加载
                     currentAccountSubTab = 'overview';
-                    const tabs = ['overview', 'usage', 'cost', 'rates'];
-                    tabs.forEach(t => {
+                    const subTabs = ['overview', 'usage', 'cost', 'rates'];
+                    subTabs.forEach(t => {
                         const el = document.getElementById('accountSub' + t.charAt(0).toUpperCase() + t.slice(1));
-                        const btn = document.getElementById('accountSubTab' + t.charAt(0).toUpperCase() + t.slice(1));
                         if (el) el.classList.toggle('hidden', t !== 'overview');
-                        if (btn) btn.style.background = (t === 'overview') ? '#4285f4' : '#6c757d';
                     });
+                    setActiveSubTab('overview');
 
                     // 使用合并的 overview API 减少请求数量（1个请求代替3个）
                     // 同时并发加载 usage、cost、rates
@@ -17159,13 +17285,12 @@
 
                         // 设置子标签页状态为概览，但不触发加载
                         currentAccountSubTab = 'overview';
-                        const tabs = ['overview', 'usage', 'cost', 'rates'];
-                        tabs.forEach(t => {
+                        const subTabs = ['overview', 'usage', 'cost', 'rates'];
+                        subTabs.forEach(t => {
                             const el = document.getElementById('accountSub' + t.charAt(0).toUpperCase() + t.slice(1));
-                            const btn = document.getElementById('accountSubTab' + t.charAt(0).toUpperCase() + t.slice(1));
                             if (el) el.classList.toggle('hidden', t !== 'overview');
-                            if (btn) btn.style.background = (t === 'overview') ? '#4285f4' : '#6c757d';
                         });
+                        setActiveSubTab('overview');
 
                         // 使用合并的 overview API 加载概览数据（1个请求代替3个）
                         // 同时并发加载 usage、cost、rates
@@ -17182,14 +17307,16 @@
                             })));
                         });
 
-                        // 启动自动刷新
+                        // 启动自动刷新 + 会话保活
                         startAccountAutoRefresh();
+                        startAccountSessionKeepAlive();
                     } else {
                         document.getElementById('accountDetailsSection').classList.add('hidden');
                     }
                 } else {
                     document.getElementById('accountLoginSection').classList.remove('hidden');
                     document.getElementById('accountLoggedInSection').classList.add('hidden');
+                    stopAccountSessionKeepAlive();
                 }
             } catch (e) {
                 console.error('Check session failed:', e);
@@ -17224,6 +17351,8 @@
                     } else {
                         await checkAccountSession();
                     }
+                    // 确保会话保活在登录后运行
+                    startAccountSessionKeepAlive();
                 } else {
                     showAccountStatus(data.detail || '登录失败', 'error');
                 }
@@ -17263,10 +17392,14 @@
                 // 重新加载账户列表
                 await loadAccountsList();
 
-                // 如果没有任何账户了，显示登录界面
+                // 如果没有任何账户了，显示登录界面；否则继续对新的当前账户保活
                 if (accountsList.length === 0) {
                     document.getElementById('accountLoginSection').classList.remove('hidden');
                     document.getElementById('accountLoggedInSection').classList.add('hidden');
+                    stopAccountSessionKeepAlive();
+                } else if (currentAccountEmail) {
+                    // 登出当前账户后 loadAccountsList 会切到剩余账户，需重启保活
+                    startAccountSessionKeepAlive();
                 }
 
                 showAccountStatus('已登出', 'success');
@@ -17292,13 +17425,12 @@
             }
 
             currentAccountSubTab = tabName;
-            const tabs = ['overview', 'usage', 'cost', 'rates'];
-            tabs.forEach(t => {
+            const subTabs = ['overview', 'usage', 'cost', 'rates'];
+            subTabs.forEach(t => {
                 const el = document.getElementById('accountSub' + t.charAt(0).toUpperCase() + t.slice(1));
-                const btn = document.getElementById('accountSubTab' + t.charAt(0).toUpperCase() + t.slice(1));
                 if (el) el.classList.toggle('hidden', t !== tabName);
-                if (btn) btn.style.background = (t === tabName) ? '#4285f4' : '#6c757d';
             });
+            setActiveSubTab(tabName);
             // 加载对应数据（优先使用缓存，缓存过期或不存在才请求）
             if (tabName === 'overview') {
                 const infoEl = document.getElementById('accountInfoContent');

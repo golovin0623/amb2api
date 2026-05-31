@@ -40,12 +40,26 @@ async def lifespan(app: FastAPI):
         await initialize_rate_limit_system()
     except Exception as e:
         log.error(f"初始化速率限制系统时出错: {e}")
-    
+
+    # 启动账户会话保活（Stytch sessionJWT 仅 5 分钟寿命，需主动续期）
+    try:
+        from src.api.account_api import ensure_keepalive_running
+        await ensure_keepalive_running()
+    except Exception as e:
+        log.error(f"启动账户会话保活时出错: {e}")
+
     yield
-    
+
     # 清理资源
     log.info("开始关闭 AMB2API 主服务")
-    
+
+    # 停止账户会话保活任务
+    try:
+        from src.api.account_api import stop_keepalive
+        await stop_keepalive()
+    except Exception as e:
+        log.error(f"停止账户会话保活时出错: {e}")
+
     # 首先关闭所有异步任务
     try:
         await shutdown_all_tasks(timeout=10.0)

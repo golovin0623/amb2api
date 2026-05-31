@@ -19,6 +19,11 @@ from log import log
 from .auth import authenticate
 from ..core.httpx_client import http_client
 from ..storage.storage_adapter import get_storage_adapter
+from ..services.session_security import (
+    decode_jwt_exp,
+    decrypt_secret,
+    encrypt_secret,
+)
 
 # 暴露 AssemblyAI 后台会话/账单/key，必须整组鉴权
 router = APIRouter(
@@ -32,8 +37,19 @@ ASSEMBLY_DASHBOARD_BASE = "https://www.assemblyai.com"
 SESSION_STORAGE_KEY = "assembly_dashboard_session"
 ACCOUNTS_LIST_KEY = "assembly_accounts_list"  # 存储账户列表
 CURRENT_ACCOUNT_KEY = "assembly_current_account"  # 当前选中的账户
-SESSION_EXPIRY_HOURS = 24 * 7  # Session 有效期 7 天
+SESSION_EXPIRY_HOURS = 24 * 7  # 持久会话上限（aai_extended_session 续期窗口）
+
+# Stytch sessionJWT 固定 5 分钟寿命，必须在到期前主动续期。
+SESSION_SECRET_KEY = "assembly_session_secret"  # 本地加密密钥（密码兜底续期用）
+JWT_REFRESH_LEEWAY_SECONDS = 90  # JWT 剩余寿命低于该值即视为需要续期
+RENEW_THROTTLE_SECONDS = 20  # 同一账户续期最小间隔，避免续期风暴
+KEEPALIVE_INTERVAL_SECONDS = 210  # 后台保活间隔（< 5 分钟 JWT 寿命）
+DEFAULT_JWT_TTL_SECONDS = 300  # 无法解析 exp 时的保守默认寿命
+
 _cache_store: Dict[str, Dict[str, Any]] = {}
+_renew_locks: Dict[str, asyncio.Lock] = {}  # 每账户续期锁，串行化并发续期
+_keepalive_task: Optional["asyncio.Task"] = None
+_secret_lock: Optional[asyncio.Lock] = None  # 加密密钥初始化锁（防并发生成覆盖）
 _cache_ttl_seconds = 300
 _api_keys_fetch_task = None
 _api_keys_last_fetch_ts = 0.0
@@ -195,6 +211,10 @@ class SessionInfo(BaseModel):
     email: str
     logged_in: bool
     expires_at: Optional[str] = None
+    # JWT 剩余寿命（秒）；为 None 表示无法解析
+    jwt_seconds_remaining: Optional[int] = None
+    # 是否具备自动续期能力（已加密保存账户凭据）
+    auto_renew: bool = False
 
 
 class AccountInfo(BaseModel):
@@ -370,6 +390,440 @@ async def _clear_session(account_email: Optional[str] = None) -> bool:
         return False
 
 
+# ============================================================================
+# 会话续期 / 保活（Stytch sessionJWT 仅 5 分钟寿命，必须主动续期）
+# ============================================================================
+
+async def _get_session_secret() -> bytes:
+    """获取（或首次生成）本地加密密钥，用于加密落盘账户密码。
+
+    用延迟初始化的 asyncio.Lock 串行化首次生成，避免并发协程各自生成不同
+    密钥互相覆盖，导致先加密的数据无法解密。
+    """
+    global _secret_lock
+    if _secret_lock is None:
+        _secret_lock = asyncio.Lock()
+    async with _secret_lock:
+        adapter = await get_storage_adapter()
+        stored = await adapter.get_config(SESSION_SECRET_KEY)
+        hexkey = stored.get("secret") if isinstance(stored, dict) else stored
+        if not hexkey:
+            import secrets as _secrets
+            hexkey = _secrets.token_hex(32)
+            await adapter.set_config(SESSION_SECRET_KEY, {"secret": hexkey})
+        return bytes.fromhex(hexkey)
+
+
+async def _get_raw_session(account_email: str) -> Optional[Dict[str, Any]]:
+    """读取原始 session（不做持久过期清理），续期逻辑专用。"""
+    try:
+        adapter = await get_storage_adapter()
+        session_key = f"{SESSION_STORAGE_KEY}:{account_email}"
+        return await adapter.get_config(session_key)
+    except Exception as e:
+        log.error(f"Failed to read raw session for {account_email}: {e}")
+        return None
+
+
+async def _attach_encrypted_password(
+    session_data: Dict[str, Any], password: Optional[str]
+) -> None:
+    """把账户密码加密后写入 session_data（用于失效时自动重新登录）。"""
+    if not password:
+        return
+    try:
+        key = await _get_session_secret()
+        session_data["enc_password"] = encrypt_secret(key, password)
+    except Exception as e:
+        # 加密失败不应阻断登录，只是失去密码兜底续期能力
+        log.warning(f"Failed to encrypt account password for auto-renew: {e}")
+
+
+async def _decrypt_account_password(session_data: Dict[str, Any]) -> Optional[str]:
+    enc = session_data.get("enc_password")
+    if not enc:
+        return None
+    try:
+        key = await _get_session_secret()
+        return decrypt_secret(key, enc)
+    except Exception as e:
+        log.warning(f"Failed to decrypt stored account password: {e}")
+        return None
+
+
+def _jwt_seconds_remaining(session_data: Dict[str, Any]) -> Optional[int]:
+    """返回 sessionJWT 的剩余寿命（秒）。无法判断时返回 None。"""
+    exp = session_data.get("jwt_expires_at_ts")
+    if exp is None:
+        exp = decode_jwt_exp(session_data.get("session_jwt"))
+    if exp is None:
+        return None
+    return int(exp - time.time())
+
+
+def _session_needs_renewal(session_data: Dict[str, Any]) -> bool:
+    """JWT 已过期或即将过期则需要续期。无法解析 exp 时按 logged_in_at 估算。"""
+    remaining = _jwt_seconds_remaining(session_data)
+    if remaining is not None:
+        return remaining <= JWT_REFRESH_LEEWAY_SECONDS
+    # 无 exp：依据登录时间 + 默认寿命保守判断
+    logged_in_at = session_data.get("logged_in_at")
+    if logged_in_at:
+        try:
+            age = (datetime.now() - datetime.fromisoformat(logged_in_at)).total_seconds()
+            return age >= (DEFAULT_JWT_TTL_SECONDS - JWT_REFRESH_LEEWAY_SECONDS)
+        except Exception:
+            pass
+    return True
+
+
+async def _authenticate_dashboard(email: str, password: str):
+    """向 AssemblyAI Dashboard 发起邮箱+密码认证，返回 (result_json, headers)。
+
+    认证失败抛 HTTPException。供登录与"密码兜底续期"复用。
+    """
+    import httpx
+
+    login_url = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/api/auth/authenticate"
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+        "Accept-Encoding": "gzip, deflate",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+        "Origin": ASSEMBLY_DASHBOARD_BASE,
+        "Referer": f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/login",
+        "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not-A.Brand";v="99"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"macOS"',
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+    }
+    login_data = {"email": email, "password": password, "utm": {}}
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(login_url, json=login_data, headers=headers)
+
+    log.debug(f"Auth response status: {resp.status_code}")
+    if resp.status_code != 200:
+        error_msg = "Invalid email or password"
+        try:
+            error_data = resp.json()
+            error_msg = error_data.get("error") or error_data.get("message") or error_msg
+        except Exception:
+            pass
+        raise HTTPException(status_code=401, detail=error_msg)
+
+    try:
+        result = resp.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse response: {e}")
+
+    if not result.get("isAuthenticated"):
+        raise HTTPException(status_code=401, detail="Authentication failed")
+
+    return result, resp.headers
+
+
+def _extract_aai_extended_session(headers: Any) -> Optional[str]:
+    """从响应头的 Set-Cookie 中提取 aai_extended_session。
+
+    用标准库 http.cookies.SimpleCookie 解析，并优先用 httpx.Headers.get_list
+    取多个 Set-Cookie，避免逗号拼接导致的正则错配。
+    """
+    try:
+        if hasattr(headers, "get_list"):
+            set_cookies = headers.get_list("set-cookie")
+        else:
+            raw = headers.get("set-cookie", "") or ""
+            set_cookies = [raw] if raw else []
+    except Exception:
+        return None
+
+    from http.cookies import SimpleCookie
+    for cookie_str in set_cookies:
+        try:
+            jar = SimpleCookie()
+            jar.load(cookie_str)
+            if "aai_extended_session" in jar:
+                return jar["aai_extended_session"].value
+        except Exception:
+            pass
+    return None
+
+
+def _build_session_data_from_auth(
+    email_fallback: str, result: Dict[str, Any], headers: Any
+) -> Dict[str, Any]:
+    """把认证响应规整为持久化的 session_data（登录/续期共用）。"""
+    user = result.get("user", {}) or {}
+    session_jwt = result.get("sessionJWT")
+    session_token = result.get("sessionToken")
+    aai_extended_session = _extract_aai_extended_session(headers)
+
+    jwt_exp = decode_jwt_exp(session_jwt)
+    session_data: Dict[str, Any] = {
+        "email": user.get("email", email_fallback),
+        "user_id": user.get("id"),
+        "api_token": user.get("api_token"),
+        "session_jwt": session_jwt,
+        "session_token": session_token,
+        "aai_extended_session": aai_extended_session,
+        "customer_type": user.get("customer_type"),
+        "auth_type": "dashboard",
+        "logged_in_at": datetime.now().isoformat(),
+        "jwt_expires_at_ts": jwt_exp,
+        "user_info": {
+            "id": user.get("id"),
+            "email": user.get("email"),
+            "customer_type": user.get("customer_type"),
+            "cc_brand": user.get("cc_brand"),
+            "cc_last4": user.get("cc_last4"),
+            "created": user.get("created"),
+            "api_token": user.get("api_token"),
+            "metronome_id": user.get("metronome_id"),
+        },
+    }
+    return session_data
+
+
+def _capture_rolling_cookies(session_data: Dict[str, Any], response: Any) -> bool:
+    """从 dashboard 响应里捕获刷新后的 aai_extended_session，滚动续期持久会话。
+
+    返回 True 表示捕获到了更新的 cookie（调用方负责落盘）。
+    """
+    try:
+        rolled = _extract_aai_extended_session(response.headers)
+    except Exception:
+        rolled = None
+    if rolled and rolled != session_data.get("aai_extended_session"):
+        session_data["aai_extended_session"] = rolled
+        return True
+    return False
+
+
+async def _renew_session(account_email: str) -> Optional[Dict[str, Any]]:
+    """续期某账户会话：优先滚动 cookie，失败则用加密密码自动重新登录。
+
+    成功返回更新后的 session_data；无法续期返回 None。
+    """
+    lock = _renew_locks.setdefault(account_email, asyncio.Lock())
+    async with lock:
+        session_data = await _get_raw_session(account_email)
+        if not session_data:
+            return None
+
+        # 节流：刚续过且 JWT 仍然新鲜则直接复用
+        last = session_data.get("last_renew_ts", 0)
+        if (time.time() - last) < RENEW_THROTTLE_SECONDS and not _session_needs_renewal(
+            session_data
+        ):
+            return session_data
+
+        password = await _decrypt_account_password(session_data)
+        if password:
+            try:
+                result, headers = await _authenticate_dashboard(account_email, password)
+                fresh = _build_session_data_from_auth(account_email, result, headers)
+                # 保留加密密码，便于持续续期
+                fresh["enc_password"] = session_data.get("enc_password")
+                # 仅当新 JWT 能解析出 exp 时，才保留原始 logged_in_at（续期判定走
+                # exp，不依赖登录时间）。若新 JWT 无 exp，_session_needs_renewal 会
+                # 回退到 logged_in_at 估算，此时必须保留本次刷新的新鲜时间，否则刚
+                # 续期的会话会被立刻判为陈旧，导致重复重新认证。
+                if fresh.get("jwt_expires_at_ts") is not None:
+                    fresh["logged_in_at"] = session_data.get(
+                        "logged_in_at", fresh["logged_in_at"]
+                    )
+                fresh["last_renew_ts"] = time.time()
+                await _save_session(fresh)
+                log.info(f"[Session] Renewed via stored credentials for {account_email}")
+                return fresh
+            except HTTPException as e:
+                log.warning(
+                    f"[Session] Credential renew failed for {account_email}: {e.detail}"
+                )
+                # 凭据已失效（如改了密码）：仅移除加密密码以停止用错误密码反复登录
+                # （避免风控/锁号），但保留会话本身——其长效 aai_extended_session /
+                # session_token 可能仍可用，留给真实请求在确实 401 时再清理。
+                if e.status_code == 401 and session_data.get("enc_password"):
+                    session_data.pop("enc_password", None)
+                    try:
+                        await _save_session(session_data)
+                    except Exception:
+                        pass
+            except Exception as e:
+                log.warning(f"[Session] Credential renew error for {account_email}: {e}")
+        else:
+            log.info(
+                f"[Session] No stored credentials for {account_email}; cannot auto-renew"
+            )
+        return None
+
+
+async def _ensure_fresh_session(
+    account_email: str, session_data: Dict[str, Any]
+) -> Dict[str, Any]:
+    """保证 session 的 JWT 足够新鲜；必要时续期。返回可用的 session_data。
+
+    若 JWT 已过期且无法续期，则标记 ``_jwt_stale`` 让请求改用 cookie 认证兜底。
+    """
+    if not _session_needs_renewal(session_data):
+        return session_data
+    renewed = await _renew_session(account_email)
+    if renewed:
+        return renewed
+    # 续期失败：JWT 已陈旧，标记以便请求层退回纯 cookie 认证
+    session_data = dict(session_data)
+    session_data["_jwt_stale"] = True
+    return session_data
+
+
+async def _keepalive_loop() -> None:
+    """后台保活：在 JWT 到期前主动续期所有具备凭据的账户。"""
+    log.info("[Keepalive] Session keep-alive loop running")
+    while True:
+        try:
+            await asyncio.sleep(KEEPALIVE_INTERVAL_SECONDS)
+            accounts = await _get_accounts_list()
+            for acc in accounts:
+                email = acc.get("email")
+                if not email:
+                    continue
+                session = await _get_raw_session(email)
+                if not session or session.get("auth_type", "dashboard") != "dashboard":
+                    continue
+                # 仅对可自动续期（已存凭据）且即将过期的会话主动续期
+                if session.get("enc_password") and _session_needs_renewal(session):
+                    try:
+                        await _renew_session(email)
+                    except Exception as e:
+                        log.warning(f"[Keepalive] Renew failed for {email}: {e}")
+        except asyncio.CancelledError:
+            log.info("[Keepalive] Session keep-alive loop stopped")
+            break
+        except Exception as e:
+            log.error(f"[Keepalive] Loop error: {e}")
+            await asyncio.sleep(30)
+
+
+async def ensure_keepalive_running() -> None:
+    """确保会话保活任务在运行（幂等）。"""
+    global _keepalive_task
+    if _keepalive_task and not _keepalive_task.done():
+        return
+    try:
+        _keepalive_task = asyncio.create_task(_keepalive_loop())
+        log.info("[Keepalive] Session keep-alive task started")
+    except RuntimeError:
+        # 无事件循环（非异步上下文）时跳过
+        log.debug("[Keepalive] No running loop; keep-alive not started")
+
+
+async def stop_keepalive() -> None:
+    """停止会话保活任务（应用关闭时调用）。"""
+    global _keepalive_task
+    if _keepalive_task and not _keepalive_task.done():
+        _keepalive_task.cancel()
+        try:
+            await _keepalive_task
+        except (asyncio.CancelledError, Exception):
+            pass
+    _keepalive_task = None
+
+
+def _prepare_dashboard_request(
+    session: Dict[str, Any],
+    path: str,
+    params: Optional[Dict],
+    *,
+    allow_bearer: bool = True,
+):
+    """构造 Dashboard 请求的 (url, headers)。
+
+    ``allow_bearer=False`` 时不发送可能已失效的 sessionJWT Bearer，
+    改为依赖长效 cookie（aai_extended_session / session_token）认证兜底。
+    """
+    auth_type = session.get("auth_type", "dashboard")
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+        "Accept-Encoding": "gzip, deflate",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+        "Origin": ASSEMBLY_DASHBOARD_BASE,
+        "Referer": f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/",
+        "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not-A.Brand";v="99"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"macOS"',
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+    }
+
+    if auth_type == "api_key":
+        api_key = session.get("api_key")
+        if not api_key:
+            raise HTTPException(status_code=401, detail="Invalid session. Please login again.")
+        headers["Authorization"] = api_key
+        return f"https://api.assemblyai.com{path}", headers
+
+    # dashboard 认证
+    session_jwt = session.get("session_jwt")
+    session_token = session.get("session_token")
+    aai_extended_session = session.get("aai_extended_session")
+
+    if session_jwt and allow_bearer:
+        headers["Authorization"] = f"Bearer {session_jwt}"
+
+    cookies = []
+    if aai_extended_session:
+        cookies.append(f"aai_extended_session={aai_extended_session}")
+    if session_token:
+        cookies.append(f"session_token={session_token}")
+    # JWT 陈旧（allow_bearer=False）时连 cookie 里的 session_jwt 也一并丢弃，
+    # 仅依赖长效 aai_extended_session / session_token，避免失效 JWT 触发 401。
+    if session_jwt and allow_bearer:
+        cookies.append(f"session_jwt={session_jwt}")
+    if cookies:
+        headers["Cookie"] = "; ".join(cookies)
+
+    if path.startswith("/dashboard/"):
+        headers["Accept"] = "text/x-component"
+        headers["RSC"] = "1"
+        if params:
+            try:
+                from urllib.parse import urlencode
+                next_params = {k: v for k, v in params.items() if k != "_rsc"}
+                if next_params:
+                    qs = urlencode(next_params, doseq=True)
+                    headers["Next-Url"] = f"{path}?{qs}"
+                else:
+                    headers["Next-Url"] = path
+            except Exception:
+                headers["Next-Url"] = path
+        else:
+            headers["Next-Url"] = path
+        headers.setdefault("priority", "u=1, i")
+        headers["X-Requested-With"] = "NextJS-RSC"
+        if path.endswith("/usage"):
+            headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/usage"
+        elif path.endswith("/code"):
+            headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/code"
+        elif path.endswith("/cost"):
+            headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/cost"
+        elif "/account/billing" in path:
+            headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/account/billing"
+        return f"{ASSEMBLY_DASHBOARD_BASE}{path}", headers
+
+    # 旧式 cookie 认证
+    legacy_cookies = session.get("cookies", {})
+    if legacy_cookies:
+        headers["Cookie"] = "; ".join([f"{k}={v}" for k, v in legacy_cookies.items()])
+    return f"{ASSEMBLY_DASHBOARD_BASE}{path}", headers
+
+
 async def _make_dashboard_request(
     method: str,
     path: str,
@@ -390,128 +844,74 @@ async def _make_dashboard_request(
     Returns:
         响应数据或 None
     """
-    import httpx
-    
     session = await _get_session(account_email)
     if not session:
         raise HTTPException(status_code=401, detail="Not logged in. Please login first.")
-    
-    auth_type = session.get("auth_type", "dashboard")
-    
+
+    resolved_email = account_email or session.get("email")
+
+    # 主动续期：Stytch sessionJWT 仅 5 分钟寿命，过期前先刷新避免请求直接 401
+    if session.get("auth_type", "dashboard") == "dashboard" and resolved_email:
+        session = await _ensure_fresh_session(resolved_email, session)
+
     try:
         client = await _get_dashboard_client()
-        # 完整的请求头，模拟浏览器行为
-        headers = {
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
-            "Accept-Encoding": "gzip, deflate",
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
-            "Origin": ASSEMBLY_DASHBOARD_BASE,
-            "Referer": f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/",
-            "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not-A.Brand";v="99"',
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Platform": '"macOS"',
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-origin",
-        }
-        
-        if auth_type == "api_key":
-            api_key = session.get("api_key")
-            if not api_key:
-                raise HTTPException(status_code=401, detail="Invalid session. Please login again.")
-            headers["Authorization"] = api_key
-            url = f"https://api.assemblyai.com{path}"
-        elif auth_type == "dashboard":
-            session_jwt = session.get("session_jwt")
-            session_token = session.get("session_token")
-            aai_extended_session = session.get("aai_extended_session")
 
-            if session_jwt:
-                headers["Authorization"] = f"Bearer {session_jwt}"
-
-            cookies = []
-            if aai_extended_session:
-                cookies.append(f"aai_extended_session={aai_extended_session}")
-            if session_token:
-                cookies.append(f"session_token={session_token}")
-            if session_jwt:
-                cookies.append(f"session_jwt={session_jwt}")
-
-            if cookies:
-                headers["Cookie"] = "; ".join(cookies)
-
-            if path.startswith("/dashboard/"):
-                headers["Accept"] = "text/x-component"
-                headers["RSC"] = "1"
-                if params:
-                    try:
-                        from urllib.parse import urlencode
-                        # Next-Url 不应携带 _rsc，保持与页面真实查询一致
-                        next_params = {k: v for k, v in params.items() if k != "_rsc"}
-                        if next_params:
-                            qs = urlencode(next_params, doseq=True)
-                            headers["Next-Url"] = f"{path}?{qs}"
-                        else:
-                            headers["Next-Url"] = path
-                    except Exception:
-                        headers["Next-Url"] = path
-                else:
-                    headers["Next-Url"] = path
-                headers.setdefault("priority", "u=1, i")
-                headers["X-Requested-With"] = "NextJS-RSC"
-                if path.endswith("/usage"):
-                    headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/usage"
-                elif path.endswith("/code"):
-                    headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/code"
-                elif path.endswith("/cost"):
-                    headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/cost"
-                elif "/account/billing" in path:
-                    headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/account/billing"
-
-                url = f"{ASSEMBLY_DASHBOARD_BASE}{path}"
-
-                log.debug(f"Dashboard request URL: {url}")
-                log.debug(f"Dashboard request cookies count: {len(cookies)}")
-                log.debug(f"Dashboard request cookies: {', '.join([c.split('=')[0] for c in cookies])}")
-            else:
-                # 使用 Cookie 认证（旧方式）
-                cookies = session.get("cookies", {})
-                if cookies:
-                    cookie_str = "; ".join([f"{k}={v}" for k, v in cookies.items()])
-                    headers["Cookie"] = cookie_str
-                url = f"{ASSEMBLY_DASHBOARD_BASE}{path}"
-            
+        async def _send(sess: Dict[str, Any]):
+            # JWT 过期/被标记陈旧时退回纯 cookie 认证，避免发送失效 Bearer
+            jwt_stale = bool(sess.get("_jwt_stale")) or (
+                sess.get("auth_type", "dashboard") == "dashboard"
+                and _session_needs_renewal(sess)
+            )
+            url, headers = _prepare_dashboard_request(
+                sess, path, params, allow_bearer=not jwt_stale
+            )
             if method.upper() == "GET":
-                resp = await client.get(url, headers=headers, params=params)
+                return await client.get(url, headers=headers, params=params)
             elif method.upper() == "POST":
-                resp = await client.post(url, headers=headers, json=data, params=params)
-            else:
-                raise ValueError(f"Unsupported method: {method}")
-            
-            log.debug(f"Dashboard API {method} {path}: {resp.status_code}")
-            log.debug(f"Dashboard API response headers: {_summarize_headers_for_log(resp.headers)}")
-            
+                return await client.post(url, headers=headers, json=data, params=params)
+            raise ValueError(f"Unsupported method: {method}")
+
+        resp = await _send(session)
+        log.debug(f"Dashboard API {method} {path}: {resp.status_code}")
+        log.debug(f"Dashboard API response headers: {_summarize_headers_for_log(resp.headers)}")
+
+        # 401：先尝试续期并重试一次，续期失败才清除会话
+        if resp.status_code == 401:
+            renewed = await _renew_session(resolved_email) if resolved_email else None
+            if renewed:
+                log.info(f"[Session] Retrying {path} after renewal for {resolved_email}")
+                session = renewed
+                resp = await _send(session)
             if resp.status_code == 401:
-                # Session 失效，清除并提示重新登录
-                await _clear_session()
-                raise HTTPException(status_code=401, detail="Session expired. Please login again.")
-            
-            if resp.status_code >= 400:
-                log.error(f"Dashboard API error: {resp.status_code} - {resp.text[:500]}")
+                await _clear_session(resolved_email)
                 raise HTTPException(
-                    status_code=resp.status_code,
-                    detail=f"Dashboard API error: {resp.status_code}"
+                    status_code=401, detail="Session expired. Please login again."
                 )
-            
-            # 尝试解析 JSON
-            try:
-                return resp.json()
-            except Exception:
-                # 可能是 RSC 格式，返回原始文本
-                return {"raw": resp.text}
-                
+
+        if resp.status_code >= 400:
+            log.error(f"Dashboard API error: {resp.status_code} - {resp.text[:500]}")
+            raise HTTPException(
+                status_code=resp.status_code,
+                detail=f"Dashboard API error: {resp.status_code}",
+            )
+
+        # 捕获滚动 cookie（aai_extended_session），延长持久会话
+        try:
+            if session.get("auth_type", "dashboard") == "dashboard" and _capture_rolling_cookies(
+                session, resp
+            ):
+                session.pop("_jwt_stale", None)
+                await _save_session(session)
+        except Exception as e:
+            log.debug(f"Rolling-cookie capture skipped: {e}")
+
+        try:
+            return resp.json()
+        except Exception:
+            # 可能是 RSC 格式，返回原始文本
+            return {"raw": resp.text}
+
     except HTTPException:
         raise
     except Exception as e:
@@ -530,147 +930,34 @@ async def login(request: LoginRequest) -> Dict[str, Any]:
     AssemblyAI 使用 /dashboard/api/auth/authenticate 端点进行认证。
     """
     log.info(f"Attempting login for {request.email}")
-    
+
     try:
-        import httpx
-        # 直接创建客户端，不使用代理（AssemblyAI Dashboard 可能不支持代理）
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            # 使用正确的认证端点
-            login_url = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/api/auth/authenticate"
-            
-            # 完整的请求头，模拟浏览器行为
-            # 注意：不使用 br (Brotli) 编码，因为 httpx 默认不支持
-            headers = {
-                "Content-Type": "application/json",
-                "Accept": "application/json, text/plain, */*",
-                "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
-                "Accept-Encoding": "gzip, deflate",
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
-                "Origin": ASSEMBLY_DASHBOARD_BASE,
-                "Referer": f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/login",
-                "Sec-Ch-Ua": '"Chromium";v="142", "Google Chrome";v="142", "Not-A.Brand";v="99"',
-                "Sec-Ch-Ua-Mobile": "?0",
-                "Sec-Ch-Ua-Platform": '"macOS"',
-                "Sec-Fetch-Dest": "empty",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Site": "same-origin",
+        # 认证（与"密码兜底续期"复用同一实现）
+        result, resp_headers = await _authenticate_dashboard(
+            request.email, request.password
+        )
+        log.info("Using session JWT from login response directly")
+
+        session_data = _build_session_data_from_auth(
+            request.email, result, resp_headers
+        )
+        # 加密保存密码，支撑会话失效时的自动重新登录（续期兜底）
+        await _attach_encrypted_password(session_data, request.password)
+        session_data["last_renew_ts"] = time.time()
+
+        email = session_data.get("email", request.email)
+        if await _save_session(session_data):
+            # 触发后台预加载（非阻塞）
+            await _trigger_preload_after_login(email)
+            # 确保后台保活任务在运行
+            await ensure_keepalive_running()
+            return {
+                "success": True,
+                "message": "Login successful",
+                "email": email,
+                "user_id": session_data.get("user_id"),
             }
-            
-            # 登录数据
-            login_data = {
-                "email": request.email,
-                "password": request.password,
-                "utm": {}
-            }
-            
-            log.debug(f"Login URL: {login_url}")
-            log.debug(f"Login headers: {headers}")
-            log.debug(f"Login data: {{'email': '{request.email}', 'password': '***', 'utm': {{}}}}")
-            
-            resp = await client.post(
-                login_url,
-                json=login_data,
-                headers=headers,
-            )
-            
-            log.debug(f"Login response status: {resp.status_code}")
-            log.debug(f"Login response headers: {dict(resp.headers)}")
-            
-            # 如果不是 200，记录响应内容以便调试
-            if resp.status_code != 200:
-                try:
-                    response_text = resp.text[:500] if resp.text else "empty"
-                    log.debug(f"Login response body: {response_text}")
-                except Exception:
-                    pass
-            
-            if resp.status_code == 200:
-                try:
-                    result = resp.json()
-                    log.debug(f"Login result keys: {list(result.keys())}")
-                    
-                    # 检查是否认证成功
-                    if result.get("isAuthenticated"):
-                        user = result.get("user", {})
-                        session_jwt = result.get("sessionJWT")
-                        session_token = result.get("sessionToken")
-                        
-                        # 从响应头中提取 aai_extended_session cookie
-                        aai_extended_session = None
-                        set_cookie = resp.headers.get("set-cookie", "")
-                        if "aai_extended_session=" in set_cookie:
-                            # 解析 cookie 值
-                            import re
-                            match = re.search(r'aai_extended_session=([^;]+)', set_cookie)
-                            if match:
-                                aai_extended_session = match.group(1)
-                                log.debug(f"Extracted aai_extended_session cookie")
-                        
-                        # 第二步：调用 Stytch API 验证 session（模拟浏览器行为）
-                        # 注意：Stytch API 可能不需要额外认证，直接使用登录返回的 JWT
-                        stytch_session_jwt = session_jwt
-                        
-                        # 跳过 Stytch 认证步骤，因为登录已经返回了有效的 JWT
-                        # AssemblyAI Dashboard 使用的是 Stytch 的 B2B 认证，
-                        # 登录响应中的 sessionJWT 已经是有效的，不需要额外刷新
-                        log.info("Using session JWT from login response directly")
-                        
-                        # 保存 session 数据（包含完整用户信息）
-                        session_data = {
-                            "email": user.get("email", request.email),
-                            "user_id": user.get("id"),
-                            "api_token": user.get("api_token"),
-                            "session_jwt": stytch_session_jwt,
-                            "session_token": session_token,
-                            "aai_extended_session": aai_extended_session,
-                            "customer_type": user.get("customer_type"),
-                            "auth_type": "dashboard",
-                            "logged_in_at": datetime.now().isoformat(),
-                            # 保存完整用户信息，用于 /api/account/info
-                            "user_info": {
-                                "id": user.get("id"),
-                                "email": user.get("email"),
-                                "customer_type": user.get("customer_type"),
-                                "cc_brand": user.get("cc_brand"),
-                                "cc_last4": user.get("cc_last4"),
-                                "created": user.get("created"),
-                                "api_token": user.get("api_token"),
-                                "metronome_id": user.get("metronome_id"),
-                            },
-                        }
-                        
-                        if await _save_session(session_data):
-                            # 触发后台预加载（非阻塞）
-                            await _trigger_preload_after_login(user.get("email", request.email))
-                            
-                            return {
-                                "success": True,
-                                "message": "Login successful",
-                                "email": user.get("email", request.email),
-                                "user_id": user.get("id"),
-                            }
-                    else:
-                        raise HTTPException(
-                            status_code=401,
-                            detail="Authentication failed"
-                        )
-                except HTTPException:
-                    raise
-                except Exception as e:
-                    log.error(f"Failed to parse login response: {e}")
-                    raise HTTPException(status_code=500, detail=f"Failed to parse response: {e}")
-            
-            # 登录失败
-            error_msg = "Invalid email or password"
-            try:
-                error_data = resp.json()
-                error_msg = error_data.get("error") or error_data.get("message") or error_msg
-            except Exception:
-                pass
-            
-            log.debug(f"Login failed: {error_msg}")
-            raise HTTPException(status_code=401, detail=error_msg)
-            
+        raise HTTPException(status_code=500, detail="Failed to persist session")
     except HTTPException:
         raise
     except Exception as e:
@@ -699,7 +986,7 @@ async def logout(account_email: Optional[str] = None) -> Dict[str, Any]:
 @router.get("/session")
 async def get_session_info(account_email: Optional[str] = None) -> SessionInfo:
     """获取 session 状态
-    
+
     Args:
         account_email: 账户邮箱，如果为None则获取当前账户
     """
@@ -709,8 +996,64 @@ async def get_session_info(account_email: Optional[str] = None) -> SessionInfo:
             email=session.get("email", ""),
             logged_in=True,
             expires_at=session.get("expires_at"),
+            jwt_seconds_remaining=_jwt_seconds_remaining(session),
+            auto_renew=bool(session.get("enc_password")),
         )
     return SessionInfo(email="", logged_in=False)
+
+
+@router.post("/refresh")
+async def refresh_session(account_email: Optional[str] = None) -> Dict[str, Any]:
+    """主动续期账户会话（保活）。
+
+    前端可定时调用以保持登录，避免 5 分钟 JWT 过期后被动失效。
+    若 JWT 仍然新鲜则直接返回当前状态，不触发上游请求。
+    """
+    if not account_email:
+        try:
+            adapter = await get_storage_adapter()
+            current = await adapter.get_config(CURRENT_ACCOUNT_KEY)
+            if current:
+                account_email = current.get("email")
+        except Exception:
+            pass
+
+    if not account_email:
+        raise HTTPException(status_code=401, detail="Not logged in. Please login first.")
+
+    session = await _get_session(account_email)
+    if not session:
+        raise HTTPException(status_code=401, detail="Session not found. Please login again.")
+
+    renewed = False
+    cookie_fallback = False
+    if _session_needs_renewal(session):
+        fresh = await _renew_session(account_email)
+        if fresh:
+            session = fresh
+            renewed = True
+        elif session.get("aai_extended_session") or session.get("session_token"):
+            # 无法主动续期（无凭据/旧会话），但仍有长效 cookie 可走兜底认证：
+            # 不强制下线，交给真实请求在确实 401 时再清理，避免误判"已过期"。
+            cookie_fallback = True
+        else:
+            # 既无法续期、也无可用的长效 cookie：清除死会话再 401，否则 /session
+            # 仅看 7 天 expires_at，前端会把死账户当作已登录并重启保活循环。
+            await _clear_session(account_email)
+            raise HTTPException(
+                status_code=401,
+                detail="Session expired and could not be renewed. Please login again.",
+            )
+
+    return {
+        "success": True,
+        "renewed": renewed,
+        "cookie_fallback": cookie_fallback,
+        "email": session.get("email"),
+        "jwt_seconds_remaining": _jwt_seconds_remaining(session),
+        "auto_renew": bool(session.get("enc_password")),
+        "expires_at": session.get("expires_at"),
+    }
 
 
 @router.get("/accounts")
