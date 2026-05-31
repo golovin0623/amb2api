@@ -166,6 +166,59 @@ def test_enforce_token_quota_consume_false_checks_whitelist_not_quota(monkeypatc
     asyncio.run(_run())
 
 
+def test_enforce_token_quota_validates_fallback_models(monkeypatch):
+    """受限 token 的 fallbacks 必须同样受 allowed_models 白名单约束（回归 Codex P1）：
+    主模型合法但回退模型非法时拒绝，且不消费配额；不限模型/ master 不受影响。"""
+    from src.api import openai_router as orouter
+    import fastapi
+
+    tm = TokenManager()
+    tm._initialized = True
+    tm._tokens = {}
+
+    async def _get_tm():
+        return tm
+
+    async def _master_pwd():
+        return "master-pw"
+
+    monkeypatch.setattr("src.services.token_manager.get_token_manager", _get_tm)
+    monkeypatch.setattr("config.get_api_password", _master_pwd)
+
+    async def _run():
+        meta = await tm.create_token(name="fb", quota=5, allowed_models=["gpt-5"])
+        tok = meta["token"]
+        req = _FakeReq()
+        assert await orouter._resolve_identity(req, tok) is True
+
+        # 主模型合法、但 fallback 含白名单外模型 → 403，且不消费配额
+        with pytest.raises(fastapi.HTTPException) as ei:
+            await orouter.enforce_token_quota(req, "gpt-5", fallback_models=["claude-opus-4-7"])
+        assert ei.value.status_code == 403
+        assert (await tm.get(tok))["used"] == 0, "非法回退不应扣配额"
+
+        # 对象形式的 fallbacks 也要被提取并校验
+        assert orouter._extract_fallback_model_ids([{"model": "claude-x"}, "gpt-4.1", " "]) == ["claude-x", "gpt-4.1"]
+
+        # fallback 全在白名单内 → 放行并消费一次
+        await orouter.enforce_token_quota(req, "gpt-5", fallback_models=["gpt-5"])
+        assert (await tm.get(tok))["used"] == 1
+
+        # 不限模型的 token（allowed_models=None）→ fallbacks 不拦
+        meta2 = await tm.create_token(name="open", quota=5)
+        tok2 = meta2["token"]
+        req2 = _FakeReq()
+        assert await orouter._resolve_identity(req2, tok2) is True
+        await orouter.enforce_token_quota(req2, "anything", fallback_models=["whatever"])
+
+        # master 不受限
+        req_m = _FakeReq()
+        assert await orouter._resolve_identity(req_m, "master-pw") is True
+        await orouter.enforce_token_quota(req_m, "gpt-5", fallback_models=["claude-x"])
+
+    asyncio.run(_run())
+
+
 def test_quota_exhausted_token_still_authenticates_then_429(monkeypatch):
     """配额耗尽的 token 鉴权阶段仍确立身份（不返回 403 密码错误），
     配额拦截发生在 enforce 阶段（429）。回归 Codex P2。"""

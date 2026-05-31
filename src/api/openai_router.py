@@ -6,7 +6,7 @@ import json
 import time
 import uuid
 import asyncio
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -72,18 +72,49 @@ async def authenticate(
     return token
 
 
-async def enforce_token_quota(request: Request, model: str, consume: bool = True) -> None:
+def _extract_fallback_model_ids(fallbacks: Any) -> List[str]:
+    """从 fallbacks 字段提取模型 id（兼容字符串数组或 {model/name: ...} 对象数组）。"""
+    out: List[str] = []
+    if isinstance(fallbacks, list):
+        for fb in fallbacks:
+            if isinstance(fb, str) and fb.strip():
+                out.append(fb.strip())
+            elif isinstance(fb, dict):
+                m = fb.get("model") or fb.get("name")
+                if isinstance(m, str) and m.strip():
+                    out.append(m.strip())
+    return out
+
+
+async def enforce_token_quota(
+    request: Request,
+    model: str,
+    consume: bool = True,
+    fallback_models: Optional[List[str]] = None,
+) -> None:
     """对 user token 强制：模型白名单 + 禁用/过期 + 配额。master 不受限。
 
     在处理函数拿到 model 后调用。配额耗尽 → 429；模型不允许/禁用/过期 → 403。
     consume=True 原子消费一次配额（计费端点）；consume=False 只校验访问权
     （白名单/禁用/过期），不消费、且不因配额耗尽而拒绝（用于 count_tokens 这类免费本地端点）。
+    fallback_models 若提供，会与主模型受同一 allowed_models 白名单约束——否则受限 token 可
+    借 fallbacks 绕过白名单请求未授权模型（主模型合法、回退模型非法，上游回退/重试时即被使用）。
     """
     identity = getattr(request.state, "identity", None)
     if not identity or identity.get("master"):
         return
     from ..services.token_manager import get_token_manager
     tm = await get_token_manager()
+    # fallbacks 先于配额消费校验：避免非法回退请求白白扣掉一次配额。
+    if fallback_models:
+        meta = (await tm.validate(identity["token"], model, check_quota=False)).get("meta") or {}
+        allowed = meta.get("allowed_models")
+        if allowed is not None:
+            for fb in fallback_models:
+                if fb and fb not in allowed:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN, detail="model_not_allowed"
+                    )
     if consume:
         res = await tm.try_consume(identity["token"], model)
     else:
@@ -479,7 +510,11 @@ async def anthropic_messages(
 
     # 多租户：对 user token 强制模型白名单 + 配额（包装成 Anthropic 错误壳）
     try:
-        await enforce_token_quota(request, request_data.model)
+        await enforce_token_quota(
+            request,
+            request_data.model,
+            fallback_models=_extract_fallback_model_ids(getattr(request_data, "fallbacks", None)),
+        )
     except HTTPException as e:
         return JSONResponse(
             content=openai_error_to_anthropic_error(
@@ -696,7 +731,11 @@ async def chat_completions(
 
     # 多租户：对 user token 强制模型白名单 + 配额（master 不受限）。放在校验之外，
     # 避免 429/403 被上面的 except 包装成 400。
-    await enforce_token_quota(request, request_data.model)
+    await enforce_token_quota(
+        request,
+        request_data.model,
+        fallback_models=_extract_fallback_model_ids(getattr(request_data, "fallbacks", None)),
+    )
 
     # 健康检查
     if (len(request_data.messages) == 1 and
