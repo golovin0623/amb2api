@@ -84,6 +84,46 @@ def test_empty_allowed_models_denies_all_models():
     asyncio.run(_run())
 
 
+def test_load_normalizes_missing_optional_fields_and_backfills_id(monkeypatch):
+    """模拟 TOML 丢弃 None 后的持久化形态：加载时补齐 quota/allowed_models/expires_at=None
+    并为缺失 id 的 token 回填稳定 id；语义（无限/全模型/不过期）正确。"""
+    import src.services.token_manager as tmmod
+
+    legacy = {
+        "sk-amb-LEGACY": {
+            "token": "sk-amb-LEGACY", "name": "old", "enabled": True,
+            "used": 3, "created_at": 1.0,
+            # 注意：无 quota / allowed_models / expires_at / id（被 TOML 丢弃或旧版本所致）
+        }
+    }
+
+    class _A:
+        async def get_config(self, k, d=None):
+            return dict(legacy)
+
+        async def set_config(self, k, v):
+            return True
+
+    async def _fake():
+        return _A()
+
+    monkeypatch.setattr(tmmod, "get_storage_adapter", _fake)
+
+    async def _run():
+        tm = tmmod.TokenManager()
+        await tm.initialize()
+        m = tm._tokens["sk-amb-LEGACY"]
+        assert m["quota"] is None and m["allowed_models"] is None and m["expires_at"] is None
+        assert m["id"] and len(m["id"]) == 32
+        # 稳定：再次回填得到相同 id（基于 token 哈希）
+        import hashlib
+        assert m["id"] == hashlib.sha256(b"sk-amb-LEGACY").hexdigest()[:32]
+        # 语义正确：无限配额 / 任意模型 / 不过期
+        assert (await tm.validate("sk-amb-LEGACY", "any-model"))["valid"]
+
+    asyncio.run(_run())
+
+
 def test_expires_at_zero_is_treated_as_expired():
     """expires_at=0（falsy）应判为已过期，而非永不过期。"""
     async def _run():

@@ -60,6 +60,22 @@ class TokenManager(DebouncedSaver):
                 self._tokens = {
                     str(k): v for k, v in data.items() if isinstance(v, dict)
                 }
+                # 归一化加载的 token：补齐可选字段默认值。
+                # 必要性：File 后端用 TOML 持久化，而 TOML 无法表示 null —— toml.dumps 会
+                # **静默丢弃** value 为 None 的键（quota/allowed_models/expires_at），重启加载后这些键缺失。
+                # 这里显式补回 None（与 .get() 语义一致），并为缺失 id 的旧 token 用 token 哈希回填稳定 id，
+                # 不依赖"缺失键==None"的隐式行为，也避免未来直接索引 KeyError。
+                import hashlib
+                for tok, meta in self._tokens.items():
+                    meta.setdefault("token", tok)
+                    meta.setdefault("name", "token")
+                    meta.setdefault("enabled", True)
+                    meta.setdefault("used", 0)
+                    meta.setdefault("quota", None)
+                    meta.setdefault("allowed_models", None)
+                    meta.setdefault("expires_at", None)
+                    if not meta.get("id"):
+                        meta["id"] = hashlib.sha256(tok.encode("utf-8")).hexdigest()[:32]
             log.debug(f"Loaded {len(self._tokens)} user tokens")
         except Exception as e:
             log.error(f"Failed to load user tokens: {e}")
