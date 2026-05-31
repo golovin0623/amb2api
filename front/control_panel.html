@@ -10517,6 +10517,14 @@
             return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
         }
 
+        // 属性安全转义：escapeHtml 基于 textContent，不会转义引号，放进 title="" 等属性时
+        // 含双引号的 token 名称可能闭合属性并注入事件处理器，故属性场景额外转义引号。
+        function tkAttr(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
         function tkRenderTokenCard(t) {
             const used = t.used || 0;
             const unlimited = (t.quota === null || t.quota === undefined);
@@ -10559,7 +10567,7 @@
             let modelsHtml;
             if (t.allowed_models && t.allowed_models.length) {
                 modelsHtml = t.allowed_models.slice(0, 6).map(m =>
-                    '<span class="mtag" title="' + escapeHtml(m) + '">' + escapeHtml(m) + '</span>').join('');
+                    '<span class="mtag" title="' + tkAttr(m) + '">' + escapeHtml(m) + '</span>').join('');
                 if (t.allowed_models.length > 6) modelsHtml += '<span class="mtag">+' + (t.allowed_models.length - 6) + '</span>';
             } else {
                 modelsHtml = '<span class="mtag all">全部模型</span>';
@@ -10575,7 +10583,7 @@
             return '<div class="tk-token' + (enabled && !isExpired ? '' : ' disabled') + '">' +
                 '<div class="tk-token-top">' +
                     '<div class="tk-avatar">' + escapeHtml(initial) + '</div>' +
-                    '<div class="tk-token-name"><div class="nm" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</div>' +
+                    '<div class="tk-token-name"><div class="nm" title="' + tkAttr(name) + '">' + escapeHtml(name) + '</div>' +
                         (sub ? '<div class="sub">' + escapeHtml(sub) + '</div>' : '') + '</div>' +
                     badge +
                 '</div>' +
@@ -10673,7 +10681,7 @@
                     '<div class="tk-reveal-title">✓ 令牌已创建 — 请立即复制，完整内容仅显示这一次</div>' +
                     '<div class="tk-reveal-row">' +
                         '<code id="tkRevealCode">' + escapeHtml(meta.token) + '</code>' +
-                        '<button class="tk-btn-ghost" onclick="copyTokenValue(this)" data-token="' + escapeHtml(meta.token) + '">📋 复制</button>' +
+                        '<button class="tk-btn-ghost" onclick="copyTokenValue(this)" data-token="' + tkAttr(meta.token) + '">📋 复制</button>' +
                     '</div>' +
                 '</div>';
                 document.getElementById('newTokenName').value = '';
