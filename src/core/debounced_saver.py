@@ -37,7 +37,9 @@ class DebouncedSaver:
         """标记有未保存改动，并安排一次尾随保存（窗口内多次只落盘一次）。"""
         self._dirty = True
         if self._save_interval <= 0:
-            asyncio.create_task(self._flush())
+            # 立即异步保存；存到 _save_task 保持强引用，避免任务被 GC 提前回收
+            if self._save_task is None or self._save_task.done():
+                self._save_task = asyncio.create_task(self._flush())
             return
         if self._save_task is None or self._save_task.done():
             self._save_task = asyncio.create_task(self._delayed_save())
@@ -50,7 +52,10 @@ class DebouncedSaver:
             pass
 
     async def _flush(self) -> None:
-        if self._dirty:
+        # 循环直到没有新的脏数据：覆盖在 _do_save() 期间（唯一的 await 点）到来的改动。
+        # 由于最后一次 `while self._dirty` 判定到函数返回之间没有 await，期间不会有协程切入，
+        # 故不存在"判定为干净后又被弄脏却无人保存"的窗口。
+        while self._dirty:
             self._dirty = False
             await self._do_save()
 

@@ -135,13 +135,16 @@ class TokenManager(DebouncedSaver):
     # ---- 校验 + 配额 ---------------------------------------------------------
 
     @staticmethod
-    def _check_meta(meta: Optional[Dict[str, Any]], model: Optional[str]) -> str:
+    def _check_meta(meta: Optional[Dict[str, Any]], model: Optional[str], check_quota: bool = True) -> str:
         """返回拒绝原因（通过为空串）。validate 与 try_consume 共用，避免两处规则漂移。
 
         语义要点：
+        - 身份类检查（不存在/禁用/过期）始终执行；用于鉴权阶段确立身份。
         - allowed_models 为 None = 不限模型；为 []（空白名单）= 拒绝所有模型（用 `is not None` 判定，
           避免空列表被当作"无限制"）。
         - expires_at 为 None = 永不过期；任意非 None 值都按真实时间戳判定（0 视为已过期，fail-safe）。
+        - check_quota=False 时跳过配额检查：鉴权只确立身份，配额留给 enforce_token_quota
+          返回正确的 429（否则配额耗尽的 token 会在鉴权阶段被当成 403 密码错误）。
         """
         if not meta:
             return "invalid_token"
@@ -157,16 +160,17 @@ class TokenManager(DebouncedSaver):
         allowed = meta.get("allowed_models")
         if model and allowed is not None and model not in allowed:
             return "model_not_allowed"
-        quota = meta.get("quota")
-        if quota is not None and meta.get("used", 0) >= int(quota):
-            return "quota_exceeded"
+        if check_quota:
+            quota = meta.get("quota")
+            if quota is not None and meta.get("used", 0) >= int(quota):
+                return "quota_exceeded"
         return ""
 
-    async def validate(self, token: str, model: Optional[str] = None) -> Dict[str, Any]:
-        """只读校验（不消费配额）。返回 {valid, reason, meta}。"""
+    async def validate(self, token: str, model: Optional[str] = None, check_quota: bool = True) -> Dict[str, Any]:
+        """只读校验（不消费配额）。返回 {valid, reason, meta}。check_quota=False 只校验身份+模型。"""
         await self.initialize()
         meta = self._tokens.get(token)
-        reason = self._check_meta(meta, model)
+        reason = self._check_meta(meta, model, check_quota=check_quota)
         return {"valid": reason == "", "reason": reason, "meta": meta}
 
     async def try_consume(self, token: str, model: Optional[str] = None) -> Dict[str, Any]:

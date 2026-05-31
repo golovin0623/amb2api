@@ -1519,7 +1519,8 @@ async def fetch_assembly_models() -> Dict[str, Any]:
     try:
         async with http_client.get_client(timeout=30.0) as client:
             headers = {"Authorization": api_key}
-            resp = await client.get(models_url, headers=headers)
+            # 显式传 per-request 超时：共享客户端默认 read=300s，模型刷新只需 30s
+            resp = await client.get(models_url, headers=headers, timeout=30.0)
             if 200 <= resp.status_code < 400:
                 try:
                     data = resp.json()

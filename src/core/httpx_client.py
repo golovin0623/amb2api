@@ -37,6 +37,8 @@ _DEFAULT_LIMITS = httpx.Limits(
 _shared_client: Optional[httpx.AsyncClient] = None
 _shared_client_proxy: Optional[str] = None
 _client_lock = asyncio.Lock()
+# 持有后台任务的强引用，避免 fire-and-forget 任务在 await 期间被 GC 提前回收
+_background_tasks: set = set()
 
 
 def _build_client(proxy: Optional[str]) -> httpx.AsyncClient:
@@ -87,7 +89,10 @@ async def get_shared_client() -> httpx.AsyncClient:
         if old is not None and not old.is_closed:
             # 不立即 aclose：可能仍有 in-flight 流在用旧客户端读取（改代理时尤甚）。
             # 延迟优雅关闭，给已建立的流（read 超时上限 300s）留出收尾时间。
-            asyncio.create_task(_graceful_close_old_client(old))
+            # 强引用入集合，防止 330s sleep 期间任务被 GC 回收导致连接池泄漏。
+            task = asyncio.create_task(_graceful_close_old_client(old))
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
         log.debug(
             f"共享 HTTP 客户端已构建 (http2={_HTTP2_AVAILABLE}, proxy={'yes' if proxy else 'no'})"
         )
@@ -122,7 +127,12 @@ class HttpxClientManager:
     async def get_client(
         self, timeout: float = 30.0, **kwargs
     ) -> AsyncGenerator[httpx.AsyncClient, None]:
-        """产出共享客户端；**不**在退出时关闭它（连接归还连接池）。"""
+        """产出共享客户端；**不**在退出时关闭它（连接归还连接池）。
+
+        注意：共享客户端有自己的默认超时（read=300s）。若调用方需要更紧的超时，
+        必须把 ``timeout=`` 显式传给具体请求方法（如 ``client.get(url, timeout=30)``）——
+        本上下文管理器的 ``timeout`` 参数不会自动套到请求上（共享客户端无法按调用方改默认值）。
+        """
         client = await get_shared_client()
         yield client
 

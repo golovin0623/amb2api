@@ -45,13 +45,16 @@ async def _resolve_identity(request: Request, token: str) -> bool:
     返回是否通过鉴权。
     """
     from config import get_api_password
+    from .auth import consteq
     password = await get_api_password()
-    if token and token == password:
+    if token and consteq(token, password):  # 恒定时间比较，防计时攻击
         request.state.identity = {"master": True, "token": token, "meta": None}
         return True
     from ..services.token_manager import get_token_manager
     tm = await get_token_manager()
-    v = await tm.validate(token)  # 仅校验启用/过期；配额与模型稍后强制
+    # 鉴权只确立身份（存在/启用/未过期）；配额与模型白名单留给 enforce_token_quota，
+    # 否则配额耗尽的 token 会在此被当成 403 密码错误，而非请求阶段的 429。
+    v = await tm.validate(token, check_quota=False)
     if v.get("valid"):
         request.state.identity = {"master": False, "token": token, "meta": v["meta"]}
         return True
@@ -84,10 +87,8 @@ async def enforce_token_quota(request: Request, model: str, consume: bool = True
     if consume:
         res = await tm.try_consume(identity["token"], model)
     else:
-        res = await tm.validate(identity["token"], model)
-        # 免费/本地端点：不消费配额，也不因配额已用尽而拒绝；但仍强制白名单/禁用/过期
-        if not res.get("valid") and res.get("reason") == "quota_exceeded":
-            return
+        # 免费/本地端点：只校验身份+模型白名单，不消费、不因配额耗尽而拒绝
+        res = await tm.validate(identity["token"], model, check_quota=False)
     if not res.get("valid"):
         reason = res.get("reason", "forbidden")
         if reason == "quota_exceeded":

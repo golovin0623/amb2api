@@ -8,6 +8,8 @@
 集中到一处后，新增受保护路由只需 ``dependencies=[Depends(authenticate)]`` 或
 ``token: str = Depends(authenticate)``，避免出现"忘了接鉴权"的裸奔端点。
 """
+import hmac
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -17,22 +19,24 @@ from config import get_api_password, get_panel_password
 security = HTTPBearer()
 
 
+def consteq(a: str, b: str) -> bool:
+    """恒定时间字符串比较，避免口令/令牌校验的计时侧信道。"""
+    return hmac.compare_digest((a or "").encode("utf-8"), (b or "").encode("utf-8"))
+
+
 async def authenticate(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> str:
     """校验 Bearer 口令，返回通过校验的 token。
 
-    面板口令优先，兼容 API 口令（两者可由通用 PASSWORD 覆盖）。
+    面板口令优先，兼容 API 口令（两者可由通用 PASSWORD 覆盖）。恒定时间比较防计时攻击。
     """
     token = credentials.credentials
     panel_pwd = await get_panel_password()
-    if token != panel_pwd:
-        api_pwd = await get_api_password()
-        if token != api_pwd:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="密码错误"
-            )
+    api_pwd = await get_api_password()
+    if not (consteq(token, panel_pwd) or consteq(token, api_pwd)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="密码错误")
     return token
 
 
-__all__ = ["authenticate", "security"]
+__all__ = ["authenticate", "security", "consteq"]

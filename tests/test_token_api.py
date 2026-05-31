@@ -160,3 +160,43 @@ def test_enforce_token_quota_consume_false_checks_whitelist_not_quota(monkeypatc
         await orouter.enforce_token_quota(req, "gpt-5", consume=False)  # 不抛
 
     asyncio.run(_run())
+
+
+def test_quota_exhausted_token_still_authenticates_then_429(monkeypatch):
+    """配额耗尽的 token 鉴权阶段仍确立身份（不返回 403 密码错误），
+    配额拦截发生在 enforce 阶段（429）。回归 Codex P2。"""
+    from src.api import openai_router as orouter
+    import fastapi
+
+    tm = TokenManager()
+    tm._initialized = True
+    tm._tokens = {}
+
+    async def _get_tm():
+        return tm
+
+    async def _master_pwd():
+        return "master-pw"
+
+    monkeypatch.setattr("src.services.token_manager.get_token_manager", _get_tm)
+    monkeypatch.setattr("config.get_api_password", _master_pwd)
+
+    async def _run():
+        meta = await tm.create_token(name="exh", quota=1)
+        tok = meta["token"]
+        await tm.try_consume(tok, "gpt-5")  # used=1 == quota → 已耗尽
+
+        # 鉴权仍应确立身份（不因配额耗尽而 403）
+        req = _FakeReq()
+        assert await orouter._resolve_identity(req, tok) is True
+        assert req.state.identity["master"] is False
+
+        # enforce(consume=True) 才返回 429
+        with pytest.raises(fastapi.HTTPException) as ei:
+            await orouter.enforce_token_quota(req, "gpt-5", consume=True)
+        assert ei.value.status_code == 429
+
+        # count_tokens 路径(consume=False)对耗尽 token 放行
+        await orouter.enforce_token_quota(req, "gpt-5", consume=False)
+
+    asyncio.run(_run())
