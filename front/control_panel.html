@@ -6263,14 +6263,20 @@
         .playground-delete-btn {
             background: #dc3545 !important;
             color: white !important;
-            padding: 4px 10px !important;
+            padding: 4px 14px !important;
             font-size: 12px !important;
             height: 32px !important;
-            min-width: 50px !important;
-            max-width: 50px !important;
+            /* 显式锁定为自适应宽度：抵消 .btn 基类的 width:100%。
+               仅靠 max-width 约束在 Safari/WebKit 下对 flex 子项不可靠，
+               会被拉伸撑满整行并溢出（移动端表现最明显）。 */
+            width: auto !important;
+            min-width: 56px !important;
+            border: none !important;
             border-radius: 6px !important;
             flex: 0 0 auto !important;
             line-height: 1 !important;
+            white-space: nowrap !important;
+            margin: 0 !important;
         }
 
         .playground-delete-btn:hover {
@@ -6336,10 +6342,10 @@
 
             .playground-delete-btn {
                 height: 34px !important;
-                padding: 4px 12px !important;
+                padding: 4px 16px !important;
                 font-size: 12px !important;
-                min-width: 50px !important;
-                max-width: 60px !important;
+                width: auto !important;
+                min-width: 56px !important;
             }
 
             .playground-message-textarea {
