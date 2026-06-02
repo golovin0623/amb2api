@@ -1311,6 +1311,20 @@
             outline: none;
         }
 
+        /* 移动端聚焦输入框自动缩放修复
+           iOS Safari 在聚焦字号 < 16px 的可编辑文本控件（input / textarea）时，
+           会自动放大整个页面以"看清"输入框，缩放后定位错乱（登录页尤为明显）。
+           这里在窄屏下统一把可编辑文本控件的字号提升到 ≥16px，从根源消除自动缩放，
+           既符合 Apple 规范又不影响桌面端视觉（select 走原生选择器，不会触发缩放，无需处理）。
+           多重 :not() 仅用于提高优先级，确保覆盖各处既有的更小字号规则（含 !important 与内联样式）。 */
+        @media (max-width: 768px) {
+
+            input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
+            textarea:not([type]) {
+                font-size: 16px !important;
+            }
+        }
+
         .btn {
             background-color: #4285f4;
             color: white;
@@ -1826,7 +1840,7 @@
 
             .login-form input[type="password"] {
                 padding: 14px 14px 14px 44px;
-                font-size: 15px;
+                font-size: 16px;
             }
 
             .login-input-wrapper .input-icon {
@@ -1894,7 +1908,7 @@
 
             .login-form input[type="password"] {
                 padding: 12px 12px 12px 40px;
-                font-size: 14px;
+                font-size: 16px;
                 border-radius: 10px;
             }
 
@@ -3163,7 +3177,7 @@
 
             .login-form input[type="password"] {
                 padding: 14px 14px 14px 44px;
-                font-size: 15px;
+                font-size: 16px;
             }
 
             .login-input-wrapper .input-icon {
