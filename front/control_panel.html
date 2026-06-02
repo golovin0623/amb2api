@@ -1312,15 +1312,17 @@
         }
 
         /* 移动端聚焦输入框自动缩放修复
-           iOS Safari 在聚焦字号 < 16px 的可编辑文本控件（input / textarea）时，
-           会自动放大整个页面以"看清"输入框，缩放后定位错乱（登录页尤为明显）。
-           这里在窄屏下统一把可编辑文本控件的字号提升到 ≥16px，从根源消除自动缩放，
-           既符合 Apple 规范又不影响桌面端视觉（select 走原生选择器，不会触发缩放，无需处理）。
+           iOS Safari 在聚焦字号 < 16px 的表单控件（input / textarea / select）时，
+           会自动放大整个页面以"看清"控件，缩放后定位错乱（登录页尤为明显）。
+           select 在 iOS 上同样会触发该缩放（与文本输入同为 16px 阈值），所以一并处理。
+           这里在窄屏下统一把表单控件的字号提升到 ≥16px，从根源消除自动缩放，
+           既符合 Apple 规范又不影响桌面端视觉。
            多重 :not() 仅用于提高优先级，确保覆盖各处既有的更小字号规则（含 !important 与内联样式）。 */
         @media (max-width: 768px) {
 
             input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
-            textarea:not([type]) {
+            textarea:not([type]),
+            select:not([multiple]) {
                 font-size: 16px !important;
             }
         }
