@@ -12027,9 +12027,14 @@
                 fake_stream_speed: parseInt(document.getElementById('fakeStreamSpeed')?.value) || 100,
                 enable_real_streaming: !!document.getElementById('enableRealStreaming')?.checked,
                 stream_keepalive_seconds: parseFloat(document.getElementById('streamKeepaliveSeconds')?.value) || 0,
-                stream_bootstrap_retries: parseInt(document.getElementById('streamBootstrapRetries')?.value) || 0,
-                model_region: document.getElementById('modelRegion')?.value || ''
+                stream_bootstrap_retries: parseInt(document.getElementById('streamBootstrapRetries')?.value) || 0
             };
+            // 仅当区域路由未被 env 锁定（字段可编辑）时才写回。否则面板显示的是 env 生效值，
+            // 若一并保存会把它固化进存储、覆盖原有存储默认值（env 移除后路由会意外保持改变）。
+            const modelRegionEl = document.getElementById('modelRegion');
+            if (modelRegionEl && !modelRegionEl.disabled) {
+                payload.model_region = modelRegionEl.value || '';
+            }
             if (apiPasswordValue) payload.api_password = apiPasswordValue;
             if (panelPasswordValue) payload.panel_password = panelPasswordValue;
             const generalPwd = document.getElementById('configPassword').value.trim();
