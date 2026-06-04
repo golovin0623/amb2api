@@ -1699,6 +1699,14 @@ async def send_assembly_request(
 
     # 区域路由（2026-07 计费更新）：客户端显式提供的 model_region 优先；否则注入
     # 全局默认（如已配置）。未设置数据驻留要求的用户可统一选择 "global" 路由维持原价。
+    # 空字符串/纯空白视为未指定，回退到全局默认，避免把空 model_region 透传给上游触发校验错误。
+    client_region = payload.get("model_region")
+    if isinstance(client_region, str):
+        stripped_region = client_region.strip()
+        if stripped_region:
+            payload["model_region"] = stripped_region
+        else:
+            payload.pop("model_region", None)
     if "model_region" not in payload:
         try:
             default_region = await get_model_region()

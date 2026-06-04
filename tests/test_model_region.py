@@ -257,6 +257,59 @@ async def test_no_model_region_injected_when_default_empty(monkeypatch):
     assert "model_region" not in body
 
 
+@pytest.mark.asyncio
+async def test_empty_client_model_region_falls_back_to_global_default(monkeypatch):
+    # An explicit empty/whitespace string must be treated as unspecified so the
+    # empty value is never forwarded upstream (which would 400), and the global
+    # default still applies.
+    capture = {}
+    _patch_send_assembly(monkeypatch, capture, model_region_default="global")
+
+    req = ChatCompletionRequest(
+        model="gpt-5.5",
+        messages=[{"role": "user", "content": "hi"}],
+        model_region="   ",
+    )
+    await send_assembly_request(req, is_streaming=False)
+
+    body = json.loads(capture["post_data"])
+    assert body["model_region"] == "global"
+
+
+@pytest.mark.asyncio
+async def test_empty_client_model_region_dropped_when_no_default(monkeypatch):
+    # Empty client value + no global default → nothing forwarded upstream.
+    capture = {}
+    _patch_send_assembly(monkeypatch, capture, model_region_default="")
+
+    req = ChatCompletionRequest(
+        model="gpt-5.5",
+        messages=[{"role": "user", "content": "hi"}],
+        model_region="",
+    )
+    await send_assembly_request(req, is_streaming=False)
+
+    body = json.loads(capture["post_data"])
+    assert "model_region" not in body
+
+
+@pytest.mark.asyncio
+async def test_client_model_region_whitespace_is_stripped(monkeypatch):
+    # A valid-but-padded client value is normalized before going upstream.
+    capture = {}
+    _patch_send_assembly(monkeypatch, capture, model_region_default="global")
+
+    req = ChatCompletionRequest(
+        model="gpt-5.5",
+        messages=[{"role": "user", "content": "hi"}],
+        model_region="  in-region  ",
+    )
+    await send_assembly_request(req, is_streaming=False)
+
+    body = json.loads(capture["post_data"])
+    assert body["model_region"] == "in-region"
+
+
 # ── Admin config round-trip ──
 
 
