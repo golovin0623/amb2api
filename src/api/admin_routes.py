@@ -157,7 +157,13 @@ async def get_config(token: str = Depends(authenticate)):
         cfg["prompt_cache_affinity_enabled"] = await adapter.get_config("prompt_cache_affinity_enabled", True)
         cfg["prompt_cache_auto_mode"] = await adapter.get_config("prompt_cache_auto_mode", "conservative")
         cfg["prompt_cache_default_ttl"] = await adapter.get_config("prompt_cache_default_ttl", "5m")
-        cfg["model_region"] = await adapter.get_config("model_region", "")
+        # Resolve through the same precedence (env -> storage -> default) the
+        # rest of the config system uses, so the panel reflects the *effective*
+        # routing value. Reading only the stored value would show/lock the wrong
+        # value when MODEL_REGION is set in the env with override_env off — the
+        # same mismatch the enable_real_streaming handling above avoids.
+        mr = await get_config_value("model_region", "", env_var="MODEL_REGION")
+        cfg["model_region"] = str(mr or "").strip()
         cfg["available_models"] = await adapter.get_config("available_models", [])
         cfg["available_models_selected"] = await adapter.get_config("available_models_selected", [])
         cfg["available_models_meta"] = await adapter.get_config("available_models_meta", {})

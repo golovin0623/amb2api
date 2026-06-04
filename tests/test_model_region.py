@@ -344,11 +344,19 @@ async def test_save_config_allows_clearing_model_region(monkeypatch):
     assert adapter.values["model_region"] == ""
 
 
-@pytest.mark.asyncio
-async def test_get_config_returns_model_region(monkeypatch):
+def _isolate_get_config(monkeypatch, store):
+    """Point both admin_routes' and config's storage adapters at one fake store
+    and neutralize the password/server helpers, so /config exercises only the
+    model_region resolution path. Clears the config snapshot cache first."""
+    config.invalidate_config_cache()
     adapter = _FakeAdapter()
-    adapter.values["model_region"] = "global"
-    monkeypatch.setattr(admin_routes, "get_storage_adapter", AsyncMock(return_value=adapter))
+    adapter.values.update(store)
+
+    async def fake_get_storage_adapter():
+        return adapter
+
+    monkeypatch.setattr(admin_routes, "get_storage_adapter", fake_get_storage_adapter)
+    monkeypatch.setattr(config, "get_storage_adapter", fake_get_storage_adapter)
     for name in (
         "get_assembly_api_key",
         "get_assembly_api_keys",
@@ -358,6 +366,28 @@ async def test_get_config_returns_model_region(monkeypatch):
         "get_server_host",
     ):
         monkeypatch.setattr(admin_routes, name, AsyncMock(return_value=""))
+    return adapter
+
+
+@pytest.mark.asyncio
+async def test_get_config_returns_stored_model_region(monkeypatch):
+    _isolate_get_config(monkeypatch, {"model_region": "global"})
+    monkeypatch.delenv("MODEL_REGION", raising=False)
+    monkeypatch.delenv("CONFIG_OVERRIDE_ENV", raising=False)
+
+    response = await admin_routes.get_config(token="test-token")
+    cfg = json.loads(response.body)["config"]
+    assert cfg["model_region"] == "global"
+
+
+@pytest.mark.asyncio
+async def test_get_config_reflects_env_model_region(monkeypatch):
+    # MODEL_REGION env set, override_env off, nothing stored: /config must report
+    # the *effective* env value so the panel never shows/locks the opposite of
+    # the active routing setting.
+    _isolate_get_config(monkeypatch, {})
+    monkeypatch.setenv("MODEL_REGION", "global")
+    monkeypatch.delenv("CONFIG_OVERRIDE_ENV", raising=False)
 
     response = await admin_routes.get_config(token="test-token")
     cfg = json.loads(response.body)["config"]
