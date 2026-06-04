@@ -52,6 +52,9 @@ class OpenAIChatCompletionRequest(BaseModel):
     reasoning_effort: Optional[str] = None
     # GPT-5 系列 - 控制输出长度（"low" / "medium" / "high"）
     verbosity: Optional[str] = None
+    # AssemblyAI LLM Gateway 区域路由（2026-07 计费更新）：取值 "global" 可使用
+    # 全局路由以维持原有计费；留空则不注入，沿用网关默认（区域处理，按新价计费）。
+    model_region: Optional[str] = None
 
     class Config:
         extra = "allow"  # Allow additional fields not explicitly defined

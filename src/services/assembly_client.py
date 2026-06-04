@@ -27,6 +27,7 @@ from config import (
     get_prompt_cache_affinity_enabled,
     get_prompt_cache_auto_mode,
     get_prompt_cache_default_ttl,
+    get_model_region,
 )
 
 
@@ -1608,6 +1609,8 @@ _UPSTREAM_PASSTHROUGH_KEYS = (
     "fallback_config",
     "post_processing_steps",
     "transcript_id",
+    # 区域路由（2026-07 计费更新）：客户端可显式传 "global" 等取值
+    "model_region",
 )
 
 
@@ -1693,7 +1696,17 @@ async def send_assembly_request(
     
     # 透传常用参数 + AssemblyAI Gateway 原生扩展（白名单见 _UPSTREAM_PASSTHROUGH_KEYS）
     payload.update(_collect_passthrough_params(openai_request))
-    
+
+    # 区域路由（2026-07 计费更新）：客户端显式提供的 model_region 优先；否则注入
+    # 全局默认（如已配置）。未设置数据驻留要求的用户可统一选择 "global" 路由维持原价。
+    if "model_region" not in payload:
+        try:
+            default_region = await get_model_region()
+            if default_region:
+                payload["model_region"] = default_region
+        except Exception as e:
+            log.warning(f"Failed to resolve global model_region default: {e}")
+
     # temperature 和 top_p 处理
     temp = getattr(openai_request, "temperature", None)
     top_p = getattr(openai_request, "top_p", None)
