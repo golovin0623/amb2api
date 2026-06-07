@@ -151,6 +151,20 @@ async def get_prompt_cache_default_ttl() -> str:
     ttl = str(value or "").strip()
     return ttl or "5m"
 
+async def get_model_region() -> str:
+    """Global default AssemblyAI LLM Gateway ``model_region`` routing.
+
+    AssemblyAI's 2026-07 pricing update adds a top-level ``model_region``
+    parameter; ``"global"`` opts into global routing to keep current pricing,
+    while in-region processing is subject to the increased provider costs.
+
+    An empty string (the default) means "do not inject" — requests pass through
+    whatever the client sends (or nothing). A client-supplied ``model_region``
+    always wins over this global default.
+    """
+    value = await get_config_value("model_region", "", "MODEL_REGION")
+    return str(value or "").strip()
+
 async def get_auto_ban_enabled() -> bool:
     """Get auto ban enabled setting."""
     env_value = os.getenv("AUTO_BAN")

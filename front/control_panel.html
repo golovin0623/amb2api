@@ -7536,6 +7536,19 @@
                             </div>
 
                             <div class="config-group">
+                                <h4>区域路由 / 计费</h4>
+                                <div class="form-group">
+                                    <label for="modelRegion">model_region（全局区域路由）:</label>
+                                    <select id="modelRegion" class="config-input">
+                                        <option value="">默认（透传客户端，不注入）</option>
+                                        <option value="global">global（全局路由，维持原价）</option>
+                                        <option value="in-region">in-region（区域处理，按新价计费）</option>
+                                    </select>
+                                    <small class="config-note">AssemblyAI 2026-07 计费更新：无数据驻留要求时选 global 维持原价；客户端请求中显式携带的 model_region 优先于此全局默认</small>
+                                </div>
+                            </div>
+
+                            <div class="config-group">
                                 <h4>界面特效配置</h4>
 
                                 <div class="form-group">
@@ -11917,6 +11930,9 @@
             // Max Tokens 自适应模式
             const maxTokensModeEl = document.getElementById('maxTokensMode');
             if (maxTokensModeEl) maxTokensModeEl.value = currentConfig.max_tokens_mode || 'off';
+            // 区域路由 / 计费
+            const modelRegionEl = document.getElementById('modelRegion');
+            if (modelRegionEl) modelRegionEl.value = currentConfig.model_region || '';
             // 全局假流式配置
             const fakeStreamEnEl = document.getElementById('fakeStreamEnabled');
             const fakeStreamSpeedEl = document.getElementById('fakeStreamSpeed');
@@ -11956,6 +11972,7 @@
             lockField('enableRealStreaming', 'ENABLE_REAL_STREAMING');
             lockField('streamKeepaliveSeconds', 'STREAM_KEEPALIVE_SECONDS');
             lockField('streamBootstrapRetries', 'STREAM_BOOTSTRAP_RETRIES');
+            lockField('modelRegion', 'MODEL_REGION');
         }
 
         function lockField(id, envName) {
@@ -12012,6 +12029,12 @@
                 stream_keepalive_seconds: parseFloat(document.getElementById('streamKeepaliveSeconds')?.value) || 0,
                 stream_bootstrap_retries: parseInt(document.getElementById('streamBootstrapRetries')?.value) || 0
             };
+            // 仅当区域路由未被 env 锁定（字段可编辑）时才写回。否则面板显示的是 env 生效值，
+            // 若一并保存会把它固化进存储、覆盖原有存储默认值（env 移除后路由会意外保持改变）。
+            const modelRegionEl = document.getElementById('modelRegion');
+            if (modelRegionEl && !modelRegionEl.disabled) {
+                payload.model_region = modelRegionEl.value || '';
+            }
             if (apiPasswordValue) payload.api_password = apiPasswordValue;
             if (panelPasswordValue) payload.panel_password = panelPasswordValue;
             const generalPwd = document.getElementById('configPassword').value.trim();
@@ -12275,7 +12298,8 @@
                     enable_real_streaming: '真实流式',
                     stream_keepalive_seconds: '流式Keepalive',
                     stream_bootstrap_retries: '首包重试',
-                    max_tokens_mode: '最大令牌'
+                    max_tokens_mode: '最大令牌',
+                    model_region: '区域路由'
                 };
 
                 // 动态匹配名称（支持带后缀的键名）

@@ -45,8 +45,8 @@ def convert_claude_request_to_openai(claude_request: Dict[str, Any]) -> Dict[str
     if tc is not None:
         openai_req["tool_choice"] = tc
 
-    # Prompt caching pass-through (Gateway-level fields).
-    for key in ("cache_control", "prompt_cache_retention", "prompt_cache_key"):
+    # Prompt caching + region routing pass-through (Gateway-level fields).
+    for key in ("cache_control", "prompt_cache_retention", "prompt_cache_key", "model_region"):
         val = claude_request.get(key)
         if val is not None:
             openai_req[key] = val

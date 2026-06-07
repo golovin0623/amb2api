@@ -157,6 +157,13 @@ async def get_config(token: str = Depends(authenticate)):
         cfg["prompt_cache_affinity_enabled"] = await adapter.get_config("prompt_cache_affinity_enabled", True)
         cfg["prompt_cache_auto_mode"] = await adapter.get_config("prompt_cache_auto_mode", "conservative")
         cfg["prompt_cache_default_ttl"] = await adapter.get_config("prompt_cache_default_ttl", "5m")
+        # Resolve through the same precedence (env -> storage -> default) the
+        # rest of the config system uses, so the panel reflects the *effective*
+        # routing value. Reading only the stored value would show/lock the wrong
+        # value when MODEL_REGION is set in the env with override_env off — the
+        # same mismatch the enable_real_streaming handling above avoids.
+        mr = await get_config_value("model_region", "", env_var="MODEL_REGION")
+        cfg["model_region"] = str(mr or "").strip()
         cfg["available_models"] = await adapter.get_config("available_models", [])
         cfg["available_models_selected"] = await adapter.get_config("available_models_selected", [])
         cfg["available_models_meta"] = await adapter.get_config("available_models_meta", {})
@@ -174,7 +181,8 @@ async def get_config(token: str = Depends(authenticate)):
         "API_PASSWORD","PANEL_PASSWORD","PORT","HOST",
         "CALLS_PER_ROTATION","RETRY_429_ENABLED","RETRY_429_MAX_RETRIES","RETRY_429_INTERVAL","AUTO_BAN","AUTO_BAN_ERROR_CODES",
         "ENABLE_REAL_STREAMING","STREAM_KEEPALIVE_SECONDS","STREAM_BOOTSTRAP_RETRIES",
-        "PROMPT_CACHE_ENABLED","PROMPT_CACHE_AFFINITY_ENABLED","PROMPT_CACHE_AUTO_MODE","PROMPT_CACHE_DEFAULT_TTL"
+        "PROMPT_CACHE_ENABLED","PROMPT_CACHE_AFFINITY_ENABLED","PROMPT_CACHE_AUTO_MODE","PROMPT_CACHE_DEFAULT_TTL",
+        "MODEL_REGION"
     ] if os.getenv(k)]
     return JSONResponse(content={"config": cfg, "env_locked": env_locked})
 
@@ -363,6 +371,9 @@ async def save_config(payload: Dict[str, Any], token: str = Depends(authenticate
         ttl = str(payload.get("prompt_cache_default_ttl") or "").strip()
         if ttl:
             updates["prompt_cache_default_ttl"] = ttl
+    # 区域路由（2026-07 计费更新）。允许写入空字符串以清除全局默认。
+    if payload.get("model_region") is not None:
+        updates["model_region"] = str(payload.get("model_region") or "").strip()
     # 写入
     for k, v in updates.items():
         ok = await adapter.set_config(k, v)
