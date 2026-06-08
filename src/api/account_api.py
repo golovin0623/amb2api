@@ -261,11 +261,33 @@ async def _get_session(account_email: Optional[str] = None) -> Optional[Dict[str
         session_key = f"{SESSION_STORAGE_KEY}:{account_email}"
         session_data = await adapter.get_config(session_key)
         if session_data:
-            # 检查 session 是否过期
+            # 检查本地兜底窗口是否到期。注意：本地 expires_at 只是兜底，真正的失效以
+            # 服务端实际 401 为准（_make_dashboard_request 续期失败后才清理）。
             expires_at = session_data.get("expires_at")
             if expires_at:
                 expiry_time = datetime.fromisoformat(expires_at)
                 if datetime.now() > expiry_time:
+                    # 仍有恢复手段（长效 cookie / 已存凭据）时不硬删：前滚窗口并保留，
+                    # 交给真实请求/后台保活去滚动 cookie 或重新登录。这同时覆盖"升级
+                    # 场景"——旧版以 7 天 expires_at 落盘、但 cookie 仍有效的会话不会
+                    # 在保活滚动之前被误删。
+                    has_recovery = (
+                        session_data.get("aai_extended_session")
+                        or session_data.get("session_token")
+                        or session_data.get("enc_password")
+                    )
+                    if has_recovery:
+                        session_data["expires_at"] = (
+                            datetime.now() + timedelta(hours=SESSION_EXPIRY_HOURS)
+                        ).isoformat()
+                        try:
+                            await adapter.set_config(session_key, session_data)
+                        except Exception as e:
+                            log.warning(
+                                f"Failed to roll forward expiry for {account_email}: {e}"
+                            )
+                        return session_data
+                    # 无任何恢复手段：确为死会话，清理
                     log.info(f"Session expired for {account_email}, clearing...")
                     await adapter.delete_config(session_key)
                     # 从账户列表中移除
@@ -631,7 +653,13 @@ def _capture_rolling_cookies(session_data: Dict[str, Any], response: Any) -> boo
             changed = True
             if name == "session_jwt":
                 # 新 JWT 带来新的 exp；解析失败则置 None，让续期判定回退到登录时间估算。
-                session_data["jwt_expires_at_ts"] = decode_jwt_exp(value)
+                exp = decode_jwt_exp(value)
+                session_data["jwt_expires_at_ts"] = exp
+                if exp is None:
+                    # 滚动到一个无法解析 exp 的 JWT：同步把 logged_in_at 刷为当前时间，
+                    # 否则旧的 logged_in_at 会让 _session_needs_renewal 立即判为陈旧，
+                    # 触发不必要的频繁续期（两个调用方都受益）。
+                    session_data["logged_in_at"] = datetime.now().isoformat()
     return changed
 
 
@@ -645,8 +673,9 @@ async def _refresh_session_via_cookie(
     的认证请求专门触发这一滚动，使空闲账户的会话也能长期存活，而不必反复用密码登录
     （后者频繁调用会触发风控、最终丢失凭据，正是"几天后账号查不到"的根因）。
 
-    成功（服务端会话仍有效）返回滚动后的 session_data 并落盘；cookie 已失效（401/403）
-    或无可用 cookie 时返回 None，交由密码兜底或上层清理。
+    成功（服务端会话仍有效）返回滚动后的 session_data（仅更新内存，统一交由调用方
+    _renew_session 落盘，避免重复 I/O）；cookie 已失效（401/403）或无可用 cookie 时
+    返回 None，交由密码兜底或上层清理。
     """
     if session_data.get("auth_type", "dashboard") != "dashboard":
         return None
@@ -679,24 +708,28 @@ async def _refresh_session_via_cookie(
         )
         return None
 
-    # 会话有效：捕获滚动后的 cookie，并刷新本地新鲜度标记。
+    # 会话有效：捕获滚动后的 cookie，并刷新本地新鲜度标记（不在此落盘，统一交给调用方）。
     _capture_rolling_cookies(session_data, resp)
     session_data.pop("_jwt_stale", None)
     session_data["last_renew_ts"] = time.time()
-    # 若本次未拿到新的可解析 JWT exp，用刷新时间作为新鲜度依据（续期判定会回退到
-    # logged_in_at 估算），避免会话被立即判为陈旧而反复续期。
-    if session_data.get("jwt_expires_at_ts") is None:
+    # 若本轮服务端未下发可用的新 JWT（会话仍被判为陈旧），用刷新成功的时间作为新鲜度
+    # 依据：丢弃陈旧 JWT、改按 logged_in_at 估算，避免刚续期就被立即判为陈旧而反复续期。
+    if _session_needs_renewal(session_data):
+        session_data.pop("session_jwt", None)
+        session_data["jwt_expires_at_ts"] = None
         session_data["logged_in_at"] = datetime.now().isoformat()
-    try:
-        await _save_session(session_data)
-    except Exception as e:
-        log.warning(f"[Session] Failed to persist cookie-refreshed session for {account_email}: {e}")
     log.info(f"[Session] Renewed via long-lived cookie for {account_email}")
     return session_data
 
 
-async def _renew_session(account_email: str) -> Optional[Dict[str, Any]]:
+async def _renew_session(
+    account_email: str, force_password: bool = False
+) -> Optional[Dict[str, Any]]:
     """续期某账户会话：优先用长效 cookie 无密码滚动，失败再用加密密码自动重新登录。
+
+    ``force_password=True`` 时跳过密码续期的退避窗口——用于真实请求遇到 401 的按需
+    恢复：退避是为了给后台保活循环降频、避免高频登录触发风控，但不应阻断用户主动发起
+    的一次请求恢复（否则一次瞬时的密码 401 + cookie 同时失效会在退避窗口内把用户登出）。
 
     成功返回更新后的 session_data；无法续期返回 None。
     """
@@ -716,14 +749,16 @@ async def _renew_session(account_email: str) -> Optional[Dict[str, Any]]:
         # 1) 首选：长效 cookie 无密码滚动续期（轻量、不触发登录风控）。
         cookie_refreshed = await _refresh_session_via_cookie(account_email, session_data)
         if cookie_refreshed:
-            # cookie 续期成功，重置密码失败计数（如有）。
-            if cookie_refreshed.get("pw_renew_fail_count"):
-                cookie_refreshed.pop("pw_renew_fail_count", None)
-                cookie_refreshed.pop("pw_renew_fail_ts", None)
-                try:
-                    await _save_session(cookie_refreshed)
-                except Exception:
-                    pass
+            # cookie 续期成功：重置密码失败计数，并在此统一落盘（单次 I/O）。
+            cookie_refreshed.pop("pw_renew_fail_count", None)
+            cookie_refreshed.pop("pw_renew_fail_ts", None)
+            try:
+                await _save_session(cookie_refreshed)
+            except Exception as e:
+                log.warning(
+                    f"[Session] Failed to persist cookie-refreshed session for "
+                    f"{account_email}: {e}"
+                )
             return cookie_refreshed
 
         # 2) 兜底：用加密保存的密码重新登录。带退避，避免反复登录触发风控/锁号。
@@ -736,7 +771,7 @@ async def _renew_session(account_email: str) -> Optional[Dict[str, Any]]:
             return None
 
         last_pw_fail = session_data.get("pw_renew_fail_ts", 0)
-        if (time.time() - last_pw_fail) < PASSWORD_RENEW_BACKOFF_SECONDS:
+        if not force_password and (time.time() - last_pw_fail) < PASSWORD_RENEW_BACKOFF_SECONDS:
             log.info(
                 f"[Session] Skipping password renew for {account_email} (in backoff window)"
             )
@@ -1023,9 +1058,14 @@ async def _make_dashboard_request(
         log.debug(f"Dashboard API {method} {path}: {resp.status_code}")
         log.debug(f"Dashboard API response headers: {_summarize_headers_for_log(resp.headers)}")
 
-        # 401：先尝试续期并重试一次，续期失败才清除会话
+        # 401：先尝试续期并重试一次，续期失败才清除会话。这是用户主动发起的请求，
+        # 允许绕过密码续期退避窗口做一次按需恢复（退避只用于给后台保活降频）。
         if resp.status_code == 401:
-            renewed = await _renew_session(resolved_email) if resolved_email else None
+            renewed = (
+                await _renew_session(resolved_email, force_password=True)
+                if resolved_email
+                else None
+            )
             if renewed:
                 log.info(f"[Session] Retrying {path} after renewal for {resolved_email}")
                 session = renewed

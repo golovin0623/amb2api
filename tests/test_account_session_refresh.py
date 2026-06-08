@@ -315,6 +315,42 @@ async def test_renew_session_prefers_cookie_refresh_over_password():
     assert mock_cookie.await_count == 1
     assert mock_auth.await_count == 0  # 未走密码登录
     assert account_api._session_needs_renewal(renewed) is False
+    # _renew_session 统一落盘（_refresh_session_via_cookie 不再自行保存）
+    assert fake.store[session_key]["session_jwt"] == refreshed["session_jwt"]
+
+
+@pytest.mark.asyncio
+async def test_renew_session_force_password_bypasses_backoff():
+    """force_password=True 时即便处于退避窗口也尝试密码登录（请求层按需恢复）。"""
+    fake = FakeAdapter()
+    email = "forcepw@example.com"
+    now = int(time.time())
+    session_key = f"{account_api.SESSION_STORAGE_KEY}:{email}"
+    with patch.object(account_api, "get_storage_adapter", AsyncMock(return_value=fake)):
+        key = await account_api._get_session_secret()
+        fake.store[session_key] = {
+            "email": email,
+            "auth_type": "dashboard",
+            "session_jwt": make_jwt(now - 10),
+            "enc_password": encrypt_secret(key, "pw"),
+            "logged_in_at": "2026-01-01T00:00:00",
+            "pw_renew_fail_ts": time.time(),  # 仍在退避窗口
+        }
+        auth_result = {
+            "isAuthenticated": True,
+            "user": {"email": email, "id": 7, "customer_type": "PAYG"},
+            "sessionJWT": make_jwt(now + 300),
+            "sessionToken": "stok",
+        }
+        with patch.object(
+            account_api, "_refresh_session_via_cookie", AsyncMock(return_value=None)
+        ), patch.object(
+            account_api, "_authenticate_dashboard", AsyncMock(return_value=(auth_result, {}))
+        ) as mock_auth:
+            renewed = await account_api._renew_session(email, force_password=True)
+
+    assert renewed is not None
+    assert mock_auth.await_count == 1  # 退避被绕过，确实尝试了登录
 
 
 @pytest.mark.asyncio
@@ -452,9 +488,38 @@ async def test_refresh_via_cookie_rolls_session_without_password():
     assert account_api._session_needs_renewal(refreshed) is False
     # 不发送可能过期的 Bearer（仅 cookie 认证）
     assert "Authorization" not in client.calls[0]["headers"]
-    # 已落盘并前滚本地窗口
-    assert session_key in fake.store
-    assert fake.store[session_key]["aai_extended_session"] == "new-cookie"
+    # 仅更新内存、不在此落盘（持久化统一由调用方 _renew_session 负责，避免重复 I/O）
+    assert session_key not in fake.store
+
+
+@pytest.mark.asyncio
+async def test_refresh_via_cookie_marks_fresh_when_no_new_jwt():
+    """服务端只滚动了 aai_extended_session、未下发新 JWT 时，应据刷新时间标记新鲜，
+    丢弃陈旧 JWT，避免刚续期就被立即判为陈旧而反复续期。"""
+    fake = FakeAdapter()
+    email = "nojwt@example.com"
+    now = int(time.time())
+    session = {
+        "email": email,
+        "auth_type": "dashboard",
+        "session_jwt": make_jwt(now - 10),  # 旧 JWT 已过期
+        "aai_extended_session": "old-cookie",
+    }
+    resp = FakeResponse(
+        200,
+        payload={"raw": "ok"},
+        headers={"set-cookie": "aai_extended_session=rolled-cookie; Path=/"},  # 无 session_jwt
+    )
+    client = FakeClient([resp])
+    with patch.object(account_api, "get_storage_adapter", AsyncMock(return_value=fake)), \
+         patch.object(account_api, "_get_dashboard_client", AsyncMock(return_value=client)):
+        refreshed = await account_api._refresh_session_via_cookie(email, dict(session))
+
+    assert refreshed is not None
+    assert refreshed["aai_extended_session"] == "rolled-cookie"
+    # 陈旧 JWT 被丢弃，改按 logged_in_at 估算 -> 不再陈旧
+    assert refreshed.get("session_jwt") is None
+    assert account_api._session_needs_renewal(refreshed) is False
 
 
 @pytest.mark.asyncio
@@ -614,6 +679,54 @@ async def test_refresh_endpoint_401_when_truly_dead():
 
 
 # ---------------------------------------------------------------------------
+# 本地兜底窗口：旧版 7 天 expires_at 的升级/恢复
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_get_session_rolls_forward_expired_local_window_with_cookie():
+    """本地 expires_at 已过期但仍有长效 cookie：前滚窗口并保留，不硬删。
+    覆盖升级场景——旧版以 7 天 expires_at 落盘、cookie 仍有效的会话不被误删。"""
+    fake = FakeAdapter()
+    email = "legacy@example.com"
+    session_key = f"{account_api.SESSION_STORAGE_KEY}:{email}"
+    fake.store[session_key] = {
+        "email": email,
+        "auth_type": "dashboard",
+        "aai_extended_session": "still-valid-cookie",
+        "expires_at": "2020-01-01T00:00:00",  # 旧的、已过期的本地窗口
+    }
+    with patch.object(account_api, "get_storage_adapter", AsyncMock(return_value=fake)):
+        session = await account_api._get_session(email)
+
+    assert session is not None  # 未被删除
+    assert session_key in fake.store
+    # 本地窗口已前滚到未来
+    from datetime import datetime as _dt
+    assert _dt.fromisoformat(fake.store[session_key]["expires_at"]) > _dt.now()
+
+
+@pytest.mark.asyncio
+async def test_get_session_deletes_expired_window_when_no_recovery():
+    """本地窗口过期且无任何恢复手段（无 cookie、无凭据）：确为死会话，删除。"""
+    fake = FakeAdapter()
+    email = "reallydead@example.com"
+    session_key = f"{account_api.SESSION_STORAGE_KEY}:{email}"
+    fake.store[account_api.ACCOUNTS_LIST_KEY] = [{"email": email}]
+    fake.store[session_key] = {
+        "email": email,
+        "auth_type": "dashboard",
+        "session_jwt": make_jwt(int(time.time()) - 10),
+        "expires_at": "2020-01-01T00:00:00",
+        # 无 cookie、无 enc_password
+    }
+    with patch.object(account_api, "get_storage_adapter", AsyncMock(return_value=fake)):
+        session = await account_api._get_session(email)
+
+    assert session is None
+    assert session_key not in fake.store
+
+
+# ---------------------------------------------------------------------------
 # 滚动 cookie 捕获
 # ---------------------------------------------------------------------------
 
@@ -641,6 +754,26 @@ def test_capture_rolling_cookies_noop_when_unchanged():
     session = {"aai_extended_session": "same"}
     resp = FakeResponse(200, headers={"set-cookie": "aai_extended_session=same; Path=/"})
     assert account_api._capture_rolling_cookies(session, resp) is False
+
+
+def test_capture_rolling_cookies_refreshes_login_time_on_unparseable_jwt():
+    """滚动到无法解析 exp 的 JWT 时，应同步把 logged_in_at 刷为当前时间，避免旧的
+    logged_in_at 让续期判定立即判为陈旧（覆盖 _make_dashboard_request 路径）。"""
+    session = {
+        "aai_extended_session": "old",
+        "session_jwt": make_jwt(int(time.time()) - 10),
+        "logged_in_at": "2020-01-01T00:00:00",  # 远古值
+    }
+    resp = FakeResponse(
+        200,
+        headers={"set-cookie": "session_jwt=no-dots-no-exp; Path=/"},  # 无法解析 exp
+    )
+    changed = account_api._capture_rolling_cookies(session, resp)
+    assert changed is True
+    assert session["jwt_expires_at_ts"] is None
+    assert session["logged_in_at"] != "2020-01-01T00:00:00"
+    # 据刷新后的 logged_in_at，会话不再被判为陈旧
+    assert account_api._session_needs_renewal(session) is False
 
 
 # ---------------------------------------------------------------------------
