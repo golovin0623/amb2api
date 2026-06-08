@@ -673,9 +673,10 @@ async def _refresh_session_via_cookie(
     的认证请求专门触发这一滚动，使空闲账户的会话也能长期存活，而不必反复用密码登录
     （后者频繁调用会触发风控、最终丢失凭据，正是"几天后账号查不到"的根因）。
 
-    成功（服务端会话仍有效）返回滚动后的 session_data（仅更新内存，统一交由调用方
-    _renew_session 落盘，避免重复 I/O）；cookie 已失效（401/403）或无可用 cookie 时
-    返回 None，交由密码兜底或上层清理。
+    仅当服务端确实滚动了会话 cookie/JWT（证明会话仍有效）才认定续期成功，返回滚动后的
+    session_data（仅更新内存，统一交由调用方 _renew_session 落盘，避免重复 I/O）；cookie
+    已失效（401/403）、无可用 cookie、或响应未滚动任何会话 cookie（无续期证据）时返回
+    None，交由密码兜底或上层清理。
     """
     if session_data.get("auth_type", "dashboard") != "dashboard":
         return None
@@ -708,11 +709,21 @@ async def _refresh_session_via_cookie(
         )
         return None
 
-    # 会话有效：捕获滚动后的 cookie，并刷新本地新鲜度标记（不在此落盘，统一交给调用方）。
-    _capture_rolling_cookies(session_data, resp)
+    # 必须以"服务端确实滚动了会话 cookie/JWT"作为会话仍有效的证据，才认定续期成功。
+    # 仅凭非错误状态码不够：dashboard 客户端 follow_redirects=True，失效会话可能被 302
+    # 跳到登录页后返回 200，或根本不再下发 Set-Cookie。若此时仍本地刷新 last_renew_ts/
+    # logged_in_at，会把已死的上游会话误标为新鲜，使后续保活一直跳过密码恢复、账号最终
+    # 仍然死亡（正是本修复要避免的）。无证据时返回 None，交由密码兜底/上层清理。
+    rolled = _capture_rolling_cookies(session_data, resp)
+    if not rolled:
+        log.info(
+            f"[Session] Cookie refresh for {account_email} produced no rolled session "
+            f"cookie; treating as not renewed (will fall back to password if available)"
+        )
+        return None
     session_data.pop("_jwt_stale", None)
     session_data["last_renew_ts"] = time.time()
-    # 若本轮服务端未下发可用的新 JWT（会话仍被判为陈旧），用刷新成功的时间作为新鲜度
+    # 若本轮滚动的不是可解析 exp 的新 JWT（会话仍被判为陈旧），用刷新成功的时间作为新鲜度
     # 依据：丢弃陈旧 JWT、改按 logged_in_at 估算，避免刚续期就被立即判为陈旧而反复续期。
     if _session_needs_renewal(session_data):
         session_data.pop("session_jwt", None)

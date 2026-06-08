@@ -523,6 +523,28 @@ async def test_refresh_via_cookie_marks_fresh_when_no_new_jwt():
 
 
 @pytest.mark.asyncio
+async def test_refresh_via_cookie_returns_none_without_rolled_cookie_proof():
+    """非错误响应但未滚动任何会话 cookie（如失效会话被跟随重定向到登录页的 200）：
+    视为无续期证据，返回 None 以便回退密码兜底，避免把已死会话误标为新鲜。"""
+    fake = FakeAdapter()
+    email = "noproof@example.com"
+    now = int(time.time())
+    session = {
+        "email": email,
+        "auth_type": "dashboard",
+        "session_jwt": make_jwt(now - 10),
+        "aai_extended_session": "stale-cookie",
+    }
+    # 200 但没有 Set-Cookie（未滚动任何会话 cookie）
+    resp = FakeResponse(200, payload={"raw": "<login page>"}, headers={})
+    client = FakeClient([resp])
+    with patch.object(account_api, "get_storage_adapter", AsyncMock(return_value=fake)), \
+         patch.object(account_api, "_get_dashboard_client", AsyncMock(return_value=client)):
+        refreshed = await account_api._refresh_session_via_cookie(email, dict(session))
+    assert refreshed is None
+
+
+@pytest.mark.asyncio
 async def test_refresh_via_cookie_returns_none_when_cookie_dead():
     """长效 cookie 已失效（401）时返回 None，交由密码兜底/上层清理。"""
     fake = FakeAdapter()
