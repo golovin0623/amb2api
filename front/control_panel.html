@@ -1212,6 +1212,8 @@
             transition: background-color 0.3s ease;
             position: relative;
             z-index: 10;
+            /* 界面设计 · 整体缩放（默认 1 即不缩放） */
+            zoom: var(--ui-zoom, 1);
             /* 不设置overflow，让sticky正常工作 */
         }
 
@@ -6904,6 +6906,78 @@
             .tk-card { padding:16px; }
             .tk-stat { flex-basis:calc(50% - 6px); }
         }
+
+        /* ============ 系统配置 · 子导航 + 界面设计（Aether Codex） ============ */
+        .sys-page { --tk-accent: var(--aurora-1, #4285f4); --tk-accent-dark: var(--aurora-2, #3367d6); }
+        .sys-hero { display:flex; flex-wrap:wrap; align-items:flex-start; gap:14px; margin: 4px 0 18px; }
+        .sys-hero-icon {
+            flex:0 0 auto; width:48px; height:48px; border-radius:14px;
+            display:flex; align-items:center; justify-content:center; font-size:24px;
+            background: linear-gradient(135deg, var(--aurora-1, #4285f4), var(--aurora-3, #6ea8ff));
+            color:#fff; box-shadow: 0 6px 18px var(--shadow-color);
+        }
+        .sys-hero-text h3 { margin:0 0 4px; font-size:20px; color:var(--text-color); }
+        .sys-hero-text p { margin:0; color:var(--text-secondary); font-size:13.5px; line-height:1.6; max-width:780px; }
+
+        .sys-subnav {
+            display:inline-flex; gap:4px; padding:4px; margin-bottom:22px; flex-wrap:wrap;
+            background: var(--card-bg); border:1px solid var(--border-color); border-radius:12px;
+        }
+        .sys-subnav button {
+            border:none; background:transparent; cursor:pointer; padding:8px 16px; border-radius:9px;
+            font-size:13.5px; font-weight:600; color: var(--text-secondary);
+            transition: background-color .2s ease, color .2s ease; display:inline-flex; align-items:center; gap:6px;
+        }
+        .sys-subnav button:hover { color: var(--text-color); }
+        .sys-subnav button.active { background: var(--container-bg); color: var(--text-color); box-shadow: 0 1px 4px var(--shadow-color); }
+        .sys-section { display:none; }
+        .sys-section.active { display:block; animation: sysFade .35s var(--ease-standard, ease); }
+        @keyframes sysFade { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform:none; } }
+
+        .uid-grid { display:grid; gap:16px; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); align-items:start; }
+        .uid-card {
+            background: var(--container-bg); border:1px solid var(--border-color);
+            border-radius:14px; padding:18px 18px 20px;
+        }
+        .uid-card h4 { margin:0 0 4px; font-size:15px; color:var(--text-color); display:flex; align-items:center; gap:8px; }
+        .uid-card .uid-desc { margin:0 0 14px; font-size:12.5px; color:var(--text-muted); line-height:1.55; }
+        .uid-row { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+        .uid-row label { flex:0 0 auto; font-size:13px; color:var(--text-secondary); min-width:48px; }
+        .uid-range { flex:1 1 auto; accent-color: var(--aurora-1, #4285f4); cursor:pointer; }
+        .uid-val { flex:0 0 auto; font-variant-numeric:tabular-nums; font-weight:700; font-size:13px; color:var(--text-color); min-width:48px; text-align:right; }
+        .uid-swatches { display:flex; gap:10px; flex-wrap:wrap; margin-top:6px; }
+        .uid-swatch {
+            width:34px; height:34px; border-radius:9px; cursor:pointer; border:2px solid transparent;
+            box-shadow: 0 2px 6px var(--shadow-color); transition: transform .15s ease, border-color .15s ease;
+        }
+        .uid-swatch:hover { transform: translateY(-2px); }
+        .uid-swatch.active { border-color: var(--text-color); }
+        .uid-seg { display:inline-flex; gap:4px; padding:3px; background:var(--card-bg); border:1px solid var(--border-color); border-radius:10px; flex-wrap:wrap; }
+        .uid-seg button {
+            border:none; background:transparent; cursor:pointer; padding:6px 14px; border-radius:7px;
+            font-size:12.5px; font-weight:600; color:var(--text-secondary); transition: background-color .18s ease, color .18s ease;
+        }
+        .uid-seg button:hover { color: var(--text-color); }
+        .uid-seg button.active { background: var(--container-bg); color:var(--text-color); box-shadow:0 1px 3px var(--shadow-color); }
+        .uid-actions { display:flex; gap:10px; margin-top:18px; flex-wrap:wrap; }
+
+        .uid-preview { background: var(--bg-page, var(--bg-color)); border:1px solid var(--border-color); border-radius:16px; padding:22px; margin-top:8px; }
+        .uid-preview .pv-title {
+            font-family: var(--font-display, Georgia, serif); font-size:30px; line-height:1.1; margin:0 0 8px; font-weight:600;
+            background: var(--aurora-text, var(--aurora-1, #4285f4)); -webkit-background-clip:text; background-clip:text;
+            -webkit-text-fill-color:transparent; color: var(--aurora-1, #4285f4);
+        }
+        .uid-preview .pv-body { font-family: var(--font-sans, Arial, sans-serif); font-size:14px; color:var(--text-secondary); line-height:1.7; margin:0 0 14px; max-width:560px; }
+        .uid-preview .pv-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+        .uid-preview .pv-btn {
+            background: var(--aurora-1, #4285f4); color:#fff; border:none; padding:8px 18px;
+            border-radius: var(--r-2, 6px); font-weight:600; font-size:13px; cursor:default; box-shadow: var(--elev-aurora, 0 6px 18px var(--shadow-color));
+        }
+        .uid-preview .pv-chip {
+            font-size:12px; padding:4px 12px; border-radius: var(--r-full, 999px);
+            border:1px solid var(--aurora-1, #4285f4); color: var(--aurora-1, #4285f4); background: transparent;
+            font-variant-numeric: tabular-nums;
+        }
     </style>
 
     <!-- ================ Aether Codex Refactor (2026-05) ================ -->
@@ -7036,7 +7110,7 @@
                         <button class="tab" onclick="switchTab('playground')">操练场</button>
                         <button class="tab" onclick="switchTab('performance')">性能分析</button>
                         <button class="tab" onclick="switchTab('logs')">实时日志</button>
-                        <button class="tab" onclick="switchTab('tokens')">用户令牌</button>
+                        <button class="tab" onclick="switchTab('system')">系统配置</button>
                     </div>
                 </div>
             </div>
@@ -7044,8 +7118,24 @@
             <!-- 内容区域 -->
             <div class="tab-content-wrapper">
 
-                <!-- 用户令牌标签页（多租户） -->
-                <div id="tokensTab" class="tab-content tk-page">
+                <!-- 系统配置标签页（融合各项能力管理） -->
+                <div id="systemTab" class="tab-content sys-page">
+                    <div class="sys-hero">
+                        <div class="sys-hero-icon">⚙️</div>
+                        <div class="sys-hero-text">
+                            <h3>系统配置</h3>
+                            <p>面向本 Web 服务的统一配置中心，融合各项能力管理。当前包含「用户令牌」多租户发放与「界面设计」外观定制，后续将持续扩充。</p>
+                        </div>
+                    </div>
+
+                    <!-- 子能力导航 -->
+                    <div class="sys-subnav" id="sysSubnav">
+                        <button class="active" data-section="tokens" onclick="switchSystemSection('tokens')">🔑 用户令牌</button>
+                        <button data-section="design" onclick="switchSystemSection('design')">🎨 界面设计</button>
+                    </div>
+
+                    <!-- 子能力一：用户令牌（多租户） -->
+                    <div id="sysSection-tokens" class="sys-section active tk-page">
                     <div class="tk-hero">
                         <div class="tk-hero-icon">🔑</div>
                         <div class="tk-hero-text">
@@ -7098,6 +7188,96 @@
                         <button class="tk-btn-ghost" style="margin-left:auto;" onclick="loadTokens()">⟳ 刷新</button>
                     </div>
                     <div id="tokensTableWrap"><div class="tk-empty"><div class="ico">🔑</div><div class="ttl">尚未加载令牌</div><div class="desc">点击右上角"刷新"加载列表。</div></div></div>
+                    </div>
+                    <!-- /sysSection-tokens -->
+
+                    <!-- 子能力二：界面设计（Aether Codex 运行时令牌） -->
+                    <div id="sysSection-design" class="sys-section">
+                        <div class="tk-hero">
+                            <div class="tk-hero-icon" style="background:linear-gradient(135deg,var(--aurora-1),var(--aurora-4));">🎨</div>
+                            <div class="tk-hero-text">
+                                <h3>界面设计 · Aether Codex</h3>
+                                <p>参考 <a href="https://golovin.cn/design" target="_blank" rel="noopener">golovin.cn/design</a> 的设计语言，调节本面板的极光配色、排版、圆角、密度与动效。改动实时预览、即时生效，并保存在本地浏览器。</p>
+                            </div>
+                        </div>
+
+                        <div class="uid-grid">
+                            <!-- 极光配色 -->
+                            <div class="uid-card">
+                                <h4>🌈 极光主色</h4>
+                                <p class="uid-desc">OKLCH 单光源四阶弧 · 同色系邻近保持「一片光」。拖动色相或选取预设，主色调将贯穿整个面板。</p>
+                                <div class="uid-row">
+                                    <label>色相</label>
+                                    <input id="uidHue" class="uid-range" type="range" min="0" max="360" step="1" value="268" oninput="onUiDesignChange()">
+                                    <span class="uid-val" id="uidHueVal">268°</span>
+                                </div>
+                                <div class="uid-swatches" id="uidHueSwatches"></div>
+                            </div>
+
+                            <!-- 尺寸与圆角 -->
+                            <div class="uid-card">
+                                <h4>🔍 界面缩放</h4>
+                                <p class="uid-desc">整体放大或缩小面板，适配不同屏幕与视力偏好。</p>
+                                <div class="uid-row">
+                                    <label>缩放</label>
+                                    <input id="uidScale" class="uid-range" type="range" min="85" max="120" step="5" value="100" oninput="onUiDesignChange()">
+                                    <span class="uid-val" id="uidScaleVal">100%</span>
+                                </div>
+                                <h4 style="margin-top:18px;">🔘 圆角</h4>
+                                <p class="uid-desc">编辑体审美偏克制小圆角。</p>
+                                <div class="uid-seg" id="uidRadiusSeg">
+                                    <button data-v="70" onclick="setUiRadius(70)">克制</button>
+                                    <button data-v="100" class="active" onclick="setUiRadius(100)">标准</button>
+                                    <button data-v="150" onclick="setUiRadius(150)">圆润</button>
+                                </div>
+                            </div>
+
+                            <!-- 排版 / 密度 / 动效 -->
+                            <div class="uid-card">
+                                <h4>🔤 标题字体</h4>
+                                <p class="uid-desc">Display 字族用于标题层级。Inter 是 UI 字体，不是排印字体。</p>
+                                <div class="uid-seg" id="uidDisplaySeg">
+                                    <button data-v="fraunces" class="active" onclick="setUiDisplay('fraunces')">Fraunces</button>
+                                    <button data-v="serif" onclick="setUiDisplay('serif')">衬线</button>
+                                    <button data-v="sans" onclick="setUiDisplay('sans')">无衬线</button>
+                                </div>
+                                <h4 style="margin-top:18px;">📐 界面密度</h4>
+                                <p class="uid-desc">调节间距基线（8px 网格的缩放）。</p>
+                                <div class="uid-seg" id="uidDensitySeg">
+                                    <button data-v="85" onclick="setUiDensity(85)">紧凑</button>
+                                    <button data-v="100" class="active" onclick="setUiDensity(100)">标准</button>
+                                    <button data-v="120" onclick="setUiDensity(120)">宽松</button>
+                                </div>
+                                <h4 style="margin-top:18px;">✨ 动效</h4>
+                                <p class="uid-desc">关闭后将弱化过渡与动画。</p>
+                                <div class="uid-seg" id="uidMotionSeg">
+                                    <button data-v="1" class="active" onclick="setUiMotion(1)">开启</button>
+                                    <button data-v="0" onclick="setUiMotion(0)">关闭</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 实时预览 + 操作 -->
+                        <div class="uid-card" style="margin-top:16px;">
+                            <h4>👁 实时预览</h4>
+                            <div class="uid-preview">
+                                <p class="pv-title">极光设计系统</p>
+                                <p class="pv-body">同色系邻近保持「一片光」的感觉，补色会把画面撕成两片。九阶完全四度音阶字号、四层表面、四条命名缓动 —— 约束是创造的工具，好系统强制选择，不允许模糊地带。</p>
+                                <div class="pv-row">
+                                    <button class="pv-btn">主操作</button>
+                                    <span class="pv-chip">aurora-1</span>
+                                    <span class="pv-chip" style="--aurora-1:var(--aurora-3);">aurora-3</span>
+                                    <span class="pv-chip" style="--aurora-1:var(--aurora-4);">aurora-4</span>
+                                </div>
+                            </div>
+                            <div class="uid-actions">
+                                <button class="tk-btn-primary" onclick="saveUiDesign()">💾 保存设计</button>
+                                <button class="tk-btn-ghost" onclick="resetUiDesign()">↺ 恢复默认</button>
+                                <span id="uidStatus" style="align-self:center;font-size:12.5px;color:var(--text-muted);"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- /sysSection-design -->
                 </div>
 
                 <!-- 批量上传标签页 -->
@@ -9325,6 +9505,164 @@
             setTimeout(() => updateThemeButton(savedTheme), 0);
         })();
 
+        // ==================== 系统配置 · 子导航 ====================
+        let sysCurrentSection = 'tokens';
+        function initSystemTab() {
+            switchSystemSection(sysCurrentSection || 'tokens');
+        }
+        function switchSystemSection(name) {
+            sysCurrentSection = name;
+            document.querySelectorAll('#systemTab .sys-section').forEach(el => el.classList.remove('active'));
+            const sec = document.getElementById('sysSection-' + name);
+            if (sec) sec.classList.add('active');
+            document.querySelectorAll('#sysSubnav button').forEach(b => b.classList.toggle('active', b.dataset.section === name));
+            if (name === 'tokens') { loadTokens(); }
+            if (name === 'design') { uiDesign = uidRead(); applyUiDesign(); uidSyncControls(); }
+        }
+
+        // ==================== 系统配置 · 界面设计（Aether Codex 运行时令牌） ====================
+        // 通过在 documentElement 上以 inline style 覆盖 tokens.css 的设计令牌，
+        // 实现整个面板的实时换肤；配置持久化在本地浏览器（localStorage）。
+        const UID_KEY = 'amb2api-ui-design';
+        const UID_DEFAULTS = { hue: 268, scale: 100, radius: 100, density: 100, display: 'fraunces', motion: 1 };
+        const UID_HUE_PRESETS = [
+            { h: 268, name: '极光紫' }, { h: 230, name: '海蓝' }, { h: 165, name: '翡翠' },
+            { h: 70, name: '琥珀' }, { h: 350, name: '玫瑰' }
+        ];
+        // 极光四阶的明度/彩度档位（对照 tokens.css，按主题区分）
+        const UID_AURORA = {
+            light: { L: [0.62, 0.65, 0.70, 0.76], C: [0.180, 0.160, 0.135, 0.108] },
+            dark:  { L: [0.74, 0.76, 0.80, 0.86], C: [0.150, 0.135, 0.115, 0.090] }
+        };
+        const UID_HUE_OFFSET = [0, 18, 36, 58]; // 268 → 286 → 304 → 326
+        let uiDesign = Object.assign({}, UID_DEFAULTS);
+
+        function uidRead() {
+            try { return Object.assign({}, UID_DEFAULTS, JSON.parse(localStorage.getItem(UID_KEY) || '{}')); }
+            catch (e) { return Object.assign({}, UID_DEFAULTS); }
+        }
+        function uidDisplayStack(v) {
+            if (v === 'serif') return "'Source Serif Pro','Noto Serif SC',Georgia,serif";
+            if (v === 'sans') return "var(--font-sans)";
+            return "'Fraunces','Source Serif Pro','Noto Serif SC',Georgia,serif";
+        }
+        function uidWrapHue(h) { return ((h % 360) + 360) % 360; }
+        function applyUiDesign(cfg) {
+            cfg = cfg || uiDesign;
+            const root = document.documentElement;
+            const S = root.style;
+            const theme = (root.getAttribute('data-theme') === 'dark') ? 'dark' : 'light';
+            const prof = UID_AURORA[theme];
+            // 极光配色（仅在偏离默认色相时覆盖，否则交还给 tokens.css）
+            const auroraVars = ['--aurora-1', '--aurora-2', '--aurora-3', '--aurora-4', '--aurora-text',
+                '--link-default', '--link-hover', '--line-aurora', '--line-focus', '--elev-aurora', '--elev-focus'];
+            if (Number(cfg.hue) !== UID_DEFAULTS.hue) {
+                const delta = Number(cfg.hue) - UID_DEFAULTS.hue;
+                const cols = [];
+                for (let i = 0; i < 4; i++) {
+                    const h = uidWrapHue(UID_DEFAULTS.hue + UID_HUE_OFFSET[i] + delta);
+                    const c = `oklch(${prof.L[i]} ${prof.C[i]} ${h.toFixed(1)})`;
+                    cols.push(c);
+                    S.setProperty('--aurora-' + (i + 1), c);
+                }
+                S.setProperty('--aurora-text', `linear-gradient(100deg, ${cols[0]} 0%, ${cols[1]} 35%, ${cols[2]} 70%, ${cols[3]} 100%)`);
+                const fh = uidWrapHue(UID_DEFAULTS.hue + delta).toFixed(1);
+                const L0 = prof.L[0], C0 = prof.C[0];
+                S.setProperty('--link-default', `oklch(${theme === 'dark' ? 0.74 : 0.50} ${theme === 'dark' ? 0.150 : 0.160} ${fh})`);
+                S.setProperty('--link-hover', `oklch(${theme === 'dark' ? 0.76 : 0.44} ${theme === 'dark' ? 0.135 : 0.180} ${fh})`);
+                S.setProperty('--line-aurora', `oklch(${L0} ${C0} ${fh} / ${theme === 'dark' ? 0.42 : 0.30})`);
+                S.setProperty('--line-focus', `oklch(${L0} ${C0} ${fh})`);
+                S.setProperty('--elev-aurora', `0 6px 24px oklch(${L0} ${C0} ${fh} / ${theme === 'dark' ? 0.32 : 0.28})`);
+                S.setProperty('--elev-focus', `0 0 0 3px oklch(${L0} ${C0} ${fh} / ${theme === 'dark' ? 0.30 : 0.22}), 0 0 0 1px oklch(${L0} ${C0} ${fh} / ${theme === 'dark' ? 0.65 : 0.55})`);
+            } else {
+                auroraVars.forEach(p => S.removeProperty(p));
+            }
+            // 圆角
+            const rf = Number(cfg.radius) / 100;
+            if (rf !== 1) {
+                [4, 6, 8, 12, 16, 24].forEach((b, i) => S.setProperty('--r-' + (i + 1), Math.max(0, Math.round(b * rf)) + 'px'));
+            } else { for (let i = 1; i <= 6; i++) S.removeProperty('--r-' + i); }
+            // 密度（间距基线）
+            const df = Number(cfg.density) / 100;
+            if (df !== 1) {
+                [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8].forEach((b, i) => S.setProperty('--s-' + (i + 1), (b * df).toFixed(4) + 'rem'));
+            } else { for (let i = 1; i <= 10; i++) S.removeProperty('--s-' + i); }
+            // 整体缩放
+            if (Number(cfg.scale) !== 100) S.setProperty('--ui-zoom', (Number(cfg.scale) / 100).toFixed(3));
+            else S.removeProperty('--ui-zoom');
+            // 标题字体
+            if (cfg.display && cfg.display !== 'fraunces') S.setProperty('--font-display', uidDisplayStack(cfg.display));
+            else S.removeProperty('--font-display');
+            // 动效
+            const durVars = ['--dur-emphasis', '--dur-standard', '--dur-enter', '--dur-exit', '--dur-fast', '--dur-instant'];
+            if (Number(cfg.motion) === 0) durVars.forEach(p => S.setProperty(p, '0.001s'));
+            else durVars.forEach(p => S.removeProperty(p));
+        }
+
+        function uidActivate(segId, val) {
+            const seg = document.getElementById(segId);
+            if (!seg) return;
+            seg.querySelectorAll('button').forEach(b => b.classList.toggle('active', String(b.dataset.v) === String(val)));
+        }
+        function uidRenderSwatches() {
+            const wrap = document.getElementById('uidHueSwatches');
+            if (!wrap) return;
+            const theme = (document.documentElement.getAttribute('data-theme') === 'dark') ? 'dark' : 'light';
+            const L = UID_AURORA[theme].L[0], C = UID_AURORA[theme].C[0];
+            wrap.innerHTML = UID_HUE_PRESETS.map(p =>
+                `<div class="uid-swatch${Number(uiDesign.hue) === p.h ? ' active' : ''}" title="${p.name} · ${p.h}°"`
+                + ` style="background:oklch(${L} ${C} ${p.h});" onclick="setUiHue(${p.h})"></div>`).join('');
+        }
+        function uidSyncControls() {
+            const c = uiDesign;
+            const hue = document.getElementById('uidHue'); if (hue) hue.value = c.hue;
+            const hv = document.getElementById('uidHueVal'); if (hv) hv.textContent = c.hue + '°';
+            const sc = document.getElementById('uidScale'); if (sc) sc.value = c.scale;
+            const sv = document.getElementById('uidScaleVal'); if (sv) sv.textContent = c.scale + '%';
+            uidActivate('uidRadiusSeg', c.radius);
+            uidActivate('uidDensitySeg', c.density);
+            uidActivate('uidDisplaySeg', c.display);
+            uidActivate('uidMotionSeg', c.motion);
+            uidRenderSwatches();
+            const s = document.getElementById('uidStatus'); if (s) s.textContent = '';
+        }
+        function uidDirty() {
+            const s = document.getElementById('uidStatus');
+            if (s) { s.textContent = '未保存 · 仅预览'; s.style.color = 'var(--sig-warning, #b8860b)'; }
+        }
+        function setUiHue(h) { uiDesign.hue = Number(h); applyUiDesign(); uidSyncControls(); uidDirty(); }
+        function setUiRadius(v) { uiDesign.radius = Number(v); applyUiDesign(); uidActivate('uidRadiusSeg', v); uidDirty(); }
+        function setUiDensity(v) { uiDesign.density = Number(v); applyUiDesign(); uidActivate('uidDensitySeg', v); uidDirty(); }
+        function setUiDisplay(v) { uiDesign.display = v; applyUiDesign(); uidActivate('uidDisplaySeg', v); uidDirty(); }
+        function setUiMotion(v) { uiDesign.motion = Number(v); applyUiDesign(); uidActivate('uidMotionSeg', v); uidDirty(); }
+        function onUiDesignChange() {
+            const hue = document.getElementById('uidHue');
+            const sc = document.getElementById('uidScale');
+            if (hue) { uiDesign.hue = Number(hue.value); const hv = document.getElementById('uidHueVal'); if (hv) hv.textContent = uiDesign.hue + '°'; }
+            if (sc) { uiDesign.scale = Number(sc.value); const sv = document.getElementById('uidScaleVal'); if (sv) sv.textContent = uiDesign.scale + '%'; }
+            applyUiDesign();
+            uidRenderSwatches();
+            uidDirty();
+        }
+        function saveUiDesign() {
+            try { localStorage.setItem(UID_KEY, JSON.stringify(uiDesign)); } catch (e) {}
+            const s = document.getElementById('uidStatus');
+            if (s) { s.textContent = '已保存 ✓ 全站生效'; s.style.color = 'var(--sig-success, #2e7d32)'; }
+        }
+        function resetUiDesign() {
+            uiDesign = Object.assign({}, UID_DEFAULTS);
+            try { localStorage.removeItem(UID_KEY); } catch (e) {}
+            applyUiDesign();
+            uidSyncControls();
+            const s = document.getElementById('uidStatus');
+            if (s) { s.textContent = '已恢复默认 ✓'; s.style.color = 'var(--sig-success, #2e7d32)'; }
+        }
+
+        // 启动即应用已保存的界面设计；主题切换时按新主题的明度/彩度重算极光
+        uiDesign = uidRead();
+        applyUiDesign();
+        window.addEventListener('themechange', () => { applyUiDesign(); uidRenderSwatches(); });
+
         // ==================== 暗黑模式按钮拖动和吸附 ====================
         (function initThemeToggleDrag() {
             const themeToggle = document.querySelector('.theme-toggle');
@@ -9909,8 +10247,8 @@
             if (tabName === 'logs') {
                 connectWebSocket();
             }
-            if (tabName === 'tokens') {
-                loadTokens();
+            if (tabName === 'system') {
+                initSystemTab();
             }
             if (tabName === 'playground') {
                 initPlayground();
