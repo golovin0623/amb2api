@@ -9541,8 +9541,26 @@
         const UID_HUE_OFFSET = [0, 18, 36, 58]; // 268 → 286 → 304 → 326
         let uiDesign = Object.assign({}, UID_DEFAULTS);
 
+        function uidClampNum(v, lo, hi, def) {
+            v = Number(v);
+            if (!isFinite(v)) return def;
+            return Math.min(hi, Math.max(lo, v));
+        }
+        // 防御性净化：localStorage 可能被手动篡改/损坏，越界或非法值会让 applyUiDesign
+        // 产出 oklch(... NaN) 之类的坏样式，故统一夹取到合法区间/枚举。
+        function uidSanitize(c) {
+            c = c || {};
+            return {
+                hue: Math.round(uidClampNum(c.hue, 0, 360, UID_DEFAULTS.hue)),
+                scale: uidClampNum(c.scale, 85, 120, UID_DEFAULTS.scale),
+                radius: uidClampNum(c.radius, 0, 400, UID_DEFAULTS.radius),
+                density: uidClampNum(c.density, 30, 300, UID_DEFAULTS.density),
+                display: ['fraunces', 'serif', 'sans'].indexOf(c.display) !== -1 ? c.display : UID_DEFAULTS.display,
+                motion: (Number(c.motion) === 0) ? 0 : 1
+            };
+        }
         function uidRead() {
-            try { return Object.assign({}, UID_DEFAULTS, JSON.parse(localStorage.getItem(UID_KEY) || '{}')); }
+            try { return uidSanitize(Object.assign({}, UID_DEFAULTS, JSON.parse(localStorage.getItem(UID_KEY) || '{}'))); }
             catch (e) { return Object.assign({}, UID_DEFAULTS); }
         }
         function uidDisplayStack(v) {
@@ -9639,13 +9657,20 @@
         function setUiDensity(v) { uiDesign.density = Number(v); applyUiDesign(); uidActivate('uidDensitySeg', v); uidDirty(); }
         function setUiDisplay(v) { uiDesign.display = v; applyUiDesign(); uidActivate('uidDisplaySeg', v); uidDirty(); }
         function setUiMotion(v) { uiDesign.motion = Number(v); applyUiDesign(); uidActivate('uidMotionSeg', v); uidDirty(); }
+        // 滑块 oninput 触发频率极高；--ui-zoom / --s-* 等会触发整站 reflow/repaint，
+        // 故用 requestAnimationFrame 节流，确保每帧最多重算一次样式。
+        let uiDesignChangeRaf = null;
         function onUiDesignChange() {
             const hue = document.getElementById('uidHue');
             const sc = document.getElementById('uidScale');
             if (hue) { uiDesign.hue = Number(hue.value); const hv = document.getElementById('uidHueVal'); if (hv) hv.textContent = uiDesign.hue + '°'; }
             if (sc) { uiDesign.scale = Number(sc.value); const sv = document.getElementById('uidScaleVal'); if (sv) sv.textContent = uiDesign.scale + '%'; }
-            applyUiDesign();
-            uidRenderSwatches();
+            if (uiDesignChangeRaf) cancelAnimationFrame(uiDesignChangeRaf);
+            uiDesignChangeRaf = requestAnimationFrame(() => {
+                uiDesignChangeRaf = null;
+                applyUiDesign();
+                uidRenderSwatches();
+            });
             uidDirty();
         }
         function saveUiDesign() {
