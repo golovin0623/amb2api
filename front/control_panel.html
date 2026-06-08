@@ -9470,6 +9470,10 @@
 
             // 重新渲染使用动态颜色的组件
             refreshThemeAwareComponents();
+
+            // 按新主题的明度/彩度重算自定义极光：此内联路径不派发 themechange 事件，
+            // 故直接调用，确保切换主题后自定义色相不会沿用旧主题的 L/C。
+            if (typeof applyUiDesign === 'function') { applyUiDesign(); uidRenderSwatches(); }
         }
 
         // 刷新需要响应主题变化的组件
