@@ -37,14 +37,25 @@ ASSEMBLY_DASHBOARD_BASE = "https://www.assemblyai.com"
 SESSION_STORAGE_KEY = "assembly_dashboard_session"
 ACCOUNTS_LIST_KEY = "assembly_accounts_list"  # 存储账户列表
 CURRENT_ACCOUNT_KEY = "assembly_current_account"  # 当前选中的账户
-SESSION_EXPIRY_HOURS = 24 * 7  # 持久会话上限（aai_extended_session 续期窗口）
+# 本地持久会话窗口上限。真正的失效以服务端实际 401 为准（_make_dashboard_request
+# 在续期失败后清理死会话）；本地窗口只是兜底，防止「短暂离线 / 重启」后把仍可凭
+# 长效 cookie 恢复的会话误删。取 30 天，远长于一次离线，远短于 Stytch 会话绝对上限。
+SESSION_EXPIRY_HOURS = 24 * 30  # 持久会话本地兜底窗口（每次成功续期都会前滚）
 
 # Stytch sessionJWT 固定 5 分钟寿命，必须在到期前主动续期。
 SESSION_SECRET_KEY = "assembly_session_secret"  # 本地加密密钥（密码兜底续期用）
 JWT_REFRESH_LEEWAY_SECONDS = 90  # JWT 剩余寿命低于该值即视为需要续期
 RENEW_THROTTLE_SECONDS = 20  # 同一账户续期最小间隔，避免续期风暴
-KEEPALIVE_INTERVAL_SECONDS = 210  # 后台保活间隔（< 5 分钟 JWT 寿命）
+KEEPALIVE_INTERVAL_SECONDS = 210  # 后台保活轮询间隔（< 5 分钟 JWT 寿命）
 DEFAULT_JWT_TTL_SECONDS = 300  # 无法解析 exp 时的保守默认寿命
+# 长效 cookie（aai_extended_session）主动滚动间隔：即使 JWT 仍新鲜也要定期发一次
+# 认证请求滚动 cookie，使服务端会话永不进入"长时间无活动"而被回收。30 分钟远小于
+# cookie 的服务端寿命，又足够稀疏，不会形成请求风暴。
+COOKIE_KEEPALIVE_INTERVAL_SECONDS = 30 * 60
+# 密码兜底续期连续失败后的退避：避免用（可能已失效的）密码反复登录触发风控/锁号。
+PASSWORD_RENEW_BACKOFF_SECONDS = 10 * 60
+# 连续多少次密码登录失败后才丢弃存储的凭据（容忍偶发的瞬时 401/网络抖动）。
+PASSWORD_RENEW_MAX_FAILURES = 3
 
 _cache_store: Dict[str, Dict[str, Any]] = {}
 _renew_locks: Dict[str, asyncio.Lock] = {}  # 每账户续期锁，串行化并发续期
@@ -526,11 +537,15 @@ async def _authenticate_dashboard(email: str, password: str):
     return result, resp.headers
 
 
-def _extract_aai_extended_session(headers: Any) -> Optional[str]:
-    """从响应头的 Set-Cookie 中提取 aai_extended_session。
+# 服务端在每次认证请求后可能滚动的会话 cookie。捕获全部，使长效会话不断前滚。
+_ROLLING_COOKIE_NAMES = ("aai_extended_session", "session_jwt", "session_token")
+
+
+def _extract_session_cookies(headers: Any) -> Dict[str, str]:
+    """从响应头的 Set-Cookie 中提取所有滚动会话 cookie。
 
     用标准库 http.cookies.SimpleCookie 解析，并优先用 httpx.Headers.get_list
-    取多个 Set-Cookie，避免逗号拼接导致的正则错配。
+    取多个 Set-Cookie，避免逗号拼接导致的正则错配。返回 {cookie_name: value}。
     """
     try:
         if hasattr(headers, "get_list"):
@@ -539,18 +554,25 @@ def _extract_aai_extended_session(headers: Any) -> Optional[str]:
             raw = headers.get("set-cookie", "") or ""
             set_cookies = [raw] if raw else []
     except Exception:
-        return None
+        return {}
 
     from http.cookies import SimpleCookie
+    found: Dict[str, str] = {}
     for cookie_str in set_cookies:
         try:
             jar = SimpleCookie()
             jar.load(cookie_str)
-            if "aai_extended_session" in jar:
-                return jar["aai_extended_session"].value
+            for name in _ROLLING_COOKIE_NAMES:
+                if name in jar and jar[name].value:
+                    found[name] = jar[name].value
         except Exception:
             pass
-    return None
+    return found
+
+
+def _extract_aai_extended_session(headers: Any) -> Optional[str]:
+    """从响应头的 Set-Cookie 中提取 aai_extended_session（向后兼容的便捷封装）。"""
+    return _extract_session_cookies(headers).get("aai_extended_session")
 
 
 def _build_session_data_from_auth(
@@ -589,22 +611,92 @@ def _build_session_data_from_auth(
 
 
 def _capture_rolling_cookies(session_data: Dict[str, Any], response: Any) -> bool:
-    """从 dashboard 响应里捕获刷新后的 aai_extended_session，滚动续期持久会话。
+    """从 dashboard 响应里捕获刷新后的会话 cookie，滚动续期持久会话。
 
-    返回 True 表示捕获到了更新的 cookie（调用方负责落盘）。
+    捕获 aai_extended_session（长效会话）以及服务端可能一并滚动的 session_jwt /
+    session_token。若 session_jwt 被滚动，同步刷新 jwt_expires_at_ts，使续期判定能
+    据新 exp 工作（否则会一直按旧的过期 JWT 判为陈旧）。
+
+    返回 True 表示捕获到了任意更新的 cookie（调用方负责落盘）。
     """
     try:
-        rolled = _extract_aai_extended_session(response.headers)
+        rolled = _extract_session_cookies(response.headers)
     except Exception:
-        rolled = None
-    if rolled and rolled != session_data.get("aai_extended_session"):
-        session_data["aai_extended_session"] = rolled
-        return True
-    return False
+        rolled = {}
+
+    changed = False
+    for name, value in rolled.items():
+        if value and value != session_data.get(name):
+            session_data[name] = value
+            changed = True
+            if name == "session_jwt":
+                # 新 JWT 带来新的 exp；解析失败则置 None，让续期判定回退到登录时间估算。
+                session_data["jwt_expires_at_ts"] = decode_jwt_exp(value)
+    return changed
+
+
+async def _refresh_session_via_cookie(
+    account_email: str, session_data: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """用长效 cookie（aai_extended_session / session_token）滚动续期会话，无需密码。
+
+    这是浏览器保持登录的真实机制：每次带 cookie 访问 dashboard，服务端校验 Stytch
+    会话并通过 Set-Cookie 滚动 cookie（并可能下发新的 session_jwt）。我们发一个轻量
+    的认证请求专门触发这一滚动，使空闲账户的会话也能长期存活，而不必反复用密码登录
+    （后者频繁调用会触发风控、最终丢失凭据，正是"几天后账号查不到"的根因）。
+
+    成功（服务端会话仍有效）返回滚动后的 session_data 并落盘；cookie 已失效（401/403）
+    或无可用 cookie 时返回 None，交由密码兜底或上层清理。
+    """
+    if session_data.get("auth_type", "dashboard") != "dashboard":
+        return None
+    if not (session_data.get("aai_extended_session") or session_data.get("session_token")):
+        # 没有长效 cookie，无法做无密码续期
+        return None
+
+    try:
+        client = await _get_dashboard_client()
+        # 用一个会在会话失效时返回 401（而非 302 跳登录）的 RSC 数据端点，且仅用 cookie
+        # 认证（allow_bearer=False），避免发送可能已过期的 sessionJWT 误触 401。
+        url, headers = _prepare_dashboard_request(
+            session_data, "/dashboard/code", {"_rsc": "1"}, allow_bearer=False
+        )
+        resp = await client.get(url, headers=headers, params={"_rsc": "1"})
+    except Exception as e:
+        log.debug(f"[Session] Cookie refresh request error for {account_email}: {e}")
+        return None
+
+    if resp.status_code in (401, 403):
+        log.info(
+            f"[Session] Long-lived cookie no longer valid for {account_email} "
+            f"(status={resp.status_code})"
+        )
+        return None
+    if resp.status_code >= 400:
+        # 其它错误（5xx/限流等）不代表会话失效，本轮放弃但不清理。
+        log.debug(
+            f"[Session] Cookie refresh got status {resp.status_code} for {account_email}"
+        )
+        return None
+
+    # 会话有效：捕获滚动后的 cookie，并刷新本地新鲜度标记。
+    _capture_rolling_cookies(session_data, resp)
+    session_data.pop("_jwt_stale", None)
+    session_data["last_renew_ts"] = time.time()
+    # 若本次未拿到新的可解析 JWT exp，用刷新时间作为新鲜度依据（续期判定会回退到
+    # logged_in_at 估算），避免会话被立即判为陈旧而反复续期。
+    if session_data.get("jwt_expires_at_ts") is None:
+        session_data["logged_in_at"] = datetime.now().isoformat()
+    try:
+        await _save_session(session_data)
+    except Exception as e:
+        log.warning(f"[Session] Failed to persist cookie-refreshed session for {account_email}: {e}")
+    log.info(f"[Session] Renewed via long-lived cookie for {account_email}")
+    return session_data
 
 
 async def _renew_session(account_email: str) -> Optional[Dict[str, Any]]:
-    """续期某账户会话：优先滚动 cookie，失败则用加密密码自动重新登录。
+    """续期某账户会话：优先用长效 cookie 无密码滚动，失败再用加密密码自动重新登录。
 
     成功返回更新后的 session_data；无法续期返回 None。
     """
@@ -621,44 +713,75 @@ async def _renew_session(account_email: str) -> Optional[Dict[str, Any]]:
         ):
             return session_data
 
+        # 1) 首选：长效 cookie 无密码滚动续期（轻量、不触发登录风控）。
+        cookie_refreshed = await _refresh_session_via_cookie(account_email, session_data)
+        if cookie_refreshed:
+            # cookie 续期成功，重置密码失败计数（如有）。
+            if cookie_refreshed.get("pw_renew_fail_count"):
+                cookie_refreshed.pop("pw_renew_fail_count", None)
+                cookie_refreshed.pop("pw_renew_fail_ts", None)
+                try:
+                    await _save_session(cookie_refreshed)
+                except Exception:
+                    pass
+            return cookie_refreshed
+
+        # 2) 兜底：用加密保存的密码重新登录。带退避，避免反复登录触发风控/锁号。
         password = await _decrypt_account_password(session_data)
-        if password:
-            try:
-                result, headers = await _authenticate_dashboard(account_email, password)
-                fresh = _build_session_data_from_auth(account_email, result, headers)
-                # 保留加密密码，便于持续续期
-                fresh["enc_password"] = session_data.get("enc_password")
-                # 仅当新 JWT 能解析出 exp 时，才保留原始 logged_in_at（续期判定走
-                # exp，不依赖登录时间）。若新 JWT 无 exp，_session_needs_renewal 会
-                # 回退到 logged_in_at 估算，此时必须保留本次刷新的新鲜时间，否则刚
-                # 续期的会话会被立刻判为陈旧，导致重复重新认证。
-                if fresh.get("jwt_expires_at_ts") is not None:
-                    fresh["logged_in_at"] = session_data.get(
-                        "logged_in_at", fresh["logged_in_at"]
-                    )
-                fresh["last_renew_ts"] = time.time()
-                await _save_session(fresh)
-                log.info(f"[Session] Renewed via stored credentials for {account_email}")
-                return fresh
-            except HTTPException as e:
-                log.warning(
-                    f"[Session] Credential renew failed for {account_email}: {e.detail}"
-                )
-                # 凭据已失效（如改了密码）：仅移除加密密码以停止用错误密码反复登录
-                # （避免风控/锁号），但保留会话本身——其长效 aai_extended_session /
-                # session_token 可能仍可用，留给真实请求在确实 401 时再清理。
-                if e.status_code == 401 and session_data.get("enc_password"):
-                    session_data.pop("enc_password", None)
-                    try:
-                        await _save_session(session_data)
-                    except Exception:
-                        pass
-            except Exception as e:
-                log.warning(f"[Session] Credential renew error for {account_email}: {e}")
-        else:
+        if not password:
             log.info(
-                f"[Session] No stored credentials for {account_email}; cannot auto-renew"
+                f"[Session] No long-lived cookie and no stored credentials for "
+                f"{account_email}; cannot auto-renew"
             )
+            return None
+
+        last_pw_fail = session_data.get("pw_renew_fail_ts", 0)
+        if (time.time() - last_pw_fail) < PASSWORD_RENEW_BACKOFF_SECONDS:
+            log.info(
+                f"[Session] Skipping password renew for {account_email} (in backoff window)"
+            )
+            return None
+
+        try:
+            result, headers = await _authenticate_dashboard(account_email, password)
+            fresh = _build_session_data_from_auth(account_email, result, headers)
+            # 保留加密密码，便于持续续期；清除失败计数
+            fresh["enc_password"] = session_data.get("enc_password")
+            # 仅当新 JWT 能解析出 exp 时，才保留原始 logged_in_at（续期判定走
+            # exp，不依赖登录时间）。若新 JWT 无 exp，_session_needs_renewal 会
+            # 回退到 logged_in_at 估算，此时必须保留本次刷新的新鲜时间，否则刚
+            # 续期的会话会被立刻判为陈旧，导致重复重新认证。
+            if fresh.get("jwt_expires_at_ts") is not None:
+                fresh["logged_in_at"] = session_data.get(
+                    "logged_in_at", fresh["logged_in_at"]
+                )
+            fresh["last_renew_ts"] = time.time()
+            await _save_session(fresh)
+            log.info(f"[Session] Renewed via stored credentials for {account_email}")
+            return fresh
+        except HTTPException as e:
+            log.warning(
+                f"[Session] Credential renew failed for {account_email}: {e.detail}"
+            )
+            # 记录失败时间用于退避。仅在连续多次失败后才丢弃凭据，容忍偶发瞬时 401，
+            # 避免一次抖动就永久关闭自动续期。保留会话本身——其长效 cookie 可能仍可
+            # 用，留给真实请求在确实 401 时再清理。
+            if e.status_code == 401 and session_data.get("enc_password"):
+                fails = int(session_data.get("pw_renew_fail_count", 0)) + 1
+                session_data["pw_renew_fail_count"] = fails
+                session_data["pw_renew_fail_ts"] = time.time()
+                if fails >= PASSWORD_RENEW_MAX_FAILURES:
+                    session_data.pop("enc_password", None)
+                    log.warning(
+                        f"[Session] Dropping stored credentials for {account_email} "
+                        f"after {fails} consecutive failures"
+                    )
+                try:
+                    await _save_session(session_data)
+                except Exception:
+                    pass
+        except Exception as e:
+            log.warning(f"[Session] Credential renew error for {account_email}: {e}")
         return None
 
 
@@ -671,6 +794,14 @@ async def _ensure_fresh_session(
     """
     if not _session_needs_renewal(session_data):
         return session_data
+    # 有长效 cookie 时不必预先发一次续期请求：真实请求本身会以 cookie 认证发出，
+    # 并捕获服务端滚动的 cookie 完成续期（见 _make_dashboard_request）。只需标记
+    # JWT 陈旧让请求层退回纯 cookie 认证，避免一次查询触发两次上游请求。
+    if session_data.get("aai_extended_session") or session_data.get("session_token"):
+        session_data = dict(session_data)
+        session_data["_jwt_stale"] = True
+        return session_data
+    # 无长效 cookie：只能用密码兜底续期以换取新的 JWT。
     renewed = await _renew_session(account_email)
     if renewed:
         return renewed
@@ -681,12 +812,20 @@ async def _ensure_fresh_session(
 
 
 async def _keepalive_loop() -> None:
-    """后台保活：在 JWT 到期前主动续期所有具备凭据的账户。"""
+    """后台保活：主动滚动所有 dashboard 账户的长效会话，避免空闲账户被动失效。
+
+    关键修复：旧实现只对"已存密码"的账户做密码重新登录——既漏掉了仅有长效 cookie
+    的账户（它们空闲时无人滚动 cookie，几天后失效），又对有密码的账户每 5 分钟用密码
+    重登一次，长期高频登录触发风控、最终丢失凭据后同样失效。新实现以"无密码 cookie
+    滚动"为主：只要账户有长效 cookie 或存有凭据，就在 JWT 临期或 cookie 久未滚动时
+    续期（_renew_session 内部已 cookie 优先），从而让会话长期存活。
+    """
     log.info("[Keepalive] Session keep-alive loop running")
     while True:
         try:
             await asyncio.sleep(KEEPALIVE_INTERVAL_SECONDS)
             accounts = await _get_accounts_list()
+            now = time.time()
             for acc in accounts:
                 email = acc.get("email")
                 if not email:
@@ -694,8 +833,16 @@ async def _keepalive_loop() -> None:
                 session = await _get_raw_session(email)
                 if not session or session.get("auth_type", "dashboard") != "dashboard":
                     continue
-                # 仅对可自动续期（已存凭据）且即将过期的会话主动续期
-                if session.get("enc_password") and _session_needs_renewal(session):
+                has_cookie = bool(
+                    session.get("aai_extended_session") or session.get("session_token")
+                )
+                renewable = has_cookie or session.get("enc_password")
+                if not renewable:
+                    continue
+                # JWT 临期，或长效 cookie 久未滚动（即使 JWT 仍新鲜也定期滚动，使服务端
+                # 会话永不进入"长时间无活动"状态而被回收）。
+                cookie_due = (now - session.get("last_renew_ts", 0)) >= COOKIE_KEEPALIVE_INTERVAL_SECONDS
+                if _session_needs_renewal(session) or cookie_due:
                     try:
                         await _renew_session(email)
                     except Exception as e:
