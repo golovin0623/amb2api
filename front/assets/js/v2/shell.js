@@ -21,6 +21,7 @@
     { id: 'playground',  label: '操练场',   eyebrow: 'Playground',   icon: 'terminal',      shortcut: 'g p' },
     { id: 'performance', label: '性能分析', eyebrow: 'Performance',  icon: 'activity',      shortcut: 'g f' },
     { id: 'logs',        label: '实时日志', eyebrow: 'Logs',         icon: 'file-text',     shortcut: 'g l' },
+    { id: 'system',      label: '系统配置', eyebrow: 'System',       icon: 'sliders',       shortcut: 'g s' },
   ];
 
   const SIDEBAR_KEY = 'amb2api.v2.sidebar';
@@ -245,7 +246,7 @@
       // g x 跳转
       if (e.key === 'g') { lastG = Date.now(); return; }
       if (lastG && Date.now() - lastG < 1200) {
-        const map = { a: 'account', c: 'config', r: 'ratelimit', u: 'usage', p: 'playground', f: 'performance', l: 'logs' };
+        const map = { a: 'account', c: 'config', r: 'ratelimit', u: 'usage', p: 'playground', f: 'performance', l: 'logs', s: 'system' };
         const tab = map[e.key.toLowerCase()];
         if (tab && typeof window.switchTab === 'function') {
           e.preventDefault();
