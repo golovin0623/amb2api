@@ -10797,13 +10797,16 @@
                 const limit = Number(k.limit) || 0;
                 const used = Number(k.used) || 0;
                 const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+                const disabled = k.enabled === false || k.status === 'disabled';
                 let state = 'idle';
-                if (limit > 0) {
+                if (disabled) {
+                    state = 'disabled';
+                } else if (limit > 0) {
                     if (k.status === 'exhausted' || pct >= 99.5) state = 'exhausted';
                     else if (pct >= 80) state = 'warn';
                     else state = 'active';
                 }
-                return { ...k, _pct: pct, _state: state };
+                return { ...k, _pct: pct, _state: state, _disabled: disabled };
             });
 
             // KPI 行
@@ -10812,7 +10815,8 @@
                 const activeCnt = enriched.filter(k => k._state === 'active').length;
                 const warnCnt = enriched.filter(k => k._state === 'warn').length;
                 const exhaustedCnt = enriched.filter(k => k._state === 'exhausted').length;
-                const used = enriched.filter(k => k.limit > 0);
+                const disabledCnt = enriched.filter(k => k._disabled).length;
+                const used = enriched.filter(k => k.limit > 0 && !k._disabled);
                 const avgPct = used.length ? (used.reduce((s, k) => s + k._pct, 0) / used.length) : 0;
 
                 kpiEl.hidden = false;
@@ -10825,7 +10829,7 @@
                     <div class="v2-rl-kpi">
                         <div class="v2-rl-kpi__label"><span>Active</span></div>
                         <div class="v2-rl-kpi__value">${activeCnt}<span class="v2-rl-kpi__value-suffix"> / ${total}</span></div>
-                        <div class="v2-rl-kpi__hint">${warnCnt > 0 ? warnCnt + ' 即将耗尽' : '运行健康'}</div>
+                        <div class="v2-rl-kpi__hint">${disabledCnt > 0 ? disabledCnt + ' 已禁用' : warnCnt > 0 ? warnCnt + ' 即将耗尽' : '运行健康'}</div>
                         <div class="v2-rl-kpi__sparkbar" style="width:${total ? (activeCnt / total * 100).toFixed(1) : 0}%"></div>
                     </div>
                     <div class="v2-rl-kpi">
@@ -10894,7 +10898,8 @@
                     return;
                 }
 
-                const stateLabel = key._state === 'exhausted' ? '已耗尽'
+                const stateLabel = key._state === 'disabled' ? '已禁用'
+                    : key._state === 'exhausted' ? '已耗尽'
                     : key._state === 'warn' ? '即将耗尽' : '可用';
 
                 html += `
