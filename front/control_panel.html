@@ -6846,12 +6846,12 @@
                     <!-- 子能力导航（滑动指示器分段控件） -->
                     <div class="v2-sys-subnav" id="sysSubnav" role="tablist" aria-label="系统配置子页">
                         <span class="v2-sys-subnav__indicator" aria-hidden="true"></span>
-                        <button type="button" class="v2-sys-subnav__item" role="tab" data-active="true" data-section="tokens" data-icon="key-round" onclick="switchSystemSection('tokens')"><span>用户令牌</span></button>
-                        <button type="button" class="v2-sys-subnav__item" role="tab" data-active="false" data-section="design" data-icon="palette" onclick="switchSystemSection('design')"><span>界面设计</span></button>
+                        <button type="button" id="sysTab-tokens" class="v2-sys-subnav__item" role="tab" aria-selected="true" aria-controls="sysSection-tokens" data-active="true" data-section="tokens" data-icon="key-round" onclick="switchSystemSection('tokens')"><span>用户令牌</span></button>
+                        <button type="button" id="sysTab-design" class="v2-sys-subnav__item" role="tab" aria-selected="false" aria-controls="sysSection-design" data-active="false" data-section="design" data-icon="palette" onclick="switchSystemSection('design')"><span>界面设计</span></button>
                     </div>
 
                     <!-- 子能力一：用户令牌（多租户） -->
-                    <div id="sysSection-tokens" class="v2-sys-section active">
+                    <div id="sysSection-tokens" class="v2-sys-section active" role="tabpanel" aria-labelledby="sysTab-tokens">
 
                     <!-- 概览 KPI -->
                     <div class="v2-sys-kpis" id="tokenStats" style="display:none;">
@@ -6914,7 +6914,7 @@
                     <!-- /sysSection-tokens -->
 
                     <!-- 子能力二：界面设计（Aether Codex 运行时令牌） -->
-                    <div id="sysSection-design" class="v2-sys-section">
+                    <div id="sysSection-design" class="v2-sys-section" role="tabpanel" aria-labelledby="sysTab-design">
 
                         <div class="v2-sys-design-grid">
                             <!-- 极光配色 -->
@@ -9276,8 +9276,11 @@
             document.querySelectorAll('#systemTab .v2-sys-section').forEach(el => el.classList.remove('active'));
             const sec = document.getElementById('sysSection-' + name);
             if (sec) sec.classList.add('active');
-            document.querySelectorAll('#sysSubnav .v2-sys-subnav__item').forEach(b =>
-                b.setAttribute('data-active', b.dataset.section === name ? 'true' : 'false'));
+            document.querySelectorAll('#sysSubnav .v2-sys-subnav__item').forEach(b => {
+                const isActive = b.dataset.section === name;
+                b.setAttribute('data-active', isActive ? 'true' : 'false');
+                b.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            });
             sysMoveSubnavIndicator();
             if (name === 'tokens') { loadTokens(); }
             if (name === 'design') { uiDesign = uidRead(); applyUiDesign(); uidSyncControls(); }

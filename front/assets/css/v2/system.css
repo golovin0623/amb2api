@@ -905,13 +905,15 @@ html[data-theme="dark"] body #systemTab .v2-uid-seg { background: var(--bg-sunke
 html[data-theme="dark"] body #systemTab .v2-uid-seg button.active { background: var(--bg-raised); }
 html[data-theme="dark"] body #systemTab .v2-tk-bar { background: var(--bg-sunken); }
 html[data-theme="dark"] body #systemTab .v2-tk-bar__tick { background: var(--bg-overlay); }
-html[data-theme="dark"] body #systemTab .v2-uid-range::-webkit-slider-runnable-track {
+/* :not(--hue) 排除色相滑杆——其轨道是 OKLCH 光谱，明暗一致，
+   否则本组暗色覆盖的特异性会盖掉光谱背景 */
+html[data-theme="dark"] body #systemTab .v2-uid-range:not(.v2-uid-range--hue)::-webkit-slider-runnable-track {
   background: linear-gradient(90deg,
     var(--aurora-1) 0%,
     var(--aurora-1) var(--pct, 50%),
     var(--bg-sunken) var(--pct, 50%));
 }
-html[data-theme="dark"] body #systemTab .v2-uid-range::-moz-range-track { background: var(--bg-sunken); }
+html[data-theme="dark"] body #systemTab .v2-uid-range:not(.v2-uid-range--hue)::-moz-range-track { background: var(--bg-sunken); }
 html[data-theme="dark"] body #systemTab .v2-uid-swatch.active {
   box-shadow: 0 0 0 2px var(--bg-overlay), 0 0 0 4px var(--line-strong);
 }
