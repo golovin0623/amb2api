@@ -18,7 +18,7 @@ def _build_endpoint_view(keys, rate_info, enabled_map=None):
     result = []
     for idx, key in enumerate(keys):
         masked = _mask_key(key)
-        enabled = enabled_map.get(idx, True)
+        enabled = enabled_map.get(key, True)
         if idx in rate_info:
             info = rate_info[idx]
             if not enabled:
@@ -108,7 +108,7 @@ def test_disabled_key_reflected_in_status(monkeypatch):
     monkeypatch.setattr("src.services.assembly_client.get_rate_limiter", _fake_get_rl)
 
     rate_info = asyncio.run(get_rate_limit_info())
-    enabled_map = {0: False, 1: True, 2: False}
+    enabled_map = {keys[0]: False, keys[1]: True, keys[2]: False}
     result = _build_endpoint_view(keys, rate_info, enabled_map)
 
     statuses = {e["index"]: e["status"] for e in result}

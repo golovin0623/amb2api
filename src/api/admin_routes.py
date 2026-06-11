@@ -968,13 +968,15 @@ async def rate_limits(token: str = Depends(authenticate)):
     # 获取配置的所有keys用于显示完整列表
     keys = await get_assembly_api_keys()
 
-    # 获取每个 key 的启用/禁用状态，与「多密钥管理」面板联动
-    enabled_map: Dict[int, bool] = {}
+    # 获取每个 key 的启用/禁用状态，与「多密钥管理」面板联动。
+    # 以密钥原始字符串为键匹配，避免 get_assembly_api_keys()（可读 env）与
+    # key_manager（读存储适配器）密钥来源不一致时按索引错位。
+    enabled_map: Dict[str, bool] = {}
     try:
         from ..services.key_manager import get_key_manager
         key_manager = await get_key_manager()
         for key_info in await key_manager.get_all_keys():
-            enabled_map[key_info.index] = key_info.enabled
+            enabled_map[key_info.key] = key_info.enabled
     except Exception as e:
         log.warning(f"Failed to load key enabled states for rate limits: {e}")
 
@@ -983,7 +985,7 @@ async def rate_limits(token: str = Depends(authenticate)):
     for idx, key in enumerate(keys):
         from ..services.assembly_client import _mask_key
         masked = _mask_key(key)
-        enabled = enabled_map.get(idx, True)
+        enabled = enabled_map.get(key, True)
 
         if idx in rate_info:
             info = rate_info[idx]
