@@ -6696,288 +6696,6 @@
             .btn-sm:active:not(:disabled) { transform: none; }
         }
 
-        /* ============ 用户令牌页面 重构样式 ============ */
-        .tk-page { --tk-accent:#4285f4; --tk-accent-dark:#3367d6; }
-
-        /* 顶部介绍 */
-        .tk-hero {
-            display:flex; flex-wrap:wrap; align-items:flex-start; gap:14px;
-            margin: 4px 0 22px;
-        }
-        .tk-hero-icon {
-            flex:0 0 auto; width:48px; height:48px; border-radius:14px;
-            display:flex; align-items:center; justify-content:center; font-size:24px;
-            background: linear-gradient(135deg, var(--tk-accent), #6ea8ff);
-            box-shadow: 0 6px 16px rgba(66,133,244,.35);
-        }
-        .tk-hero-text { flex:1 1 260px; min-width:0; }
-        .tk-hero-text h3 { margin:0 0 4px; font-size:22px; font-weight:700; color:var(--text-color); }
-        .tk-hero-text p { margin:0; color:var(--text-secondary); font-size:13.5px; line-height:1.6; }
-        .tk-hero-text code {
-            background: var(--code-bg); padding:1px 6px; border-radius:5px;
-            font-size:12px; color: var(--tk-accent);
-        }
-
-        /* 概览统计 */
-        .tk-stats { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:22px; }
-        .tk-stat {
-            flex:1 1 130px; min-width:120px;
-            background: var(--container-bg); border:1px solid var(--border-color);
-            border-radius:14px; padding:14px 16px;
-            box-shadow: 0 1px 3px var(--shadow-color);
-        }
-        .tk-stat-label { font-size:12px; color:var(--text-muted); margin-bottom:6px; letter-spacing:.3px; }
-        .tk-stat-value { font-size:26px; font-weight:700; color:var(--text-color); line-height:1; }
-        .tk-stat-value small { font-size:13px; font-weight:500; color:var(--text-muted); }
-        .tk-stat.accent .tk-stat-value { color: var(--tk-accent); }
-        .tk-stat.good .tk-stat-value { color:#22a06b; }
-
-        /* 卡片容器 */
-        .tk-card {
-            background: var(--container-bg); border:1px solid var(--border-color);
-            border-radius:16px; padding:22px; margin-bottom:22px;
-            box-shadow: 0 1px 3px var(--shadow-color);
-        }
-        .tk-card-head { display:flex; align-items:center; gap:10px; margin-bottom:18px; }
-        .tk-card-head h4 { margin:0; font-size:17px; font-weight:700; color:var(--text-color); }
-        .tk-card-head .tk-chip {
-            margin-left:auto; font-size:12px; color:var(--text-muted);
-        }
-
-        /* 新建表单网格 */
-        .tk-form-grid {
-            display:grid; gap:16px;
-            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-        }
-        .tk-field { display:flex; flex-direction:column; gap:6px; min-width:0; }
-        .tk-field label {
-            font-size:13px; font-weight:600; color:var(--text-color);
-            display:flex; align-items:center; gap:6px;
-        }
-        .tk-field .tk-hint { font-size:11px; font-weight:400; color:var(--text-muted); }
-        .tk-field input {
-            width:100%; padding:11px 12px; border:2px solid var(--input-border);
-            border-radius:10px; font-size:14px; background:var(--input-bg);
-            color:var(--text-color); box-sizing:border-box;
-            transition: border-color .2s ease, box-shadow .2s ease;
-        }
-        .tk-field input:focus {
-            border-color: var(--tk-accent); outline:none;
-            box-shadow: 0 0 0 3px rgba(66,133,244,.15);
-        }
-        .tk-form-actions { display:flex; justify-content:flex-end; margin-top:18px; }
-        .tk-btn-primary {
-            background: linear-gradient(135deg, var(--tk-accent), var(--tk-accent-dark));
-            color:#fff; border:none; border-radius:10px; padding:11px 28px;
-            font-size:14px; font-weight:600; cursor:pointer; width:auto; margin:0;
-            display:inline-flex; align-items:center; gap:7px;
-            box-shadow: 0 4px 12px rgba(66,133,244,.3);
-            transition: transform .15s ease, box-shadow .15s ease;
-        }
-        .tk-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(66,133,244,.4); }
-        .tk-btn-primary:active { transform: translateY(0); }
-
-        /* 创建成功 banner */
-        .tk-reveal {
-            margin-top:16px; padding:16px 18px; border-radius:12px;
-            background: linear-gradient(135deg, rgba(34,160,107,.1), rgba(66,133,244,.08));
-            border:1px solid rgba(34,160,107,.35);
-        }
-        .tk-reveal-title { font-size:13px; font-weight:600; color:#22a06b; margin-bottom:10px; display:flex; align-items:center; gap:7px; }
-        .tk-reveal-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-        .tk-reveal code {
-            flex:1 1 auto; min-width:0; user-select:all; word-break:break-all;
-            font-family:monospace; font-size:13px; background:var(--container-bg);
-            padding:10px 12px; border-radius:8px; border:1px solid var(--border-color);
-            color:var(--text-color);
-        }
-
-        /* 工具条 */
-        .tk-toolbar { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
-        .tk-toolbar h4 { margin:0; font-size:17px; font-weight:700; color:var(--text-color); }
-        .tk-btn-ghost {
-            background: var(--container-bg); color:var(--text-color);
-            border:1px solid var(--border-color); border-radius:9px;
-            padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer;
-            width:auto; margin:0; display:inline-flex; align-items:center; gap:6px;
-            transition: background .15s ease, border-color .15s ease;
-        }
-        .tk-btn-ghost:hover { background: var(--hover-bg); border-color: var(--tk-accent); }
-
-        /* 令牌卡片网格 */
-        .tk-grid {
-            display:grid; gap:16px;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-        }
-        .tk-token {
-            background: var(--container-bg); border:1px solid var(--border-color);
-            border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:14px;
-            box-shadow: 0 1px 3px var(--shadow-color);
-            transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
-            position:relative; overflow:hidden;
-        }
-        .tk-token::before {
-            content:''; position:absolute; top:0; left:0; right:0; height:3px;
-            background: linear-gradient(90deg, var(--tk-accent), #6ea8ff);
-        }
-        .tk-token.disabled::before { background: var(--border-color); }
-        .tk-token:hover { transform: translateY(-2px); box-shadow: 0 8px 20px var(--shadow-color); border-color: var(--tk-accent); }
-
-        .tk-token-top { display:flex; align-items:flex-start; gap:10px; }
-        .tk-avatar {
-            flex:0 0 auto; width:38px; height:38px; border-radius:10px;
-            display:flex; align-items:center; justify-content:center;
-            font-size:16px; font-weight:700; color:#fff; text-transform:uppercase;
-            background: linear-gradient(135deg, var(--tk-accent), #6ea8ff);
-        }
-        .tk-token.disabled .tk-avatar { background: linear-gradient(135deg,#9aa5b1,#cbd2d9); }
-        .tk-token-name { flex:1 1 auto; min-width:0; }
-        .tk-token-name .nm { font-size:15px; font-weight:700; color:var(--text-color); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .tk-token-name .sub { font-size:11.5px; color:var(--text-muted); margin-top:2px; }
-
-        .tk-badge {
-            flex:0 0 auto; font-size:11.5px; font-weight:600; padding:3px 10px;
-            border-radius:999px; display:inline-flex; align-items:center; gap:5px;
-        }
-        .tk-badge.on { color:#22a06b; background: rgba(34,160,107,.12); }
-        .tk-badge.off { color:#c0392b; background: rgba(192,57,43,.12); }
-        .tk-badge.exp { color:#d97706; background: rgba(217,119,6,.12); }
-        .tk-badge .dot { width:6px; height:6px; border-radius:50%; background: currentColor; }
-
-        /* 令牌字符串行 */
-        .tk-token-key {
-            display:flex; align-items:center; gap:8px;
-            background: var(--card-bg); border:1px solid var(--border-color);
-            border-radius:9px; padding:8px 10px;
-        }
-        .tk-token-key code {
-            flex:1 1 auto; min-width:0; font-family:monospace; font-size:12.5px;
-            color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-        }
-
-        /* 配额进度 */
-        .tk-quota-row { display:flex; justify-content:space-between; align-items:baseline; font-size:12px; margin-bottom:6px; }
-        .tk-quota-row .lbl { color:var(--text-muted); }
-        .tk-quota-row .val { color:var(--text-color); font-weight:600; font-variant-numeric:tabular-nums; }
-        .tk-bar { height:7px; border-radius:999px; background: var(--card-bg); overflow:hidden; }
-        .tk-bar > span { display:block; height:100%; border-radius:999px; background: linear-gradient(90deg,#22a06b,#3ec98a); transition: width .4s ease; }
-        .tk-bar.warn > span { background: linear-gradient(90deg,#e0992a,#fbbc05); }
-        .tk-bar.danger > span { background: linear-gradient(90deg,#c0392b,#ff6b5e); }
-        .tk-bar.inf > span { background: linear-gradient(90deg, var(--tk-accent), #6ea8ff); width:100%; opacity:.35; }
-
-        /* 模型标签 */
-        .tk-models { display:flex; flex-wrap:wrap; gap:6px; }
-        .tk-models .mtag {
-            font-size:11.5px; padding:3px 9px; border-radius:7px;
-            background: var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary);
-            max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-        }
-        .tk-models .mtag.all { color: var(--tk-accent); border-color: rgba(66,133,244,.3); background: rgba(66,133,244,.08); }
-
-        /* 卡片操作 */
-        .tk-token-actions { display:flex; gap:8px; margin-top:auto; padding-top:4px; }
-        .tk-act {
-            flex:1 1 0; background: var(--card-bg); color:var(--text-secondary);
-            border:1px solid var(--border-color); border-radius:8px;
-            padding:7px 0; font-size:12.5px; font-weight:600; cursor:pointer;
-            width:auto; margin:0; display:inline-flex; align-items:center; justify-content:center; gap:5px;
-            transition: all .15s ease;
-        }
-        .tk-act:hover { background: var(--hover-bg); }
-        .tk-act.toggle:hover { color: var(--tk-accent); border-color: var(--tk-accent); }
-        .tk-act.reset:hover { color:#d97706; border-color:#d97706; }
-        .tk-act.del:hover { color:#c0392b; border-color:#c0392b; background: rgba(192,57,43,.08); }
-
-        /* 空状态 / 加载 */
-        .tk-empty {
-            text-align:center; padding:48px 20px; color:var(--text-muted);
-            border:1px dashed var(--border-color); border-radius:14px; background: var(--card-bg);
-        }
-        .tk-empty .ico { font-size:40px; margin-bottom:12px; opacity:.6; }
-        .tk-empty .ttl { font-size:15px; color:var(--text-secondary); margin-bottom:4px; font-weight:600; }
-        .tk-empty .desc { font-size:13px; }
-        .tk-skel { display:grid; gap:16px; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); }
-        .tk-skel-card { height:210px; border-radius:14px; border:1px solid var(--border-color);
-            background: linear-gradient(100deg, var(--card-bg) 30%, var(--hover-bg) 50%, var(--card-bg) 70%);
-            background-size:200% 100%; animation: tkShimmer 1.3s ease-in-out infinite; }
-        @keyframes tkShimmer { from { background-position:200% 0; } to { background-position:-200% 0; } }
-
-        @media (max-width:640px) {
-            .tk-card { padding:16px; }
-            .tk-stat { flex-basis:calc(50% - 6px); }
-        }
-
-        /* ============ 系统配置 · 子导航 + 界面设计（Aether Codex） ============ */
-        .sys-page { --tk-accent: var(--aurora-1, #4285f4); --tk-accent-dark: var(--aurora-2, #3367d6); }
-        .sys-hero { display:flex; flex-wrap:wrap; align-items:flex-start; gap:14px; margin: 4px 0 18px; }
-        .sys-hero-icon {
-            flex:0 0 auto; width:48px; height:48px; border-radius:14px;
-            display:flex; align-items:center; justify-content:center; font-size:24px;
-            background: linear-gradient(135deg, var(--aurora-1, #4285f4), var(--aurora-3, #6ea8ff));
-            color:#fff; box-shadow: 0 6px 18px var(--shadow-color);
-        }
-        .sys-hero-text h3 { margin:0 0 4px; font-size:20px; color:var(--text-color); }
-        .sys-hero-text p { margin:0; color:var(--text-secondary); font-size:13.5px; line-height:1.6; max-width:780px; }
-
-        .sys-subnav {
-            display:inline-flex; gap:4px; padding:4px; margin-bottom:22px; flex-wrap:wrap;
-            background: var(--card-bg); border:1px solid var(--border-color); border-radius:12px;
-        }
-        .sys-subnav button {
-            border:none; background:transparent; cursor:pointer; padding:8px 16px; border-radius:9px;
-            font-size:13.5px; font-weight:600; color: var(--text-secondary);
-            transition: background-color .2s ease, color .2s ease; display:inline-flex; align-items:center; gap:6px;
-        }
-        .sys-subnav button:hover { color: var(--text-color); }
-        .sys-subnav button.active { background: var(--container-bg); color: var(--text-color); box-shadow: 0 1px 4px var(--shadow-color); }
-        .sys-section { display:none; }
-        .sys-section.active { display:block; animation: sysFade .35s var(--ease-standard, ease); }
-        @keyframes sysFade { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform:none; } }
-
-        .uid-grid { display:grid; gap:16px; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); align-items:start; }
-        .uid-card {
-            background: var(--container-bg); border:1px solid var(--border-color);
-            border-radius:14px; padding:18px 18px 20px;
-        }
-        .uid-card h4 { margin:0 0 4px; font-size:15px; color:var(--text-color); display:flex; align-items:center; gap:8px; }
-        .uid-card .uid-desc { margin:0 0 14px; font-size:12.5px; color:var(--text-muted); line-height:1.55; }
-        .uid-row { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
-        .uid-row label { flex:0 0 auto; font-size:13px; color:var(--text-secondary); min-width:48px; }
-        .uid-range { flex:1 1 auto; accent-color: var(--aurora-1, #4285f4); cursor:pointer; }
-        .uid-val { flex:0 0 auto; font-variant-numeric:tabular-nums; font-weight:700; font-size:13px; color:var(--text-color); min-width:48px; text-align:right; }
-        .uid-swatches { display:flex; gap:10px; flex-wrap:wrap; margin-top:6px; }
-        .uid-swatch {
-            width:34px; height:34px; border-radius:9px; cursor:pointer; border:2px solid transparent;
-            box-shadow: 0 2px 6px var(--shadow-color); transition: transform .15s ease, border-color .15s ease;
-        }
-        .uid-swatch:hover { transform: translateY(-2px); }
-        .uid-swatch.active { border-color: var(--text-color); }
-        .uid-seg { display:inline-flex; gap:4px; padding:3px; background:var(--card-bg); border:1px solid var(--border-color); border-radius:10px; flex-wrap:wrap; }
-        .uid-seg button {
-            border:none; background:transparent; cursor:pointer; padding:6px 14px; border-radius:7px;
-            font-size:12.5px; font-weight:600; color:var(--text-secondary); transition: background-color .18s ease, color .18s ease;
-        }
-        .uid-seg button:hover { color: var(--text-color); }
-        .uid-seg button.active { background: var(--container-bg); color:var(--text-color); box-shadow:0 1px 3px var(--shadow-color); }
-        .uid-actions { display:flex; gap:10px; margin-top:18px; flex-wrap:wrap; }
-
-        .uid-preview { background: var(--bg-page, var(--bg-color)); border:1px solid var(--border-color); border-radius:16px; padding:22px; margin-top:8px; }
-        .uid-preview .pv-title {
-            font-family: var(--font-display, Georgia, serif); font-size:30px; line-height:1.1; margin:0 0 8px; font-weight:600;
-            background: var(--aurora-text, var(--aurora-1, #4285f4)); -webkit-background-clip:text; background-clip:text;
-            -webkit-text-fill-color:transparent; color: var(--aurora-1, #4285f4);
-        }
-        .uid-preview .pv-body { font-family: var(--font-sans, Arial, sans-serif); font-size:14px; color:var(--text-secondary); line-height:1.7; margin:0 0 14px; max-width:560px; }
-        .uid-preview .pv-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-        .uid-preview .pv-btn {
-            background: var(--aurora-1, #4285f4); color:#fff; border:none; padding:8px 18px;
-            border-radius: var(--r-2, 6px); font-weight:600; font-size:13px; cursor:default; box-shadow: var(--elev-aurora, 0 6px 18px var(--shadow-color));
-        }
-        .uid-preview .pv-chip {
-            font-size:12px; padding:4px 12px; border-radius: var(--r-full, 999px);
-            border:1px solid var(--aurora-1, #4285f4); color: var(--aurora-1, #4285f4); background: transparent;
-            font-variant-numeric: tabular-nums;
-        }
     </style>
 
     <!-- ================ Aether Codex Refactor (2026-05) ================ -->
@@ -6998,6 +6716,8 @@
     <link rel="stylesheet" href="/static/css/v2/shell.css">
     <!-- V2 #ratelimitTab 深度精化（顶级 dashboard） -->
     <link rel="stylesheet" href="/static/css/v2/ratelimit.css">
+    <!-- V2 #systemTab 深度精化（用户令牌 + 界面设计） -->
+    <link rel="stylesheet" href="/static/css/v2/system.css">
     <!-- =================================================================== -->
 </head>
 
@@ -7119,163 +6839,198 @@
             <div class="tab-content-wrapper">
 
                 <!-- 系统配置标签页（融合各项能力管理） -->
-                <div id="systemTab" class="tab-content sys-page">
-                    <div class="sys-hero">
-                        <div class="sys-hero-icon">⚙️</div>
-                        <div class="sys-hero-text">
-                            <h3>系统配置</h3>
-                            <p>面向本 Web 服务的统一配置中心，融合各项能力管理。当前包含「用户令牌」多租户发放与「界面设计」外观定制，后续将持续扩充。</p>
-                        </div>
-                    </div>
+                <div id="systemTab" class="tab-content">
+                    <h3>系统配置</h3>
+                    <p>面向本 Web 服务的统一配置中心：多租户「用户令牌」发放，与贯穿全站的「界面设计」运行时令牌。改动即时生效。</p>
 
-                    <!-- 子能力导航 -->
-                    <div class="sys-subnav" id="sysSubnav">
-                        <button class="active" data-section="tokens" onclick="switchSystemSection('tokens')">🔑 用户令牌</button>
-                        <button data-section="design" onclick="switchSystemSection('design')">🎨 界面设计</button>
+                    <!-- 子能力导航（滑动指示器分段控件） -->
+                    <div class="v2-sys-subnav" id="sysSubnav" role="tablist" aria-label="系统配置子页">
+                        <span class="v2-sys-subnav__indicator" aria-hidden="true"></span>
+                        <button type="button" class="v2-sys-subnav__item" role="tab" data-active="true" data-section="tokens" data-icon="key-round" onclick="switchSystemSection('tokens')"><span>用户令牌</span></button>
+                        <button type="button" class="v2-sys-subnav__item" role="tab" data-active="false" data-section="design" data-icon="palette" onclick="switchSystemSection('design')"><span>界面设计</span></button>
                     </div>
 
                     <!-- 子能力一：用户令牌（多租户） -->
-                    <div id="sysSection-tokens" class="sys-section active tk-page">
-                    <div class="tk-hero">
-                        <div class="tk-hero-icon">🔑</div>
-                        <div class="tk-hero-text">
-                            <h3>用户令牌 · 多租户</h3>
-                            <p>为下游用户/客户发放独立 API 令牌，可设配额、模型白名单与过期时间。令牌可直接用于 <code>/v1/chat/completions</code> 与 <code>/v1/messages</code>，受其配额与模型白名单约束。</p>
-                        </div>
-                    </div>
+                    <div id="sysSection-tokens" class="v2-sys-section active">
 
-                    <!-- 概览统计 -->
-                    <div class="tk-stats" id="tokenStats" style="display:none;">
-                        <div class="tk-stat accent"><div class="tk-stat-label">令牌总数</div><div class="tk-stat-value" id="tkStatTotal">0</div></div>
-                        <div class="tk-stat good"><div class="tk-stat-label">启用中</div><div class="tk-stat-value" id="tkStatEnabled">0</div></div>
-                        <div class="tk-stat"><div class="tk-stat-label">已禁用</div><div class="tk-stat-value" id="tkStatDisabled">0</div></div>
-                        <div class="tk-stat"><div class="tk-stat-label">累计调用</div><div class="tk-stat-value" id="tkStatUsed">0</div></div>
+                    <!-- 概览 KPI -->
+                    <div class="v2-sys-kpis" id="tokenStats" style="display:none;">
+                        <div class="v2-sys-kpi"><div class="v2-sys-kpi__label" data-icon="layers">令牌总数</div><div class="v2-sys-kpi__value" id="tkStatTotal">0</div></div>
+                        <div class="v2-sys-kpi" data-tone="success"><div class="v2-sys-kpi__label" data-icon="check-circle">启用中</div><div class="v2-sys-kpi__value" id="tkStatEnabled">0</div></div>
+                        <div class="v2-sys-kpi"><div class="v2-sys-kpi__label" data-icon="ban">已禁用</div><div class="v2-sys-kpi__value" id="tkStatDisabled">0</div></div>
+                        <div class="v2-sys-kpi"><div class="v2-sys-kpi__label" data-icon="activity">累计调用</div><div class="v2-sys-kpi__value" id="tkStatUsed">0</div></div>
                     </div>
 
                     <!-- 新建令牌 -->
-                    <div class="tk-card">
-                        <div class="tk-card-head">
-                            <h4>✨ 新建令牌</h4>
-                            <span class="tk-chip">创建后完整令牌仅显示一次</span>
+                    <section class="v2-sys-card">
+                        <header class="v2-sys-card__head">
+                            <span class="v2-sys-card__icon" data-icon="sparkles" data-icon-size="15"></span>
+                            <div class="v2-sys-card__heading">
+                                <h4>新建令牌</h4>
+                                <p>为下游用户/客户发放独立 API 令牌，可设配额、模型白名单与过期时间，直接用于 <code>/v1/chat/completions</code> 与 <code>/v1/messages</code>。</p>
+                            </div>
+                            <span class="v2-sys-card__aside">完整令牌仅显示一次</span>
+                        </header>
+                        <div class="v2-sys-card__body">
+                            <div class="v2-sys-form">
+                                <div class="ac-field">
+                                    <label class="ac-field__label" for="newTokenName">名称</label>
+                                    <input id="newTokenName" class="ac-input" type="text" placeholder="如 alice" autocomplete="off">
+                                </div>
+                                <div class="ac-field">
+                                    <label class="ac-field__label" for="newTokenQuota">配额 <span class="ac-field__hint">总次数 · 留空 = 无限</span></label>
+                                    <input id="newTokenQuota" class="ac-input" type="number" min="1" placeholder="无限">
+                                </div>
+                                <div class="ac-field">
+                                    <label class="ac-field__label" for="newTokenExpires">过期时间 <span class="ac-field__hint">留空 = 永不过期</span></label>
+                                    <input id="newTokenExpires" class="ac-input" type="date">
+                                </div>
+                                <div class="ac-field">
+                                    <label class="ac-field__label" for="newTokenModels">模型白名单 <span class="ac-field__hint">逗号分隔 · 留空 = 全部</span></label>
+                                    <input id="newTokenModels" class="ac-input" type="text" placeholder="全部">
+                                </div>
+                            </div>
+                            <div class="v2-sys-form__actions">
+                                <button type="button" class="ac-btn ac-btn--primary" data-icon="plus" data-icon-size="14" onclick="createToken()"><span>创建令牌</span></button>
+                            </div>
+                            <div id="newTokenResult"></div>
                         </div>
-                        <div class="tk-form-grid">
-                            <div class="tk-field">
-                                <label>名称</label>
-                                <input id="newTokenName" type="text" placeholder="如 alice">
-                            </div>
-                            <div class="tk-field">
-                                <label>配额 <span class="tk-hint">总次数 · 留空=无限</span></label>
-                                <input id="newTokenQuota" type="number" min="1" placeholder="无限">
-                            </div>
-                            <div class="tk-field">
-                                <label>过期时间 <span class="tk-hint">留空=永不过期</span></label>
-                                <input id="newTokenExpires" type="date">
-                            </div>
-                            <div class="tk-field">
-                                <label>模型白名单 <span class="tk-hint">逗号分隔 · 留空=全部</span></label>
-                                <input id="newTokenModels" type="text" placeholder="全部">
-                            </div>
-                        </div>
-                        <div class="tk-form-actions">
-                            <button class="tk-btn-primary" onclick="createToken()">＋ 创建令牌</button>
-                        </div>
-                        <div id="newTokenResult"></div>
-                    </div>
+                    </section>
 
                     <!-- 令牌列表 -->
-                    <div class="tk-toolbar">
-                        <h4>📋 已发放令牌</h4>
-                        <button class="tk-btn-ghost" style="margin-left:auto;" onclick="loadTokens()">⟳ 刷新</button>
+                    <div class="v2-sys-toolbar">
+                        <span class="v2-sys-toolbar__title" data-icon="list" data-icon-size="13">已发放令牌</span>
+                        <span class="v2-sys-toolbar__rule" aria-hidden="true"></span>
+                        <button type="button" class="ac-btn ac-btn--secondary ac-btn--sm" data-icon="refresh-cw" data-icon-size="13" onclick="loadTokens()"><span>刷新</span></button>
                     </div>
-                    <div id="tokensTableWrap"><div class="tk-empty"><div class="ico">🔑</div><div class="ttl">尚未加载令牌</div><div class="desc">点击右上角"刷新"加载列表。</div></div></div>
+                    <div id="tokensTableWrap">
+                        <div class="v2-sys-empty">
+                            <span class="v2-sys-empty__icon" data-icon="key-round" data-icon-size="18"></span>
+                            <span class="v2-sys-empty__title">尚未加载令牌</span>
+                            <span class="v2-sys-empty__desc">切换到本页时自动加载；也可点击右上角「刷新」。</span>
+                        </div>
+                    </div>
                     </div>
                     <!-- /sysSection-tokens -->
 
                     <!-- 子能力二：界面设计（Aether Codex 运行时令牌） -->
-                    <div id="sysSection-design" class="sys-section">
-                        <div class="tk-hero">
-                            <div class="tk-hero-icon" style="background:linear-gradient(135deg,var(--aurora-1),var(--aurora-4));">🎨</div>
-                            <div class="tk-hero-text">
-                                <h3>界面设计 · Aether Codex</h3>
-                                <p>参考 <a href="https://golovin.cn/design" target="_blank" rel="noopener">golovin.cn/design</a> 的设计语言，调节本面板的极光配色、排版、圆角、密度与动效。改动实时预览、即时生效，并保存在本地浏览器。</p>
-                            </div>
-                        </div>
+                    <div id="sysSection-design" class="v2-sys-section">
 
-                        <div class="uid-grid">
+                        <div class="v2-sys-design-grid">
                             <!-- 极光配色 -->
-                            <div class="uid-card">
-                                <h4>🌈 极光主色</h4>
-                                <p class="uid-desc">OKLCH 单光源四阶弧 · 同色系邻近保持「一片光」。拖动色相或选取预设，主色调将贯穿整个面板。</p>
-                                <div class="uid-row">
-                                    <label>色相</label>
-                                    <input id="uidHue" class="uid-range" type="range" min="0" max="360" step="1" value="268" oninput="onUiDesignChange()">
-                                    <span class="uid-val" id="uidHueVal">268°</span>
+                            <section class="v2-sys-card">
+                                <header class="v2-sys-card__head">
+                                    <span class="v2-sys-card__icon" data-icon="aurora" data-icon-size="15"></span>
+                                    <div class="v2-sys-card__heading">
+                                        <h4>极光主色</h4>
+                                        <p>OKLCH 单光源四阶弧，同色系邻近保持「一片光」。拖动色相或选取预设，主色调将贯穿整个面板。</p>
+                                    </div>
+                                </header>
+                                <div class="v2-sys-card__body">
+                                    <div class="v2-uid-label" data-icon="palette" data-icon-size="12">色相 · Hue</div>
+                                    <div class="v2-uid-slider">
+                                        <input id="uidHue" class="v2-uid-range v2-uid-range--hue" type="range" min="0" max="360" step="1" value="268" oninput="onUiDesignChange()" aria-label="极光色相">
+                                        <span class="v2-uid-val" id="uidHueVal">268°</span>
+                                    </div>
+                                    <div class="v2-uid-swatches" id="uidHueSwatches"></div>
                                 </div>
-                                <div class="uid-swatches" id="uidHueSwatches"></div>
-                            </div>
+                            </section>
 
-                            <!-- 尺寸与圆角 -->
-                            <div class="uid-card">
-                                <h4>🔍 界面缩放</h4>
-                                <p class="uid-desc">整体放大或缩小面板，适配不同屏幕与视力偏好。</p>
-                                <div class="uid-row">
-                                    <label>缩放</label>
-                                    <input id="uidScale" class="uid-range" type="range" min="85" max="120" step="5" value="100" oninput="onUiDesignChange()">
-                                    <span class="uid-val" id="uidScaleVal">100%</span>
+                            <!-- 比例与圆角 -->
+                            <section class="v2-sys-card">
+                                <header class="v2-sys-card__head">
+                                    <span class="v2-sys-card__icon" data-icon="zoom-in" data-icon-size="15"></span>
+                                    <div class="v2-sys-card__heading">
+                                        <h4>比例与圆角</h4>
+                                        <p>整体缩放适配不同屏幕与视力偏好；编辑体审美偏克制小圆角。</p>
+                                    </div>
+                                </header>
+                                <div class="v2-sys-card__body">
+                                    <div class="v2-uid-group">
+                                        <div class="v2-uid-label" data-icon="expand" data-icon-size="12">界面缩放 · Scale</div>
+                                        <div class="v2-uid-slider">
+                                            <input id="uidScale" class="v2-uid-range" type="range" min="85" max="120" step="5" value="100" oninput="onUiDesignChange()" aria-label="界面缩放">
+                                            <span class="v2-uid-val" id="uidScaleVal">100%</span>
+                                        </div>
+                                    </div>
+                                    <div class="v2-uid-group">
+                                        <div class="v2-uid-label" data-icon="squircle" data-icon-size="12">圆角 · Radius</div>
+                                        <div class="v2-uid-seg" id="uidRadiusSeg">
+                                            <button type="button" data-v="70" onclick="setUiRadius(70)">克制</button>
+                                            <button type="button" data-v="100" class="active" onclick="setUiRadius(100)">标准</button>
+                                            <button type="button" data-v="150" onclick="setUiRadius(150)">圆润</button>
+                                        </div>
+                                    </div>
                                 </div>
-                                <h4 style="margin-top:18px;">🔘 圆角</h4>
-                                <p class="uid-desc">编辑体审美偏克制小圆角。</p>
-                                <div class="uid-seg" id="uidRadiusSeg">
-                                    <button data-v="70" onclick="setUiRadius(70)">克制</button>
-                                    <button data-v="100" class="active" onclick="setUiRadius(100)">标准</button>
-                                    <button data-v="150" onclick="setUiRadius(150)">圆润</button>
-                                </div>
-                            </div>
+                            </section>
 
                             <!-- 排版 / 密度 / 动效 -->
-                            <div class="uid-card">
-                                <h4>🔤 标题字体</h4>
-                                <p class="uid-desc">Display 字族用于标题层级。Inter 是 UI 字体，不是排印字体。</p>
-                                <div class="uid-seg" id="uidDisplaySeg">
-                                    <button data-v="fraunces" class="active" onclick="setUiDisplay('fraunces')">Fraunces</button>
-                                    <button data-v="serif" onclick="setUiDisplay('serif')">衬线</button>
-                                    <button data-v="sans" onclick="setUiDisplay('sans')">无衬线</button>
+                            <section class="v2-sys-card">
+                                <header class="v2-sys-card__head">
+                                    <span class="v2-sys-card__icon" data-icon="type" data-icon-size="15"></span>
+                                    <div class="v2-sys-card__heading">
+                                        <h4>排版与动效</h4>
+                                        <p>Display 字族用于标题层级；密度调节 8px 网格基线；动效遵循四条命名缓动。</p>
+                                    </div>
+                                </header>
+                                <div class="v2-sys-card__body">
+                                    <div class="v2-uid-group">
+                                        <div class="v2-uid-label" data-icon="type" data-icon-size="12">标题字体 · Display</div>
+                                        <div class="v2-uid-seg" id="uidDisplaySeg">
+                                            <button type="button" data-v="fraunces" class="active" onclick="setUiDisplay('fraunces')">Fraunces</button>
+                                            <button type="button" data-v="serif" onclick="setUiDisplay('serif')">衬线</button>
+                                            <button type="button" data-v="sans" onclick="setUiDisplay('sans')">无衬线</button>
+                                        </div>
+                                    </div>
+                                    <div class="v2-uid-group">
+                                        <div class="v2-uid-label" data-icon="rows-3" data-icon-size="12">界面密度 · Density</div>
+                                        <div class="v2-uid-seg" id="uidDensitySeg">
+                                            <button type="button" data-v="85" onclick="setUiDensity(85)">紧凑</button>
+                                            <button type="button" data-v="100" class="active" onclick="setUiDensity(100)">标准</button>
+                                            <button type="button" data-v="120" onclick="setUiDensity(120)">宽松</button>
+                                        </div>
+                                    </div>
+                                    <div class="v2-uid-group">
+                                        <div class="v2-uid-label" data-icon="sparkles" data-icon-size="12">动效 · Motion</div>
+                                        <div class="v2-uid-seg" id="uidMotionSeg">
+                                            <button type="button" data-v="1" class="active" onclick="setUiMotion(1)">开启</button>
+                                            <button type="button" data-v="0" onclick="setUiMotion(0)">关闭</button>
+                                        </div>
+                                    </div>
                                 </div>
-                                <h4 style="margin-top:18px;">📐 界面密度</h4>
-                                <p class="uid-desc">调节间距基线（8px 网格的缩放）。</p>
-                                <div class="uid-seg" id="uidDensitySeg">
-                                    <button data-v="85" onclick="setUiDensity(85)">紧凑</button>
-                                    <button data-v="100" class="active" onclick="setUiDensity(100)">标准</button>
-                                    <button data-v="120" onclick="setUiDensity(120)">宽松</button>
-                                </div>
-                                <h4 style="margin-top:18px;">✨ 动效</h4>
-                                <p class="uid-desc">关闭后将弱化过渡与动画。</p>
-                                <div class="uid-seg" id="uidMotionSeg">
-                                    <button data-v="1" class="active" onclick="setUiMotion(1)">开启</button>
-                                    <button data-v="0" onclick="setUiMotion(0)">关闭</button>
-                                </div>
-                            </div>
+                            </section>
                         </div>
 
                         <!-- 实时预览 + 操作 -->
-                        <div class="uid-card" style="margin-top:16px;">
-                            <h4>👁 实时预览</h4>
-                            <div class="uid-preview">
-                                <p class="pv-title">极光设计系统</p>
-                                <p class="pv-body">同色系邻近保持「一片光」的感觉，补色会把画面撕成两片。九阶完全四度音阶字号、四层表面、四条命名缓动 —— 约束是创造的工具，好系统强制选择，不允许模糊地带。</p>
-                                <div class="pv-row">
-                                    <button class="pv-btn">主操作</button>
-                                    <span class="pv-chip">aurora-1</span>
-                                    <span class="pv-chip" style="--aurora-1:var(--aurora-3);">aurora-3</span>
-                                    <span class="pv-chip" style="--aurora-1:var(--aurora-4);">aurora-4</span>
+                        <section class="v2-sys-card">
+                            <header class="v2-sys-card__head">
+                                <span class="v2-sys-card__icon" data-icon="eye" data-icon-size="15"></span>
+                                <div class="v2-sys-card__heading">
+                                    <h4>实时预览</h4>
+                                    <p>样张引用真实设计令牌——标题渐变、编辑体正文与组件随改动即时变化。参考 <a href="https://golovin.cn/design" target="_blank" rel="noopener">golovin.cn/design</a> 的设计语言，保存于本地浏览器。</p>
+                                </div>
+                            </header>
+                            <div class="v2-sys-card__body">
+                                <div class="v2-uid-preview">
+                                    <span class="v2-uid-preview__eyebrow">Aether Codex · Live Sample</span>
+                                    <p class="v2-uid-preview__title">极光设计系统</p>
+                                    <p class="v2-uid-preview__body">同色系邻近保持「一片光」的感觉，补色会把画面撕成两片。九阶完全四度音阶字号、四层表面、四条命名缓动 —— 约束是创造的工具，好系统强制选择，不允许模糊地带。</p>
+                                    <div class="v2-uid-preview__row" aria-hidden="true">
+                                        <button type="button" class="ac-btn ac-btn--primary" tabindex="-1">主操作</button>
+                                        <button type="button" class="ac-btn ac-btn--aurora" tabindex="-1">极光按钮</button>
+                                        <span class="ac-badge ac-badge--success">信号正常</span>
+                                        <span class="v2-uid-chip">aurora-1</span>
+                                        <span class="v2-uid-chip" style="--chip:var(--aurora-3);">aurora-3</span>
+                                        <span class="v2-uid-chip" style="--chip:var(--aurora-4);">aurora-4</span>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="uid-actions">
-                                <button class="tk-btn-primary" onclick="saveUiDesign()">💾 保存设计</button>
-                                <button class="tk-btn-ghost" onclick="resetUiDesign()">↺ 恢复默认</button>
-                                <span id="uidStatus" style="align-self:center;font-size:12.5px;color:var(--text-muted);"></span>
-                            </div>
-                        </div>
+                            <footer class="v2-sys-card__footer">
+                                <button type="button" class="ac-btn ac-btn--primary" data-icon="save" data-icon-size="14" onclick="saveUiDesign()"><span>保存设计</span></button>
+                                <button type="button" class="ac-btn ac-btn--secondary" data-icon="rotate-cw" data-icon-size="14" onclick="resetUiDesign()"><span>恢复默认</span></button>
+                                <span class="v2-uid-status" id="uidStatus" role="status"></span>
+                            </footer>
+                        </section>
                     </div>
                     <!-- /sysSection-design -->
                 </div>
@@ -9513,16 +9268,33 @@
         let sysCurrentSection = 'tokens';
         function initSystemTab() {
             switchSystemSection(sysCurrentSection || 'tokens');
+            // 首次进入时 tab 刚由 hidden 转可见，布局就绪后补一次指示器测量
+            requestAnimationFrame(sysMoveSubnavIndicator);
         }
         function switchSystemSection(name) {
             sysCurrentSection = name;
-            document.querySelectorAll('#systemTab .sys-section').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('#systemTab .v2-sys-section').forEach(el => el.classList.remove('active'));
             const sec = document.getElementById('sysSection-' + name);
             if (sec) sec.classList.add('active');
-            document.querySelectorAll('#sysSubnav button').forEach(b => b.classList.toggle('active', b.dataset.section === name));
+            document.querySelectorAll('#sysSubnav .v2-sys-subnav__item').forEach(b =>
+                b.setAttribute('data-active', b.dataset.section === name ? 'true' : 'false'));
+            sysMoveSubnavIndicator();
             if (name === 'tokens') { loadTokens(); }
             if (name === 'design') { uiDesign = uidRead(); applyUiDesign(); uidSyncControls(); }
         }
+        // 子导航滑动指示器：跟随激活子项的几何位置（与主导航 tab-indicator 同范式）
+        function sysMoveSubnavIndicator() {
+            const nav = document.getElementById('sysSubnav');
+            if (!nav) return;
+            const ind = nav.querySelector('.v2-sys-subnav__indicator');
+            const act = nav.querySelector('.v2-sys-subnav__item[data-active="true"]');
+            if (!ind || !act) return;
+            if (!act.offsetWidth) { ind.style.opacity = '0'; return; } // tab 隐藏时无法测量
+            ind.style.width = act.offsetWidth + 'px';
+            ind.style.transform = 'translateX(' + act.offsetLeft + 'px)';
+            ind.style.opacity = '1';
+        }
+        window.addEventListener('resize', sysMoveSubnavIndicator);
 
         // ==================== 系统配置 · 界面设计（Aether Codex 运行时令牌） ====================
         // 通过在 documentElement 上以 inline style 覆盖 tokens.css 的设计令牌，
@@ -9631,26 +9403,42 @@
             if (!wrap) return;
             const theme = (document.documentElement.getAttribute('data-theme') === 'dark') ? 'dark' : 'light';
             const L = UID_AURORA[theme].L[0], C = UID_AURORA[theme].C[0];
+            // [data-icon] 的 check 由 icons.js 的 MutationObserver 自动渲染
             wrap.innerHTML = UID_HUE_PRESETS.map(p =>
-                `<div class="uid-swatch${Number(uiDesign.hue) === p.h ? ' active' : ''}" title="${p.name} · ${p.h}°"`
-                + ` style="background:oklch(${L} ${C} ${p.h});" onclick="setUiHue(${p.h})"></div>`).join('');
+                `<button type="button" class="v2-uid-swatch${Number(uiDesign.hue) === p.h ? ' active' : ''}"`
+                + ` title="${p.name} · ${p.h}°" aria-label="${p.name}"`
+                + ` style="background:oklch(${L} ${C} ${p.h});" onclick="setUiHue(${p.h})">`
+                + `<span data-icon="check" data-icon-size="13"></span></button>`).join('');
+        }
+        // 已填充轨道：把当前值的百分比写入 --pct，供自绘滑杆的 track 渐变使用
+        function uidPaintRange(el) {
+            if (!el || el.classList.contains('v2-uid-range--hue')) return;
+            const min = Number(el.min) || 0, max = Number(el.max) || 100;
+            const pct = max > min ? ((Number(el.value) - min) / (max - min)) * 100 : 0;
+            el.style.setProperty('--pct', pct.toFixed(1) + '%');
+        }
+        function uidSetStatus(text, state) {
+            const s = document.getElementById('uidStatus');
+            if (!s) return;
+            s.textContent = text || '';
+            if (state) s.setAttribute('data-state', state);
+            else s.removeAttribute('data-state');
         }
         function uidSyncControls() {
             const c = uiDesign;
             const hue = document.getElementById('uidHue'); if (hue) hue.value = c.hue;
             const hv = document.getElementById('uidHueVal'); if (hv) hv.textContent = c.hue + '°';
-            const sc = document.getElementById('uidScale'); if (sc) sc.value = c.scale;
-            const sv = document.getElementById('uidScaleVal'); if (sv) sv.textContent = c.scale + '%';
+            const sc = document.getElementById('uidScale'); if (sc) { sc.value = c.scale; uidPaintRange(sc); }
             uidActivate('uidRadiusSeg', c.radius);
             uidActivate('uidDensitySeg', c.density);
             uidActivate('uidDisplaySeg', c.display);
             uidActivate('uidMotionSeg', c.motion);
             uidRenderSwatches();
-            const s = document.getElementById('uidStatus'); if (s) s.textContent = '';
+            const sv = document.getElementById('uidScaleVal'); if (sv) sv.textContent = c.scale + '%';
+            uidSetStatus('');
         }
         function uidDirty() {
-            const s = document.getElementById('uidStatus');
-            if (s) { s.textContent = '未保存 · 仅预览'; s.style.color = 'var(--sig-warning, #b8860b)'; }
+            uidSetStatus('未保存 · 仅预览', 'dirty');
         }
         function setUiHue(h) { uiDesign.hue = Number(h); applyUiDesign(); uidSyncControls(); uidDirty(); }
         function setUiRadius(v) { uiDesign.radius = Number(v); applyUiDesign(); uidActivate('uidRadiusSeg', v); uidDirty(); }
@@ -9664,7 +9452,7 @@
             const hue = document.getElementById('uidHue');
             const sc = document.getElementById('uidScale');
             if (hue) { uiDesign.hue = Number(hue.value); const hv = document.getElementById('uidHueVal'); if (hv) hv.textContent = uiDesign.hue + '°'; }
-            if (sc) { uiDesign.scale = Number(sc.value); const sv = document.getElementById('uidScaleVal'); if (sv) sv.textContent = uiDesign.scale + '%'; }
+            if (sc) { uiDesign.scale = Number(sc.value); const sv = document.getElementById('uidScaleVal'); if (sv) sv.textContent = uiDesign.scale + '%'; uidPaintRange(sc); }
             if (uiDesignChangeRaf) cancelAnimationFrame(uiDesignChangeRaf);
             uiDesignChangeRaf = requestAnimationFrame(() => {
                 uiDesignChangeRaf = null;
@@ -9675,16 +9463,14 @@
         }
         function saveUiDesign() {
             try { localStorage.setItem(UID_KEY, JSON.stringify(uiDesign)); } catch (e) {}
-            const s = document.getElementById('uidStatus');
-            if (s) { s.textContent = '已保存 ✓ 全站生效'; s.style.color = 'var(--sig-success, #2e7d32)'; }
+            uidSetStatus('已保存 · 全站生效', 'saved');
         }
         function resetUiDesign() {
             uiDesign = Object.assign({}, UID_DEFAULTS);
             try { localStorage.removeItem(UID_KEY); } catch (e) {}
             applyUiDesign();
             uidSyncControls();
-            const s = document.getElementById('uidStatus');
-            if (s) { s.textContent = '已恢复默认 ✓'; s.style.color = 'var(--sig-success, #2e7d32)'; }
+            uidSetStatus('已恢复默认', 'saved');
         }
 
         // 启动即应用已保存的界面设计；主题切换时按新主题的明度/彩度重算极光
@@ -11044,33 +10830,33 @@
             const isExpired = hasExp ? (!isFinite(expMs) || expMs < Date.now()) : false;
 
             // 配额进度条
-            let pct = 0, barClass = unlimited ? 'inf' : '';
+            let pct = 0, barTone = unlimited ? 'inf' : 'ok';
             if (!unlimited) {
                 if (t.quota > 0) {
                     pct = Math.min(100, Math.round((used / t.quota) * 100));
-                    barClass = pct >= 90 ? 'danger' : (pct >= 70 ? 'warn' : '');
+                    barTone = pct >= 90 ? 'danger' : (pct >= 70 ? 'warn' : 'ok');
                 } else {
                     // 配额为 0：已耗尽，按危险态满格显示（而非误判为无限）
                     pct = 100;
-                    barClass = 'danger';
+                    barTone = 'danger';
                 }
             }
             const barWidth = unlimited ? 100 : pct;
 
-            // 状态徽章
-            let badge;
-            if (isExpired) badge = '<span class="tk-badge exp"><span class="dot"></span>已过期</span>';
-            else if (enabled) badge = '<span class="tk-badge on"><span class="dot"></span>启用</span>';
-            else badge = '<span class="tk-badge off"><span class="dot"></span>禁用</span>';
+            // 状态（左侧状态条 + 信号徽章，与速率限制页同语言）
+            let state, badge;
+            if (isExpired) { state = 'expired'; badge = '<span class="ac-badge ac-badge--warning">已过期</span>'; }
+            else if (enabled) { state = 'on'; badge = '<span class="ac-badge ac-badge--success">启用</span>'; }
+            else { state = 'off'; badge = '<span class="ac-badge ac-badge--neutral">禁用</span>'; }
 
             // 模型标签
             let modelsHtml;
             if (t.allowed_models && t.allowed_models.length) {
                 modelsHtml = t.allowed_models.slice(0, 6).map(m =>
-                    '<span class="mtag" title="' + tkAttr(m) + '">' + escapeHtml(m) + '</span>').join('');
-                if (t.allowed_models.length > 6) modelsHtml += '<span class="mtag">+' + (t.allowed_models.length - 6) + '</span>';
+                    '<span class="v2-tk-mtag" title="' + tkAttr(m) + '">' + escapeHtml(m) + '</span>').join('');
+                if (t.allowed_models.length > 6) modelsHtml += '<span class="v2-tk-mtag">+' + (t.allowed_models.length - 6) + '</span>';
             } else {
-                modelsHtml = '<span class="mtag all">全部模型</span>';
+                modelsHtml = '<span class="v2-tk-mtag v2-tk-mtag--all">全部模型</span>';
             }
 
             // 子标题：创建/过期信息
@@ -11080,33 +10866,37 @@
             if (expStr) subParts.push(isExpired ? '已于 ' + expStr + ' 过期' : '到期 ' + expStr);
             const sub = subParts.join(' · ');
 
-            return '<div class="tk-token' + (enabled && !isExpired ? '' : ' disabled') + '">' +
-                '<div class="tk-token-top">' +
-                    '<div class="tk-avatar">' + escapeHtml(initial) + '</div>' +
-                    '<div class="tk-token-name"><div class="nm" title="' + tkAttr(name) + '">' + escapeHtml(name) + '</div>' +
-                        (sub ? '<div class="sub">' + escapeHtml(sub) + '</div>' : '') + '</div>' +
+            // [data-icon] 占位由 icons.js 的 MutationObserver 自动渲染为 SVG
+            return '<article class="v2-tk-card" data-state="' + state + '">' +
+                '<div class="v2-tk-card__head">' +
+                    '<div class="v2-tk-card__avatar">' + escapeHtml(initial) + '</div>' +
+                    '<div class="v2-tk-card__id"><span class="v2-tk-card__name" title="' + tkAttr(name) + '">' + escapeHtml(name) + '</span>' +
+                        (sub ? '<span class="v2-tk-card__sub">' + escapeHtml(sub) + '</span>' : '') + '</div>' +
                     badge +
                 '</div>' +
-                '<div class="tk-token-key"><code title="完整令牌仅创建时显示一次">' + escapeHtml(masked) + '</code></div>' +
-                '<div>' +
-                    '<div class="tk-quota-row"><span class="lbl">配额使用</span>' +
-                        '<span class="val">' + used + ' / ' + escapeHtml(String(quota)) + (unlimited ? '' : ' (' + barWidth + '%)') + '</span></div>' +
-                    '<div class="tk-bar ' + barClass + '"><span style="width:' + barWidth + '%;"></span></div>' +
+                '<div class="v2-tk-card__key"><span data-icon="key" data-icon-size="12"></span><code title="完整令牌仅创建时显示一次">' + escapeHtml(masked) + '</code></div>' +
+                '<div class="v2-tk-card__quota">' +
+                    '<div class="v2-tk-card__quota-row"><span class="lbl">配额使用</span>' +
+                        '<span class="val">' + used + ' / ' + escapeHtml(String(quota)) + (unlimited ? '' : ' · ' + barWidth + '%') + '</span></div>' +
+                    '<div class="v2-tk-bar" data-tone="' + barTone + '">' +
+                        '<span class="v2-tk-bar__fill" style="width:' + barWidth + '%;"></span>' +
+                        '<i class="v2-tk-bar__tick" style="left:25%"></i><i class="v2-tk-bar__tick" style="left:50%"></i><i class="v2-tk-bar__tick" style="left:75%"></i>' +
+                    '</div>' +
                 '</div>' +
-                '<div class="tk-models">' + modelsHtml + '</div>' +
-                '<div class="tk-token-actions">' +
-                    '<button class="tk-act toggle" onclick="toggleToken(\'' + tid + '\',' + (!enabled) + ')">' + (enabled ? '⏸ 禁用' : '▶ 启用') + '</button>' +
-                    '<button class="tk-act reset" onclick="resetTokenUsage(\'' + tid + '\')">↺ 清零</button>' +
-                    '<button class="tk-act del" onclick="deleteToken(\'' + tid + '\')">🗑 删除</button>' +
+                '<div class="v2-tk-card__models">' + modelsHtml + '</div>' +
+                '<div class="v2-tk-card__actions">' +
+                    '<button type="button" class="ac-btn ac-btn--secondary ac-btn--sm" data-icon="' + (enabled ? 'pause' : 'play') + '" data-icon-size="13" onclick="toggleToken(\'' + tid + '\',' + (!enabled) + ')"><span>' + (enabled ? '禁用' : '启用') + '</span></button>' +
+                    '<button type="button" class="ac-btn ac-btn--secondary ac-btn--sm" data-icon="rotate-cw" data-icon-size="13" onclick="resetTokenUsage(\'' + tid + '\')"><span>清零</span></button>' +
+                    '<button type="button" class="ac-btn ac-btn--danger ac-btn--sm" data-icon="trash-2" data-icon-size="13" onclick="deleteToken(\'' + tid + '\')"><span>删除</span></button>' +
                 '</div>' +
-            '</div>';
+            '</article>';
         }
 
         async function loadTokens() {
             const wrap = document.getElementById('tokensTableWrap');
             const statsBar = document.getElementById('tokenStats');
             if (!wrap) return;
-            wrap.innerHTML = '<div class="tk-skel"><div class="tk-skel-card"></div><div class="tk-skel-card"></div><div class="tk-skel-card"></div></div>';
+            wrap.innerHTML = '<div class="v2-sys-skel"><div class="v2-sys-skel__card"></div><div class="v2-sys-skel__card"></div><div class="v2-sys-skel__card"></div></div>';
             try {
                 const res = await fetch('/api/tokens', { headers: getAuthHeaders() });
                 if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -11114,7 +10904,7 @@
                 const tokens = (data && data.tokens) || [];
                 if (!tokens.length) {
                     if (statsBar) statsBar.style.display = 'none';
-                    wrap.innerHTML = '<div class="tk-empty"><div class="ico">📭</div><div class="ttl">暂无令牌</div><div class="desc">请在上方"新建令牌"卡片中创建第一个令牌。</div></div>';
+                    wrap.innerHTML = '<div class="v2-sys-empty"><span class="v2-sys-empty__icon" data-icon="inbox" data-icon-size="18"></span><span class="v2-sys-empty__title">暂无令牌</span><span class="v2-sys-empty__desc">请在上方「新建令牌」卡片中创建第一个令牌。</span></div>';
                     return;
                 }
                 // 统计
@@ -11127,10 +10917,10 @@
                     document.getElementById('tkStatDisabled').textContent = tokens.length - enabledCnt;
                     document.getElementById('tkStatUsed').textContent = totalUsed.toLocaleString();
                 }
-                wrap.innerHTML = '<div class="tk-grid">' + tokens.map(tkRenderTokenCard).join('') + '</div>';
+                wrap.innerHTML = '<div class="v2-tk-grid">' + tokens.map(tkRenderTokenCard).join('') + '</div>';
             } catch (e) {
                 if (statsBar) statsBar.style.display = 'none';
-                wrap.innerHTML = '<div class="tk-empty"><div class="ico">⚠️</div><div class="ttl">加载失败</div><div class="desc">' + escapeHtml(String(e.message || e)) + '</div></div>';
+                wrap.innerHTML = '<div class="v2-sys-empty" data-tone="danger"><span class="v2-sys-empty__icon" data-icon="alert-triangle" data-icon-size="18"></span><span class="v2-sys-empty__title">加载失败</span><span class="v2-sys-empty__desc">' + escapeHtml(String(e.message || e)) + '</span></div>';
             }
         }
 
@@ -11177,11 +10967,11 @@
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 const meta = await res.json();
                 const rEl = document.getElementById('newTokenResult');
-                rEl.innerHTML = '<div class="tk-reveal">' +
-                    '<div class="tk-reveal-title">✓ 令牌已创建 — 请立即复制，完整内容仅显示这一次</div>' +
-                    '<div class="tk-reveal-row">' +
+                rEl.innerHTML = '<div class="v2-tk-reveal">' +
+                    '<div class="v2-tk-reveal__title"><span data-icon="check-circle" data-icon-size="14"></span>令牌已创建 — 请立即复制，完整内容仅显示这一次</div>' +
+                    '<div class="v2-tk-reveal__row">' +
                         '<code id="tkRevealCode">' + escapeHtml(meta.token) + '</code>' +
-                        '<button class="tk-btn-ghost" onclick="copyTokenValue(this)" data-token="' + tkAttr(meta.token) + '">📋 复制</button>' +
+                        '<button type="button" class="ac-btn ac-btn--secondary ac-btn--sm" data-icon="copy" data-icon-size="13" onclick="copyTokenValue(this)" data-token="' + tkAttr(meta.token) + '"><span>复制</span></button>' +
                     '</div>' +
                 '</div>';
                 document.getElementById('newTokenName').value = '';
