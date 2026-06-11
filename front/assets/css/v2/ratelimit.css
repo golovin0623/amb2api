@@ -227,6 +227,8 @@ html body #ratelimitTab .v2-rl-card[data-state="active"]::before    { background
 html body #ratelimitTab .v2-rl-card[data-state="exhausted"]::before { background: var(--sig-danger); }
 html body #ratelimitTab .v2-rl-card[data-state="warn"]::before      { background: var(--sig-warning); }
 html body #ratelimitTab .v2-rl-card[data-state="idle"]::before      { background: var(--ink-subtle); }
+html body #ratelimitTab .v2-rl-card[data-state="disabled"]::before  { background: var(--ink-subtle); }
+html body #ratelimitTab .v2-rl-card[data-state="disabled"]          { opacity: 0.62; }
 html body #ratelimitTab .v2-rl-card:hover {
   border-color: var(--line-strong);
   transform: translateY(-1px);
@@ -265,6 +267,7 @@ html body #ratelimitTab .v2-rl-card[data-state="active"] .v2-rl-ring .fill    { 
 html body #ratelimitTab .v2-rl-card[data-state="warn"] .v2-rl-ring .fill      { stroke: var(--sig-warning); }
 html body #ratelimitTab .v2-rl-card[data-state="exhausted"] .v2-rl-ring .fill { stroke: var(--sig-danger); }
 html body #ratelimitTab .v2-rl-card[data-state="idle"] .v2-rl-ring .fill      { stroke: var(--ink-subtle); }
+html body #ratelimitTab .v2-rl-card[data-state="disabled"] .v2-rl-ring .fill  { stroke: var(--ink-subtle); }
 
 html body #ratelimitTab .v2-rl-ring__label {
   position: absolute;
@@ -360,7 +363,8 @@ html body #ratelimitTab .v2-rl-card[data-state="exhausted"] .v2-rl-card__badge::
   0%, 100% { opacity: 1; transform: scale(1); }
   50%      { opacity: 0.45; transform: scale(1.45); }
 }
-html body #ratelimitTab .v2-rl-card[data-state="idle"] .v2-rl-card__badge {
+html body #ratelimitTab .v2-rl-card[data-state="idle"] .v2-rl-card__badge,
+html body #ratelimitTab .v2-rl-card[data-state="disabled"] .v2-rl-card__badge {
   color: var(--ink-muted);
   background: var(--bg-overlay);
   border-color: var(--line-default);
@@ -427,6 +431,7 @@ html body #ratelimitTab .v2-rl-bar__fill {
 html body #ratelimitTab .v2-rl-card[data-state="warn"]      .v2-rl-bar__fill { background: var(--sig-warning); }
 html body #ratelimitTab .v2-rl-card[data-state="exhausted"] .v2-rl-bar__fill { background: var(--sig-danger); }
 html body #ratelimitTab .v2-rl-card[data-state="idle"]      .v2-rl-bar__fill { background: var(--ink-subtle); }
+html body #ratelimitTab .v2-rl-card[data-state="disabled"]  .v2-rl-bar__fill { background: var(--ink-subtle); }
 html body #ratelimitTab .v2-rl-bar__fill::after {
   content: "";
   position: absolute;
@@ -441,6 +446,7 @@ html body #ratelimitTab .v2-rl-bar__fill::after {
   animation: v2-rl-shimmer 2.6s linear infinite;
 }
 html body #ratelimitTab .v2-rl-card[data-state="exhausted"] .v2-rl-bar__fill::after,
+html body #ratelimitTab .v2-rl-card[data-state="disabled"]  .v2-rl-bar__fill::after,
 html body #ratelimitTab .v2-rl-card[data-state="idle"]      .v2-rl-bar__fill::after {
   display: none;
 }

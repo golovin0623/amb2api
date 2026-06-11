@@ -964,41 +964,60 @@ async def _trigger_preload_on_panel_login():
 async def rate_limits(token: str = Depends(authenticate)):
     """获取所有API Key的速率限制信息"""
     rate_info = await get_rate_limit_info()
-    
+
     # 获取配置的所有keys用于显示完整列表
     keys = await get_assembly_api_keys()
-    
+
+    # 获取每个 key 的启用/禁用状态，与「多密钥管理」面板联动
+    enabled_map: Dict[int, bool] = {}
+    try:
+        from ..services.key_manager import get_key_manager
+        key_manager = await get_key_manager()
+        for key_info in await key_manager.get_all_keys():
+            enabled_map[key_info.index] = key_info.enabled
+    except Exception as e:
+        log.warning(f"Failed to load key enabled states for rate limits: {e}")
+
     # 构建完整的速率限制信息
     result = []
     for idx, key in enumerate(keys):
         from ..services.assembly_client import _mask_key
         masked = _mask_key(key)
-        
+        enabled = enabled_map.get(idx, True)
+
         if idx in rate_info:
             info = rate_info[idx]
+            if not enabled:
+                status = "disabled"
+            elif info.get("remaining", 0) > 0:
+                status = "active"
+            else:
+                status = "exhausted"
             result.append({
                 "index": idx,
                 "key": masked,
+                "enabled": enabled,
                 "limit": info.get("limit", 0),
                 "remaining": info.get("remaining", 0),
                 "used": info.get("used", 0),
                 "reset_in_seconds": info.get("reset_in_seconds", 0),
                 "last_request_time": info.get("last_request_time", 0),
-                "status": "active" if info.get("remaining", 0) > 0 else "exhausted"
+                "status": status
             })
         else:
             # 未使用过的key
             result.append({
                 "index": idx,
                 "key": masked,
+                "enabled": enabled,
                 "limit": 0,
                 "remaining": 0,
                 "used": 0,
                 "reset_in_seconds": 0,
                 "last_request_time": 0,
-                "status": "unused"
+                "status": "disabled" if not enabled else "unused"
             })
-    
+
     return JSONResponse(content={"rate_limits": result})
 @router.get("/keys/invalid")
 async def invalid_keys(token: str = Depends(authenticate)):
