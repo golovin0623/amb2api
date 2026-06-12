@@ -17,6 +17,7 @@
     playground:  'terminal',
     performance: 'activity',
     logs:        'file-text',
+    system:      'sliders',
   };
 
   function decorateTabs() {
@@ -259,6 +260,7 @@
     logsTab:       'LIVE LOGS · STREAM',
     uploadTab:     'UPLOAD',
     manageTab:     'MANAGE',
+    systemTab:     'SYSTEM · SETTINGS',
   };
   function decorateTabHeaders() {
     Object.keys(TAB_EYEBROW).forEach((tabId) => {

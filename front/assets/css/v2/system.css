@@ -1,0 +1,940 @@
+/* ============================================================
+ * AMB2API · V2 · #systemTab
+ *
+ * 系统配置页深度精化（对齐 ratelimit.css 的 dashboard 水准）：
+ *   - 子导航：滑动指示器分段控件（与主导航 tab-indicator 同范式）
+ *   - 用户令牌：KPI 行 / 表单卡（ac-field/ac-input）/ 令牌卡
+ *     （左侧状态条 + 信号徽章 + 细进度条带刻度）
+ *   - 界面设计：控制卡（自绘滑杆 / OKLCH 色板 / 分段控件）
+ *     + 引用真实设计令牌的实时预览样张
+ *
+ * 选择器全部以 #systemTab 限定，不影响其他 Tab。
+ * ============================================================ */
+
+/* ============================================================
+ * 子导航 · 分段控件 + 滑动指示器
+ * ============================================================ */
+html body #systemTab .v2-sys-subnav {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  gap: var(--s-1);
+  padding: 3px;
+  margin: 0 0 var(--s-5);
+  background: var(--bg-overlay);
+  border: 1px solid var(--line-default);
+  border-radius: var(--r-3);
+}
+html body #systemTab .v2-sys-subnav__indicator {
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  width: 0;
+  background: var(--bg-leaf);
+  border: 1px solid var(--line-default);
+  border-radius: calc(var(--r-3) - 3px);
+  box-shadow: var(--elev-1);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--dur-standard) var(--ease-emphasis),
+    width var(--dur-standard) var(--ease-emphasis),
+    opacity var(--dur-fast) var(--ease-standard);
+}
+html body #systemTab .v2-sys-subnav__item {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: 32px;
+  padding: 0 var(--s-4);
+  border: 0;
+  background: transparent;
+  border-radius: calc(var(--r-3) - 3px);
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  color: var(--ink-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--dur-instant) var(--ease-standard);
+  -webkit-tap-highlight-color: transparent;
+}
+html body #systemTab .v2-sys-subnav__item svg {
+  width: 14px;
+  height: 14px;
+  opacity: 0.7;
+  transition: opacity var(--dur-instant) var(--ease-standard),
+              color var(--dur-instant) var(--ease-standard);
+}
+html body #systemTab .v2-sys-subnav__item:hover { color: var(--ink-primary); }
+html body #systemTab .v2-sys-subnav__item[data-active="true"] { color: var(--ink-pure); }
+html body #systemTab .v2-sys-subnav__item[data-active="true"] svg {
+  opacity: 1;
+  color: var(--aurora-1);
+}
+html body #systemTab .v2-sys-subnav__item:focus-visible {
+  outline: 0;
+  box-shadow: var(--elev-focus);
+}
+
+/* ============================================================
+ * 子区块 · 切换与入场节奏（块级 stagger）
+ * ============================================================ */
+html body #systemTab .v2-sys-section { display: none; }
+html body #systemTab .v2-sys-section.active { display: block; }
+html body #systemTab .v2-sys-section.active > * {
+  animation: v2-sys-rise var(--dur-enter) var(--ease-enter) backwards;
+}
+html body #systemTab .v2-sys-section.active > *:nth-child(2) { animation-delay: 50ms; }
+html body #systemTab .v2-sys-section.active > *:nth-child(3) { animation-delay: 100ms; }
+html body #systemTab .v2-sys-section.active > *:nth-child(4) { animation-delay: 150ms; }
+html body #systemTab .v2-sys-section.active > *:nth-child(5) { animation-delay: 200ms; }
+@keyframes v2-sys-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ============================================================
+ * KPI 行（与 #ratelimitTab 的 v2-rl-kpi 同语言）
+ * ============================================================ */
+html body #systemTab .v2-sys-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s-3);
+  margin: 0 0 var(--s-5);
+}
+html body #systemTab .v2-sys-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-4);
+  background: var(--bg-leaf);
+  border: 1px solid var(--line-default);
+  border-radius: var(--r-3);
+  transition: border-color var(--dur-instant) var(--ease-standard);
+}
+html body #systemTab .v2-sys-kpi:hover { border-color: var(--line-strong); }
+html body #systemTab .v2-sys-kpi__label {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+html body #systemTab .v2-sys-kpi__label svg { width: 12px; height: 12px; opacity: 0.7; }
+html body #systemTab .v2-sys-kpi__value {
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum" 1;
+  font-size: 26px;
+  font-weight: var(--fw-semibold);
+  color: var(--ink-pure);
+  line-height: 1.05;
+}
+html body #systemTab .v2-sys-kpi[data-tone="success"] .v2-sys-kpi__value { color: var(--sig-success); }
+
+/* ============================================================
+ * 通用区块卡
+ * ============================================================ */
+html body #systemTab .v2-sys-card {
+  background: var(--bg-leaf);
+  border: 1px solid var(--line-default);
+  border-radius: var(--r-4);
+  margin-bottom: var(--s-5);
+  transition: border-color var(--dur-instant) var(--ease-standard),
+              box-shadow var(--dur-instant) var(--ease-standard);
+}
+html body #systemTab .v2-sys-card:hover { border-color: var(--line-strong); }
+html body #systemTab .v2-sys-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-5);
+  border-bottom: 1px solid var(--line-soft);
+}
+html body #systemTab .v2-sys-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: var(--r-2);
+  color: var(--aurora-1);
+  background: color-mix(in oklch, var(--aurora-1) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--aurora-1) 22%, transparent);
+}
+html body #systemTab .v2-sys-card__icon svg { width: 15px; height: 15px; }
+html body #systemTab .v2-sys-card__heading { flex: 1; min-width: 0; }
+html body #systemTab .v2-sys-card__heading h4 {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-normal);
+  color: var(--ink-pure);
+  line-height: var(--lh-snug);
+}
+html body #systemTab .v2-sys-card__heading p {
+  margin: 2px 0 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  color: var(--ink-muted);
+  line-height: var(--lh-normal);
+  max-width: 72ch;
+}
+html body #systemTab .v2-sys-card__heading code {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: var(--r-1);
+  background: var(--bg-sunken);
+  border: 1px solid var(--line-soft);
+  color: var(--ink-secondary);
+}
+html body #systemTab .v2-sys-card__heading a {
+  color: var(--link-default);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line-aurora);
+}
+html body #systemTab .v2-sys-card__heading a:hover { color: var(--link-hover); }
+html body #systemTab .v2-sys-card__aside {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
+  padding-top: 2px;
+}
+html body #systemTab .v2-sys-card__body { padding: var(--s-5); }
+html body #systemTab .v2-sys-card__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  padding: var(--s-3) var(--s-5);
+  border-top: 1px solid var(--line-soft);
+  background: var(--bg-overlay);
+  border-radius: 0 0 var(--r-4) var(--r-4);
+}
+
+/* ============================================================
+ * 新建令牌 · 表单
+ * ============================================================ */
+html body #systemTab .v2-sys-form {
+  display: grid;
+  gap: var(--s-4);
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+html body #systemTab .v2-sys-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--s-4);
+}
+
+/* 创建成功 reveal banner */
+html body #systemTab .v2-tk-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  background: var(--sig-success-soft);
+  border: 1px solid color-mix(in oklch, var(--sig-success) 28%, transparent);
+  border-radius: var(--r-3);
+  animation: v2-sys-rise var(--dur-enter) var(--ease-enter) backwards;
+}
+html body #systemTab .v2-tk-reveal__title {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  color: var(--sig-success);
+}
+html body #systemTab .v2-tk-reveal__title svg { width: 14px; height: 14px; flex-shrink: 0; }
+html body #systemTab .v2-tk-reveal__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+html body #systemTab .v2-tk-reveal__row code {
+  flex: 1 1 auto;
+  min-width: 0;
+  user-select: all;
+  word-break: break-all;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: var(--s-2) var(--s-3);
+  background: var(--bg-leaf);
+  border: 1px solid var(--line-default);
+  border-radius: var(--r-2);
+  color: var(--ink-primary);
+}
+
+/* ============================================================
+ * 列表工具条（mono 眉题 + 细线 + 操作）
+ * ============================================================ */
+html body #systemTab .v2-sys-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin: 0 0 var(--s-4);
+}
+html body #systemTab .v2-sys-toolbar__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+html body #systemTab .v2-sys-toolbar__title svg { width: 13px; height: 13px; opacity: 0.7; }
+html body #systemTab .v2-sys-toolbar__rule {
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--line-soft);
+}
+
+/* ============================================================
+ * 令牌卡片
+ * ============================================================ */
+html body #systemTab .v2-tk-grid {
+  display: grid;
+  gap: var(--s-4);
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+html body #systemTab .v2-tk-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  background: var(--bg-leaf);
+  border: 1px solid var(--line-default);
+  border-radius: var(--r-3);
+  padding: var(--s-4) var(--s-4) var(--s-4) calc(var(--s-4) + 4px);
+  overflow: hidden;
+  transition: border-color var(--dur-fast) var(--ease-standard),
+              transform var(--dur-fast) var(--ease-standard),
+              box-shadow var(--dur-fast) var(--ease-standard);
+}
+html body #systemTab .v2-tk-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--ink-subtle);
+  transition: background-color var(--dur-instant) var(--ease-standard);
+}
+html body #systemTab .v2-tk-card[data-state="on"]::before      { background: var(--sig-success); }
+html body #systemTab .v2-tk-card[data-state="expired"]::before { background: var(--sig-warning); }
+html body #systemTab .v2-tk-card[data-state="off"]::before     { background: var(--ink-subtle); }
+html body #systemTab .v2-tk-card:hover {
+  border-color: var(--line-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--elev-2);
+}
+
+html body #systemTab .v2-tk-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+}
+html body #systemTab .v2-tk-card__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: var(--r-2);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  color: var(--aurora-1);
+  background: color-mix(in oklch, var(--aurora-1) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--aurora-1) 20%, transparent);
+}
+html body #systemTab .v2-tk-card[data-state="off"] .v2-tk-card__avatar,
+html body #systemTab .v2-tk-card[data-state="expired"] .v2-tk-card__avatar {
+  color: var(--ink-muted);
+  background: var(--bg-overlay);
+  border-color: var(--line-default);
+}
+html body #systemTab .v2-tk-card__id {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+html body #systemTab .v2-tk-card__name {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  color: var(--ink-pure);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html body #systemTab .v2-tk-card__sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-muted);
+  font-feature-settings: "tnum" 1;
+}
+
+/* 令牌串行 */
+html body #systemTab .v2-tk-card__key {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  background: var(--bg-sunken);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-2);
+}
+html body #systemTab .v2-tk-card__key svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  color: var(--ink-muted);
+}
+html body #systemTab .v2-tk-card__key code {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 配额进度 */
+html body #systemTab .v2-tk-card__quota-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--s-2);
+}
+html body #systemTab .v2-tk-card__quota-row .lbl {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+html body #systemTab .v2-tk-card__quota-row .val {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: var(--fw-semibold);
+  font-feature-settings: "tnum" 1;
+  color: var(--ink-pure);
+}
+html body #systemTab .v2-tk-bar {
+  position: relative;
+  height: 5px;
+  background: var(--bg-overlay);
+  border-radius: var(--r-full);
+  overflow: hidden;
+}
+html body #systemTab .v2-tk-bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--sig-success);
+  transition: width var(--dur-standard) var(--ease-standard),
+              background-color var(--dur-instant) var(--ease-standard);
+}
+html body #systemTab .v2-tk-bar[data-tone="warn"]   .v2-tk-bar__fill { background: var(--sig-warning); }
+html body #systemTab .v2-tk-bar[data-tone="danger"] .v2-tk-bar__fill { background: var(--sig-danger); }
+html body #systemTab .v2-tk-bar[data-tone="inf"]    .v2-tk-bar__fill { background: var(--aurora-1); opacity: 0.35; }
+html body #systemTab .v2-tk-card[data-state="off"] .v2-tk-bar__fill { background: var(--ink-subtle); }
+html body #systemTab .v2-tk-bar__tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--bg-leaf);
+}
+
+/* 模型标签 */
+html body #systemTab .v2-tk-card__models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+}
+html body #systemTab .v2-tk-mtag {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 2px var(--s-2);
+  border-radius: var(--r-1);
+  background: var(--bg-overlay);
+  border: 1px solid var(--line-soft);
+  color: var(--ink-secondary);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html body #systemTab .v2-tk-mtag--all {
+  color: var(--aurora-1);
+  border-color: color-mix(in oklch, var(--aurora-1) 24%, transparent);
+  background: color-mix(in oklch, var(--aurora-1) 8%, transparent);
+}
+
+/* 卡片操作行 */
+html body #systemTab .v2-tk-card__actions {
+  display: flex;
+  gap: var(--s-2);
+  margin-top: auto;
+  padding-top: var(--s-3);
+  border-top: 1px dashed var(--line-default);
+}
+html body #systemTab .v2-tk-card__actions .ac-btn { flex: 1 1 0; min-width: 0; }
+
+/* ============================================================
+ * 空态 / 错误态 / 骨架屏
+ * ============================================================ */
+html body #systemTab .v2-sys-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-2);
+  text-align: center;
+  padding: var(--s-7) var(--s-5);
+  background: var(--bg-overlay);
+  border: 1px dashed var(--line-default);
+  border-radius: var(--r-3);
+}
+html body #systemTab .v2-sys-empty__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-full);
+  background: var(--bg-leaf);
+  border: 1px solid var(--line-default);
+  color: var(--ink-muted);
+  margin-bottom: var(--s-1);
+}
+html body #systemTab .v2-sys-empty__icon svg { width: 18px; height: 18px; }
+html body #systemTab .v2-sys-empty__title {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  color: var(--ink-secondary);
+}
+html body #systemTab .v2-sys-empty__desc {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  color: var(--ink-muted);
+  max-width: 44ch;
+  line-height: var(--lh-normal);
+}
+html body #systemTab .v2-sys-empty[data-tone="danger"] .v2-sys-empty__icon {
+  color: var(--sig-danger);
+  background: var(--sig-danger-soft);
+  border-color: color-mix(in oklch, var(--sig-danger) 25%, transparent);
+}
+html body #systemTab .v2-sys-skel {
+  display: grid;
+  gap: var(--s-4);
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+html body #systemTab .v2-sys-skel__card {
+  height: 188px;
+  border-radius: var(--r-3);
+  border: 1px solid var(--line-soft);
+  background: linear-gradient(100deg,
+    var(--bg-overlay) 30%, var(--bg-leaf) 50%, var(--bg-overlay) 70%);
+  background-size: 200% 100%;
+  animation: v2-sys-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes v2-sys-shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+/* ============================================================
+ * 界面设计 · 控制卡
+ * ============================================================ */
+html body #systemTab .v2-sys-design-grid {
+  display: grid;
+  gap: var(--s-4);
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  align-items: stretch;
+  margin-bottom: var(--s-5);
+}
+html body #systemTab .v2-sys-design-grid .v2-sys-card { margin-bottom: 0; }
+
+html body #systemTab .v2-uid-group + .v2-uid-group {
+  margin-top: var(--s-4);
+  padding-top: var(--s-4);
+  border-top: 1px dashed var(--line-soft);
+}
+html body #systemTab .v2-uid-label {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-bottom: var(--s-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+html body #systemTab .v2-uid-label svg { width: 12px; height: 12px; opacity: 0.7; }
+
+/* 滑杆（appearance:none 自绘；--pct 由 JS 写入做已填充轨道） */
+html body #systemTab .v2-uid-slider {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+html body #systemTab .v2-uid-range {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 18px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+html body #systemTab .v2-uid-range::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: var(--r-full);
+  background: linear-gradient(90deg,
+    var(--aurora-1) 0%,
+    var(--aurora-1) var(--pct, 50%),
+    var(--bg-overlay) var(--pct, 50%));
+  border: 1px solid var(--line-soft);
+}
+html body #systemTab .v2-uid-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6.5px;
+  border-radius: var(--r-full);
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--elev-2);
+  transition: transform var(--dur-instant) var(--ease-standard),
+              box-shadow var(--dur-instant) var(--ease-standard);
+}
+html body #systemTab .v2-uid-range:hover::-webkit-slider-thumb { transform: scale(1.12); }
+html body #systemTab .v2-uid-range:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+  box-shadow: var(--elev-focus);
+}
+html body #systemTab .v2-uid-range:focus-visible { outline: 0; }
+html body #systemTab .v2-uid-range:focus-visible::-webkit-slider-thumb { box-shadow: var(--elev-focus); }
+html body #systemTab .v2-uid-range::-moz-range-track {
+  height: 5px;
+  border-radius: var(--r-full);
+  background: var(--bg-overlay);
+  border: 1px solid var(--line-soft);
+}
+html body #systemTab .v2-uid-range::-moz-range-progress {
+  height: 5px;
+  border-radius: var(--r-full);
+  background: var(--aurora-1);
+}
+html body #systemTab .v2-uid-range::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  border-radius: var(--r-full);
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--elev-2);
+}
+html body #systemTab .v2-uid-range:focus-visible::-moz-range-thumb { box-shadow: var(--elev-focus); }
+
+/* 色相滑杆：轨道即 OKLCH 光谱 */
+html body #systemTab .v2-uid-range--hue::-webkit-slider-runnable-track {
+  background: linear-gradient(90deg,
+    oklch(0.70 0.14 0), oklch(0.70 0.14 40), oklch(0.70 0.14 80),
+    oklch(0.70 0.14 120), oklch(0.70 0.14 160), oklch(0.70 0.14 200),
+    oklch(0.70 0.14 240), oklch(0.70 0.14 280), oklch(0.70 0.14 320),
+    oklch(0.70 0.14 360));
+}
+html body #systemTab .v2-uid-range--hue::-moz-range-track {
+  background: linear-gradient(90deg,
+    oklch(0.70 0.14 0), oklch(0.70 0.14 40), oklch(0.70 0.14 80),
+    oklch(0.70 0.14 120), oklch(0.70 0.14 160), oklch(0.70 0.14 200),
+    oklch(0.70 0.14 240), oklch(0.70 0.14 280), oklch(0.70 0.14 320),
+    oklch(0.70 0.14 360));
+}
+html body #systemTab .v2-uid-range--hue::-moz-range-progress { background: transparent; }
+html body #systemTab .v2-uid-val {
+  flex-shrink: 0;
+  min-width: 48px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: var(--fw-semibold);
+  font-feature-settings: "tnum" 1;
+  color: var(--ink-pure);
+}
+
+/* 色板 */
+html body #systemTab .v2-uid-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+}
+html body #systemTab .v2-uid-swatch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: var(--r-2);
+  border: 1px solid oklch(0.20 0.008 270 / 0.10);
+  color: oklch(0.99 0.003 270);
+  cursor: pointer;
+  transition: transform var(--dur-instant) var(--ease-standard),
+              box-shadow var(--dur-instant) var(--ease-standard);
+  -webkit-tap-highlight-color: transparent;
+}
+html body #systemTab .v2-uid-swatch svg {
+  width: 14px;
+  height: 14px;
+  opacity: 0;
+  transform: scale(0.6);
+  filter: drop-shadow(0 1px 1px oklch(0 0 0 / 0.35));
+  transition: opacity var(--dur-fast) var(--ease-standard),
+              transform var(--dur-fast) var(--ease-emphasis);
+}
+html body #systemTab .v2-uid-swatch:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--elev-2);
+}
+html body #systemTab .v2-uid-swatch.active {
+  box-shadow: 0 0 0 2px var(--bg-leaf), 0 0 0 4px var(--line-strong);
+}
+html body #systemTab .v2-uid-swatch.active svg { opacity: 1; transform: none; }
+html body #systemTab .v2-uid-swatch:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 2px var(--bg-leaf), 0 0 0 4px var(--line-focus);
+}
+
+/* 分段控件 */
+html body #systemTab .v2-uid-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--line-default);
+  border-radius: var(--r-2);
+}
+html body #systemTab .v2-uid-seg button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 5px var(--s-3);
+  border-radius: calc(var(--r-2) - 2px);
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-medium);
+  color: var(--ink-muted);
+  transition: background-color var(--dur-instant) var(--ease-standard),
+              color var(--dur-instant) var(--ease-standard),
+              box-shadow var(--dur-instant) var(--ease-standard);
+  -webkit-tap-highlight-color: transparent;
+}
+html body #systemTab .v2-uid-seg button:hover { color: var(--ink-primary); }
+html body #systemTab .v2-uid-seg button.active {
+  background: var(--bg-leaf);
+  color: var(--ink-pure);
+  box-shadow: var(--elev-1);
+}
+html body #systemTab .v2-uid-seg button:focus-visible {
+  outline: 0;
+  box-shadow: var(--elev-focus);
+}
+
+/* 状态 chip（脏 / 已保存） */
+html body #systemTab .v2-uid-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  height: 24px;
+  padding: 0 var(--s-3);
+  border-radius: var(--r-full);
+  border: 1px solid transparent;
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-medium);
+}
+html body #systemTab .v2-uid-status:empty { display: none; }
+html body #systemTab .v2-uid-status::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+html body #systemTab .v2-uid-status[data-state="dirty"] {
+  color: var(--sig-warning);
+  background: var(--sig-warning-soft);
+  border-color: color-mix(in oklch, var(--sig-warning) 25%, transparent);
+}
+html body #systemTab .v2-uid-status[data-state="saved"] {
+  color: var(--sig-success);
+  background: var(--sig-success-soft);
+  border-color: color-mix(in oklch, var(--sig-success) 25%, transparent);
+}
+
+/* ============================================================
+ * 实时预览样张（引用真实设计令牌）
+ * ============================================================ */
+html body #systemTab .v2-uid-preview {
+  position: relative;
+  padding: var(--s-6) var(--s-5);
+  border-radius: var(--r-3);
+  background: var(--bg-page);
+  border: 1px solid var(--line-soft);
+  overflow: hidden;
+}
+html body #systemTab .v2-uid-preview::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(560px 200px at 88% -30%,
+    color-mix(in oklch, var(--aurora-1) 14%, transparent), transparent 70%);
+  pointer-events: none;
+}
+html body #systemTab .v2-uid-preview > * { position: relative; }
+html body #systemTab .v2-uid-preview__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+html body #systemTab .v2-uid-preview__eyebrow::before {
+  content: "";
+  width: 8px;
+  height: 1px;
+  background: var(--gold-hairline);
+}
+html body #systemTab .v2-uid-preview__title {
+  margin: var(--s-2) 0 var(--s-3);
+  width: fit-content;
+  font-family: var(--font-display);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-tight);
+  font-optical-sizing: auto;
+  background: var(--aurora-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--aurora-1);
+}
+html body #systemTab .v2-uid-preview__body {
+  margin: 0 0 var(--s-5);
+  max-width: 58ch;
+  font-family: var(--font-editorial);
+  font-size: 15px;
+  line-height: var(--lh-relaxed);
+  color: var(--ink-secondary);
+}
+html body #systemTab .v2-uid-preview__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+html body #systemTab .v2-uid-preview__row .ac-btn { pointer-events: none; }
+html body #systemTab .v2-uid-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: var(--r-full);
+  color: var(--chip, var(--aurora-1));
+  border: 1px solid color-mix(in oklch, var(--chip, var(--aurora-1)) 35%, transparent);
+  background: color-mix(in oklch, var(--chip, var(--aurora-1)) 8%, transparent);
+}
+
+/* ============================================================
+ * 暗色模式
+ * ============================================================ */
+html[data-theme="dark"] body #systemTab .v2-sys-kpi,
+html[data-theme="dark"] body #systemTab .v2-sys-card,
+html[data-theme="dark"] body #systemTab .v2-tk-card {
+  background: var(--bg-overlay);
+}
+html[data-theme="dark"] body #systemTab .v2-sys-subnav { background: var(--bg-sunken); }
+html[data-theme="dark"] body #systemTab .v2-sys-subnav__indicator { background: var(--bg-raised); }
+html[data-theme="dark"] body #systemTab .v2-sys-card__footer { background: var(--bg-sunken); }
+html[data-theme="dark"] body #systemTab .v2-uid-seg { background: var(--bg-sunken); }
+html[data-theme="dark"] body #systemTab .v2-uid-seg button.active { background: var(--bg-raised); }
+html[data-theme="dark"] body #systemTab .v2-tk-bar { background: var(--bg-sunken); }
+html[data-theme="dark"] body #systemTab .v2-tk-bar__tick { background: var(--bg-overlay); }
+/* :not(--hue) 排除色相滑杆——其轨道是 OKLCH 光谱，明暗一致，
+   否则本组暗色覆盖的特异性会盖掉光谱背景 */
+html[data-theme="dark"] body #systemTab .v2-uid-range:not(.v2-uid-range--hue)::-webkit-slider-runnable-track {
+  background: linear-gradient(90deg,
+    var(--aurora-1) 0%,
+    var(--aurora-1) var(--pct, 50%),
+    var(--bg-sunken) var(--pct, 50%));
+}
+html[data-theme="dark"] body #systemTab .v2-uid-range:not(.v2-uid-range--hue)::-moz-range-track { background: var(--bg-sunken); }
+html[data-theme="dark"] body #systemTab .v2-uid-swatch.active {
+  box-shadow: 0 0 0 2px var(--bg-overlay), 0 0 0 4px var(--line-strong);
+}
+html[data-theme="dark"] body #systemTab .v2-sys-empty { background: var(--bg-overlay); }
+html[data-theme="dark"] body #systemTab .v2-sys-empty__icon { background: var(--bg-raised); }
+html[data-theme="dark"] body #systemTab .v2-tk-reveal__row code { background: var(--bg-sunken); }
+
+/* ============================================================
+ * 响应式
+ * ============================================================ */
+@media (max-width: 768px) {
+  html body #systemTab .v2-sys-kpis { grid-template-columns: repeat(2, 1fr); }
+  html body #systemTab .v2-sys-card__head { padding: var(--s-4); }
+  html body #systemTab .v2-sys-card__body { padding: var(--s-4); }
+  html body #systemTab .v2-sys-card__footer { padding: var(--s-3) var(--s-4); }
+  html body #systemTab .v2-sys-card__aside { display: none; }
+  html body #systemTab .v2-sys-form__actions .ac-btn { width: 100%; }
+}
+@media (max-width: 640px) {
+  html body #systemTab .v2-tk-grid,
+  html body #systemTab .v2-sys-skel { grid-template-columns: 1fr; }
+  html body #systemTab .v2-sys-subnav { display: flex; }
+  html body #systemTab .v2-sys-subnav__item { flex: 1 1 0; justify-content: center; }
+}

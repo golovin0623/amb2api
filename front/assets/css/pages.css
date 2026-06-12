@@ -15,7 +15,8 @@ html body #playgroundTab > h3,
 html body #logsTab > h3,
 html body #accountTab > h3,
 html body #uploadTab > h3,
-html body #manageTab > h3 {
+html body #manageTab > h3,
+html body #systemTab > h3 {
   font-family: var(--font-display) !important;
   font-size: var(--fs-h3) !important;
   font-weight: var(--fw-regular) !important;
@@ -47,7 +48,8 @@ html body #playgroundTab > h3::after,
 html body #logsTab > h3::after,
 html body #accountTab > h3::after,
 html body #uploadTab > h3::after,
-html body #manageTab > h3::after {
+html body #manageTab > h3::after,
+html body #systemTab > h3::after {
   content: "";
   display: block;
   width: 32px;
