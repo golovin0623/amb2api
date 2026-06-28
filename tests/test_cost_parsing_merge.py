@@ -108,6 +108,20 @@ def test_billing_balance_prefers_precise_structured_balance_keys():
     assert result["balance"] == 58.49928
 
 
+def test_dashboard_balance_api_reads_top_level_balance():
+    from src.api.account_api import _extract_balance_api_amount
+
+    assert _extract_balance_api_amount({"balance": 58.49928}) == 58.49928
+
+
+def test_dashboard_balance_api_reads_nested_amount_object():
+    from src.api.account_api import _extract_balance_api_amount
+
+    payload = {"data": {"currentBalance": {"amount": "12.34567", "currency": "USD"}}}
+
+    assert _extract_balance_api_amount(payload) == 12.34567
+
+
 def test_dashboard_next_url_uses_app_route_without_dashboard_base_path():
     from src.api.account_api import _dashboard_next_url
 

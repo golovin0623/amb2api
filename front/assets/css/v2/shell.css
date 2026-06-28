@@ -575,7 +575,7 @@ body[data-sidebar="mini"] .v2-sidebar__collapse svg {
     margin: 0 0 0 calc(var(--sidebar-w-current, var(--sidebar-w)) + var(--shell-content-gutter)) !important;
     max-width: none !important;
     width: calc(100% - var(--sidebar-w-current, var(--sidebar-w)) - var(--shell-content-gutter)) !important;
-    min-height: 100vh;
+    min-height: 100svh;
     transition:
       margin-left var(--dur-fast) var(--ease-standard),
       width var(--dur-fast) var(--ease-standard);
@@ -583,7 +583,14 @@ body[data-sidebar="mini"] .v2-sidebar__collapse svg {
 
   body[data-shell="v2"] > .container > #mainSection {
     padding-top: var(--appbar-h);
-    min-height: 100vh;
+    min-height: 100svh;
+  }
+
+  @supports (min-height: 100dvh) {
+    body[data-shell="v2"] > .container,
+    body[data-shell="v2"] > .container > #mainSection {
+      min-height: 100dvh;
+    }
   }
 
   body[data-shell="v2"] > .container > #mainSection > .tab-content-wrapper {

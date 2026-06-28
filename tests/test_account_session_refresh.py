@@ -165,6 +165,76 @@ def test_prepare_dashboard_request_omits_bearer_when_stale():
     assert "session_jwt" not in headers2["Cookie"]
 
 
+def test_prepare_dashboard_api_request_uses_json_headers():
+    now = int(time.time())
+    session = {
+        "auth_type": "dashboard",
+        "session_jwt": make_jwt(now + 300),
+        "session_token": "stok",
+        "aai_extended_session": "aai-cookie",
+    }
+
+    url, headers = account_api._prepare_dashboard_request(
+        session,
+        "/dashboard/api/accounts/balance",
+        None,
+        allow_bearer=True,
+        rsc=False,
+    )
+
+    assert url == "https://www.assemblyai.com/dashboard/api/accounts/balance"
+    assert headers["Accept"] == "application/json, text/plain, */*"
+    assert headers["Referer"] == "https://www.assemblyai.com/dashboard/settings/billing"
+    assert headers["Authorization"] == f"Bearer {session['session_jwt']}"
+    assert "aai_extended_session=aai-cookie" in headers["Cookie"]
+    assert "RSC" not in headers
+    assert "Next-Url" not in headers
+    assert "X-Requested-With" not in headers
+
+
+@pytest.mark.asyncio
+async def test_fetch_dashboard_account_balance_uses_current_api():
+    with patch.object(
+        account_api,
+        "_make_dashboard_request",
+        AsyncMock(return_value={"balance": "58.49928"}),
+    ) as mock_request:
+        amount = await account_api._fetch_dashboard_account_balance("user@example.com")
+
+    assert amount == 58.49928
+    mock_request.assert_awaited_once_with(
+        "GET",
+        "/dashboard/api/accounts/balance",
+        account_email="user@example.com",
+        rsc=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_billing_keeps_api_balance_when_settings_page_fails():
+    session = {"email": "user@example.com", "user_info": {}}
+
+    with patch.object(account_api, "_get_session", AsyncMock(return_value=session)), \
+        patch.object(account_api, "_cache_get", return_value=None), \
+        patch.object(account_api, "_cache_set") as mock_cache_set, \
+        patch.object(
+            account_api,
+            "_fetch_dashboard_account_balance",
+            AsyncMock(return_value=58.49928),
+        ), \
+        patch.object(
+            account_api,
+            "_fetch_dashboard_billing_page",
+            AsyncMock(side_effect=Exception("Dashboard API error: 404")),
+        ):
+        result = await account_api.get_billing_info(force=True, account_email="user@example.com")
+
+    assert result["balance_found"] is True
+    assert result["balance"] == 58.49928
+    assert "error" not in result
+    mock_cache_set.assert_called_once()
+
+
 def test_extract_aai_extended_session_handles_multiple_set_cookie():
     # httpx.Headers 风格：get_list 返回多条 Set-Cookie
     class FakeHeaders:

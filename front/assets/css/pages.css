@@ -2876,12 +2876,12 @@ html body .status.info { color: var(--sig-info); }
   html body #playgroundTab .playground-feature-wide {
     grid-column: 1 / -1;
   }
-  html body #configTab { padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px)) !important; }
+  html body #configTab { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)) !important; }
   html body .config-floating-actions {
     position: fixed !important;
     left: var(--s-3) !important;
     right: var(--s-3) !important;
-    bottom: calc(var(--s-3) + env(safe-area-inset-bottom, 0px)) !important;
+    bottom: max(var(--s-2), env(safe-area-inset-bottom, 0px)) !important;
     width: auto !important;
     margin: 0 !important;
     display: grid !important;
