@@ -996,6 +996,16 @@ def _prepare_dashboard_request(
     if cookies:
         headers["Cookie"] = "; ".join(cookies)
 
+    if path.startswith("/dashboard/api/"):
+        headers["Accept"] = "application/json, text/plain, */*"
+        headers.pop("RSC", None)
+        headers.pop("Next-Url", None)
+        headers.pop("X-Requested-With", None)
+        headers.pop("priority", None)
+        if path.startswith("/dashboard/api/accounts/"):
+            headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/settings/billing"
+        return f"{ASSEMBLY_DASHBOARD_BASE}{path}", headers
+
     if path.startswith("/dashboard/") and rsc:
         headers["Accept"] = "text/x-component"
         headers["RSC"] = "1"
@@ -1013,6 +1023,8 @@ def _prepare_dashboard_request(
             headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/cost"
         elif "/account/billing" in path:
             headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/account/billing"
+        elif "/settings/billing" in path:
+            headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/settings/billing"
         return f"{ASSEMBLY_DASHBOARD_BASE}{path}", headers
 
     if path.startswith("/dashboard/"):
@@ -1027,6 +1039,8 @@ def _prepare_dashboard_request(
             headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/cost"
         elif "/account/billing" in path:
             headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/account/billing"
+        elif "/settings/billing" in path:
+            headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/settings/billing"
         return f"{ASSEMBLY_DASHBOARD_BASE}{path}", headers
 
     # 旧式 cookie 认证
@@ -1151,6 +1165,35 @@ async def _make_dashboard_request(
     except Exception as e:
         log.error(f"Dashboard request failed: {e}")
         raise HTTPException(status_code=500, detail=f"Request failed: {str(e)}")
+
+
+async def _fetch_dashboard_account_balance(account_email: Optional[str] = None) -> Optional[float]:
+    """Fetch current balance from the Dashboard JSON API used by AssemblyAI."""
+    data = await _make_dashboard_request(
+        "GET",
+        "/dashboard/api/accounts/balance",
+        account_email=account_email,
+        rsc=False,
+    )
+    return _extract_balance_api_amount(data)
+
+
+async def _fetch_dashboard_billing_page(account_email: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Best-effort billing page scrape for spend trend and fallback balance."""
+    page = await _make_dashboard_request(
+        "GET",
+        "/dashboard/settings/billing",
+        account_email=account_email,
+        rsc=False,
+    )
+    if not page or "raw" not in page:
+        return None
+    raw_text = page["raw"].strip()
+    if not raw_text:
+        return None
+    parsed = _parse_billing_rsc_data(page)
+    parsed["_source"] = "settings billing page"
+    return parsed
 
 
 @router.post("/login")
@@ -1478,49 +1521,38 @@ async def get_account_overview(force: bool = False, account_email: Optional[str]
         }
     
     async def get_billing():
-        try:
-            params = {"view": "US"}
-            page = await _make_dashboard_request(
-                "GET",
-                "/dashboard/account/billing",
-                params=params,
-                account_email=account_email,
-                rsc=False,
-            )
-            if page and "raw" in page:
-                raw_text = page["raw"].strip()
-                if raw_text and not raw_text.startswith("<!DOCTYPE"):
-                    parsed = _parse_billing_rsc_data(page)
-                    return {
-                        "balance": parsed.get("balance") or 0.0,
-                        "total_spend_30_days": parsed.get("total_spend_30_days") or 0.0,
-                        "spend_trend": parsed.get("spend_trend", []),
-                        "balance_found": parsed.get("balance") is not None,
-                    }
-                if raw_text:
-                    parsed = _parse_billing_rsc_data(page)
-                    return {
-                        "balance": parsed.get("balance") or 0.0,
-                        "total_spend_30_days": parsed.get("total_spend_30_days") or 0.0,
-                        "spend_trend": parsed.get("spend_trend", []),
-                        "balance_found": parsed.get("balance") is not None,
-                    }
-        except Exception as e:
-            log.warning(f"Failed to get billing in overview: {e}")
-            return {
-                "balance": 0.0,
-                "total_spend_30_days": 0.0,
-                "spend_trend": [],
-                "balance_found": False,
-                "error": str(e),
-            }
-        return {
+        result = {
             "balance": 0.0,
             "total_spend_30_days": 0.0,
             "spend_trend": [],
             "balance_found": False,
-            "error": "Billing data was not found in the dashboard response.",
         }
+        errors = []
+
+        try:
+            balance = await _fetch_dashboard_account_balance(account_email)
+            if balance is not None:
+                result["balance"] = balance
+                result["balance_found"] = True
+        except Exception as e:
+            errors.append(str(e))
+            log.warning(f"Failed to get dashboard balance in overview: {e}")
+
+        try:
+            parsed = await _fetch_dashboard_billing_page(account_email)
+            if parsed:
+                if parsed.get("balance") is not None and not result["balance_found"]:
+                    result["balance"] = parsed.get("balance") or 0.0
+                    result["balance_found"] = True
+                result["total_spend_30_days"] = parsed.get("total_spend_30_days") or 0.0
+                result["spend_trend"] = parsed.get("spend_trend", [])
+        except Exception as e:
+            errors.append(str(e))
+            log.warning(f"Failed to get settings billing page in overview: {e}")
+
+        if not result["balance_found"]:
+            result["error"] = errors[0] if errors else "Billing balance was not found in the dashboard response."
+        return result
     
     async def get_api_keys():
         try:
@@ -1744,41 +1776,47 @@ async def get_billing_info(force: bool = False, account_email: Optional[str] = N
         "balance_found": False,
     }
     
+    errors = []
+
     try:
-        params = {"view": "US"}
-        page = await _make_dashboard_request(
-            "GET",
-            "/dashboard/account/billing",
-            params=params,
-            account_email=account_email,
-            rsc=False,
-        )
-        
-        best_result = None
-        if page and "raw" in page:
-            raw_text = page["raw"].strip()
-            if raw_text:
-                best_result = _parse_billing_rsc_data(page)
-                best_result["_source"] = f"billing with {params}"
-        
-        if best_result and best_result.get("balance") is not None:
-            result["balance"] = best_result.get("balance") or 0.0
+        balance = await _fetch_dashboard_account_balance(account_email)
+        if balance is not None:
+            result["balance"] = balance
+            result["balance_found"] = True
+            result["debug_info"] = {"source": "dashboard api /accounts/balance"}
+    except Exception as e:
+        errors.append(str(e))
+        log.warning(f"Failed to fetch dashboard balance API: {e}")
+
+    try:
+        best_result = await _fetch_dashboard_billing_page(account_email)
+
+        if best_result:
+            page_balance = best_result.get("balance")
+            if page_balance is not None and not result["balance_found"]:
+                result["balance"] = best_result.get("balance") or 0.0
+                result["balance_found"] = True
             result["total_spend_30_days"] = best_result.get("total_spend_30_days") or 0.0
             result["spend_trend"] = best_result.get("spend_trend", [])
-            result["balance_found"] = True
             if best_result.get("by_service"):
                 result["cost_breakdown"] = {s.get("service"): s.get("cost", 0.0) for s in best_result.get("by_service", [])}
-            result["debug_info"] = {"source": best_result.get("_source", "unknown")}
-            log.info(f"Parsed billing from dashboard: balance=${result['balance']}, spend=${result['total_spend_30_days']} (source: {best_result.get('_source', 'unknown')})")
+            result["debug_info"] = {
+                "source": result.get("debug_info", {}).get("source")
+                or best_result.get("_source", "unknown")
+            }
+            if result["balance_found"]:
+                log.info(f"Parsed billing from dashboard: balance=${result['balance']}, spend=${result['total_spend_30_days']} (source: {result['debug_info']['source']})")
+        elif result["balance_found"]:
+            log.info(f"Parsed billing balance from dashboard API: balance=${result['balance']}")
         else:
             log.warning("No valid billing data from any source")
-            result["balance_found"] = False
-            result["error"] = "Billing balance was not found in the dashboard response."
-    
+
     except Exception as e:
-        log.error(f"Failed to fetch billing info: {e}")
-        result["balance_found"] = False
-        result["error"] = str(e)
+        errors.append(str(e))
+        log.warning(f"Failed to fetch settings billing page: {e}")
+
+    if not result.get("balance_found"):
+        result["error"] = errors[0] if errors else "Billing balance was not found in the dashboard response."
     
     if result.get("balance_found"):
         _cache_set(cache_key, result)
@@ -2582,6 +2620,61 @@ def _first_amount_in_value(value: Any) -> Optional[float]:
     if isinstance(value, list):
         for item in value:
             amount = _first_amount_in_value(item)
+            if amount is not None:
+                return amount
+
+    return None
+
+
+def _extract_balance_api_amount(value: Any) -> Optional[float]:
+    """Extract balance from the Dashboard /api/accounts/balance response."""
+    if value is None or isinstance(value, bool):
+        return None
+
+    if isinstance(value, (int, float, str)):
+        return _coerce_amount(value)
+
+    preferred_keys = (
+        "balance",
+        "current_balance",
+        "currentBalance",
+        "available_balance",
+        "availableBalance",
+        "remaining_balance",
+        "remainingBalance",
+        "credit_balance",
+        "creditBalance",
+    )
+    container_keys = (
+        "data",
+        "account",
+        "billing",
+        "billing_summary",
+        "billingSummary",
+        "result",
+    )
+
+    if isinstance(value, dict):
+        for key in preferred_keys:
+            if key in value:
+                amount = _first_amount_in_value(value.get(key))
+                if amount is not None:
+                    return amount
+
+        for key in container_keys:
+            if key in value:
+                amount = _extract_balance_api_amount(value.get(key))
+                if amount is not None:
+                    return amount
+
+        return _extract_structured_balance([value])
+
+    if isinstance(value, list):
+        amount = _extract_structured_balance(value)
+        if amount is not None:
+            return amount
+        for item in value:
+            amount = _extract_balance_api_amount(item)
             if amount is not None:
                 return amount
 

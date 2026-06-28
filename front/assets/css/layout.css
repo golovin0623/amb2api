@@ -18,11 +18,18 @@
  * ============================================================ */
 html body #mainSection {
   background: var(--bg-page);
-  min-height: 100vh;
+  min-height: 100svh;
+  height: auto !important;
+  max-height: none !important;
   padding: 0;
   margin: 0;
   display: flex;
   flex-direction: column;
+}
+@supports (min-height: 100dvh) {
+  html body #mainSection {
+    min-height: 100dvh;
+  }
 }
 
 html body #mainSection.hidden { display: none; }
