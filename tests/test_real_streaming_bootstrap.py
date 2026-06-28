@@ -227,6 +227,7 @@ def test_openai_streaming_upstream_json_error_preserves_status():
     with patch("src.api.openai_router.get_performance_tracker", new=AsyncMock(return_value=RouterTrackerStub())), \
          patch("config.get_fake_streaming_enabled", new=AsyncMock(return_value=False)), \
          patch("config.get_enable_real_streaming", new=AsyncMock(return_value=True)), \
+         patch("config.get_stream_bootstrap_retries", new=AsyncMock(return_value=0)), \
          patch("src.api.openai_router.send_assembly_request", new=AsyncMock(return_value=gateway_error)):
         client = TestClient(app)
         response = client.post(
@@ -241,6 +242,65 @@ def test_openai_streaming_upstream_json_error_preserves_status():
 
     assert response.status_code == 500
     assert response.json()["error"]["type"] == "api_error"
+
+
+def test_native_streaming_retries_header_stage_5xx_before_forwarding():
+    app = _build_openai_test_app()
+    gateway_error = JSONResponse(
+        content={"error": {"message": "temporary upstream error", "type": "api_error"}},
+        status_code=503,
+    )
+    upstream_response = FakeStreamResponse(iter(()))
+    converted_stream = AsyncMock(return_value=_done_stream())
+
+    with patch("src.api.openai_router.get_performance_tracker", new=AsyncMock(return_value=RouterTrackerStub())), \
+         patch("config.get_fake_streaming_enabled", new=AsyncMock(return_value=False)), \
+         patch("config.get_enable_real_streaming", new=AsyncMock(return_value=True)), \
+         patch("config.get_stream_bootstrap_retries", new=AsyncMock(return_value=1)), \
+         patch("src.api.openai_router.send_assembly_request", new=AsyncMock(side_effect=[gateway_error, upstream_response])) as send_request, \
+         patch("src.api.openai_router.convert_streaming_response", new=converted_stream):
+        client = TestClient(app)
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.5",
+                "messages": [{"role": "user", "content": "hello"}],
+                "stream": True,
+            },
+            headers={"Authorization": "Bearer test"},
+        )
+
+    assert response.status_code == 200
+    assert send_request.await_count == 2
+    converted_stream.assert_awaited_once()
+
+
+def test_native_streaming_does_not_retry_header_stage_4xx():
+    app = _build_openai_test_app()
+    gateway_error = JSONResponse(
+        content={"error": {"message": "bad request", "type": "api_error"}},
+        status_code=400,
+    )
+
+    with patch("src.api.openai_router.get_performance_tracker", new=AsyncMock(return_value=RouterTrackerStub())), \
+         patch("config.get_fake_streaming_enabled", new=AsyncMock(return_value=False)), \
+         patch("config.get_enable_real_streaming", new=AsyncMock(return_value=True)), \
+         patch("config.get_stream_bootstrap_retries", new=AsyncMock(return_value=3)), \
+         patch("src.api.openai_router.send_assembly_request", new=AsyncMock(return_value=gateway_error)) as send_request:
+        client = TestClient(app)
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.5",
+                "messages": [{"role": "user", "content": "hello"}],
+                "stream": True,
+            },
+            headers={"Authorization": "Bearer test"},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == "bad request"
+    assert send_request.await_count == 1
 
 
 def test_global_fake_streaming_forces_non_stream_upstream_for_native_model():

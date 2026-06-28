@@ -52,6 +52,43 @@ async def _should_use_fake_streaming(model: str, forced_by_model_prefix: bool) -
         return True, "unsupported-native-streaming"
     return False, "native-streaming-supported"
 
+
+def _is_retryable_stream_header_status(status_code: int) -> bool:
+    return status_code == 429 or 500 <= status_code < 600
+
+
+async def _request_native_stream_with_header_bootstrap_retries(
+    request_provider,
+    trace: Any = None,
+):
+    """Retry native stream setup when upstream fails before any SSE bytes."""
+    response = await request_provider()
+    response_status = getattr(response, "status_code", 200)
+    if not _is_retryable_stream_header_status(response_status):
+        return response
+
+    try:
+        from config import get_stream_bootstrap_retries
+
+        retry_budget = max(0, int(await get_stream_bootstrap_retries()))
+    except Exception:
+        retry_budget = 0
+
+    for attempt in range(1, retry_budget + 1):
+        if trace:
+            trace.metadata["stream_header_bootstrap_retries_used"] = attempt
+            trace.metadata["stream_header_bootstrap_last_status"] = response_status
+        log.warning(
+            f"[STREAM_HEADER_BOOTSTRAP_RETRY] attempt={attempt}/{retry_budget} "
+            f"status={response_status}"
+        )
+        response = await request_provider()
+        response_status = getattr(response, "status_code", 200)
+        if not _is_retryable_stream_header_status(response_status):
+            return response
+
+    return response
+
 async def _resolve_identity(request: Request, token: str) -> bool:
     """把 token 解析为身份并挂到 request.state.identity。
 
@@ -911,7 +948,10 @@ async def chat_completions(
         async def request_provider():
             return await send_assembly_request(request_data, True, trace=trace)
 
-        response = await request_provider()
+        response = await _request_native_stream_with_header_bootstrap_retries(
+            request_provider,
+            trace=trace,
+        )
         response_status = getattr(response, "status_code", 200)
         if response_status >= 400:
             return await _forward_openai_error_response(
