@@ -130,12 +130,16 @@ async def convert_streaming_response(
     model: str,
     trace=None,
     request_provider: Optional[Callable[[], Awaitable[Any]]] = None,
+    bootstrap_retries_override: Optional[int] = None,
 ) -> StreamingResponse:
     """转换流式响应为OpenAI格式（支持 keepalive 与首包前 bootstrap 重试）"""
     response_id = str(uuid.uuid4())
 
     keepalive_seconds = await get_stream_keepalive_seconds()
-    bootstrap_retries = await get_stream_bootstrap_retries()
+    if bootstrap_retries_override is None:
+        bootstrap_retries = await get_stream_bootstrap_retries()
+    else:
+        bootstrap_retries = bootstrap_retries_override
     if keepalive_seconds < 0:
         keepalive_seconds = 0
     if bootstrap_retries < 0:

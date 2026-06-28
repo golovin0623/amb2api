@@ -65,7 +65,7 @@ async def _request_native_stream_with_header_bootstrap_retries(
     response = await request_provider()
     response_status = getattr(response, "status_code", 200)
     if not _is_retryable_stream_header_status(response_status):
-        return response
+        return response, None
 
     try:
         from config import get_stream_bootstrap_retries
@@ -85,9 +85,9 @@ async def _request_native_stream_with_header_bootstrap_retries(
         response = await request_provider()
         response_status = getattr(response, "status_code", 200)
         if not _is_retryable_stream_header_status(response_status):
-            return response
+            return response, max(0, retry_budget - attempt)
 
-    return response
+    return response, 0
 
 async def _resolve_identity(request: Request, token: str) -> bool:
     """把 token 解析为身份并挂到 request.state.identity。
@@ -948,7 +948,7 @@ async def chat_completions(
         async def request_provider():
             return await send_assembly_request(request_data, True, trace=trace)
 
-        response = await _request_native_stream_with_header_bootstrap_retries(
+        response, bootstrap_retries_override = await _request_native_stream_with_header_bootstrap_retries(
             request_provider,
             trace=trace,
         )
@@ -965,6 +965,7 @@ async def chat_completions(
             model,
             trace=trace,
             request_provider=request_provider,
+            bootstrap_retries_override=bootstrap_retries_override,
         )
     
     log.info(f"REQ model={model}")

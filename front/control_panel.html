@@ -12159,7 +12159,9 @@
                 auto_ban_error_codes: document.getElementById('autoBanErrorCodes').value,
                 max_tokens_mode: document.getElementById('maxTokensMode')?.value || 'off',
                 fake_stream_enabled: !!document.getElementById('fakeStreamEnabled')?.checked,
-                fake_stream_speed: parseInt(document.getElementById('fakeStreamSpeed')?.value) || 100
+                fake_stream_speed: parseInt(document.getElementById('fakeStreamSpeed')?.value) || 100,
+                // Migrate old hidden real-streaming kill switch back to automatic routing.
+                enable_real_streaming: true
             };
             // 仅当区域路由未被 env 锁定（字段可编辑）时才写回。否则面板显示的是 env 生效值，
             // 若一并保存会把它固化进存储、覆盖原有存储默认值（env 移除后路由会意外保持改变）。

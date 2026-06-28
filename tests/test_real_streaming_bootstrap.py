@@ -273,6 +273,7 @@ def test_native_streaming_retries_header_stage_5xx_before_forwarding():
     assert response.status_code == 200
     assert send_request.await_count == 2
     converted_stream.assert_awaited_once()
+    assert converted_stream.await_args.kwargs["bootstrap_retries_override"] == 0
 
 
 def test_native_streaming_does_not_retry_header_stage_4xx():

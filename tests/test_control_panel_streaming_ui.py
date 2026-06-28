@@ -11,3 +11,5 @@ def test_control_panel_only_exposes_global_fake_streaming_toggle():
     assert "启用真实流式" not in html
     assert 'id="streamKeepaliveSeconds"' not in html
     assert 'id="streamBootstrapRetries"' not in html
+
+    assert "enable_real_streaming: true" in html
