@@ -20553,6 +20553,12 @@
 
         // 加载费率数据
         async function loadAccountRates(force = false, silent = false) {
+            const escapeHtml = (text) => {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            };
+
             if (!currentAccountEmail) {
                 const el = document.getElementById('accountRatesContent');
                 if (el) el.innerHTML = '<p style="color: var(--text-secondary);">请先选择账户</p>';
@@ -20766,7 +20772,7 @@
                 accountCache.rates = { ts: Date.now(), html };
                 el.innerHTML = html;
             } catch (e) {
-                el.innerHTML = `<div class="status error">加载失败: ${e.message}</div>`;
+                el.innerHTML = `<div class="status error">加载失败: ${escapeHtml(String(e.message || e))}</div>`;
             }
         }
 
