@@ -216,6 +216,39 @@ async def test_real_streaming_normalizes_null_openai_chunk_fields():
     assert chunks[-1].strip() == "data: [DONE]"
 
 
+@pytest.mark.asyncio
+async def test_real_streaming_preserves_header_bootstrap_retry_count():
+    async def openai_stream():
+        yield (
+            b'data: {"id":"upstream-1","object":"chat.completion.chunk","created":123,'
+            b'"model":"gpt-5.5","choices":[{"index":0,"delta":{"content":"pong"},'
+            b'"finish_reason":null}]}\n\n'
+        )
+        yield b"data: [DONE]\n\n"
+
+    with patch("src.services.assembly_stream_handler.get_stream_keepalive_seconds", new_callable=AsyncMock) as keepalive_mock, \
+         patch("src.services.assembly_stream_handler.get_stream_bootstrap_retries", new_callable=AsyncMock) as bootstrap_mock:
+        keepalive_mock.return_value = 0
+        bootstrap_mock.return_value = 0
+        trace = TraceStub()
+        trace.metadata["stream_bootstrap_retries_used"] = 1
+
+        response = await convert_streaming_response(
+            FakeStreamResponse(openai_stream()),
+            model="gpt-5.5",
+            trace=trace,
+            bootstrap_retries_override=0,
+        )
+
+        chunks = []
+        async for item in response.body_iterator:
+            chunks.append(item.decode("utf-8", errors="replace"))
+
+    assert any('"content":"pong"' in chunk for chunk in chunks)
+    assert trace.metadata["stream_bootstrap_retries_used"] == 1
+    assert trace.metadata["stream_bootstrap_recovered"] is True
+
+
 def test_openai_streaming_upstream_json_error_preserves_status():
     app = _build_openai_test_app()
 

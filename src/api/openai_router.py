@@ -76,6 +76,8 @@ async def _request_native_stream_with_header_bootstrap_retries(
 
     for attempt in range(1, retry_budget + 1):
         if trace:
+            prior_bootstrap_retries = int(trace.metadata.get("stream_bootstrap_retries_used", 0) or 0)
+            trace.metadata["stream_bootstrap_retries_used"] = prior_bootstrap_retries + 1
             trace.metadata["stream_header_bootstrap_retries_used"] = attempt
             trace.metadata["stream_header_bootstrap_last_status"] = response_status
         log.warning(

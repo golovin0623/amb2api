@@ -145,13 +145,22 @@ async def convert_streaming_response(
     if bootstrap_retries < 0:
         bootstrap_retries = 0
 
+    initial_bootstrap_retries_used = 0
+    if trace:
+        try:
+            initial_bootstrap_retries_used = int(
+                trace.metadata.get("stream_bootstrap_retries_used", 0) or 0
+            )
+        except (TypeError, ValueError):
+            initial_bootstrap_retries_used = 0
+
     if trace:
         trace.metadata["stream_mode"] = "real"
         trace.metadata["stream_keepalive_seconds"] = keepalive_seconds
         trace.metadata["stream_bootstrap_retries_config"] = bootstrap_retries
         trace.metadata["stream_keepalive_count"] = 0
         trace.metadata["stream_bootstrap_attempts"] = 0
-        trace.metadata["stream_bootstrap_retries_used"] = 0
+        trace.metadata["stream_bootstrap_retries_used"] = initial_bootstrap_retries_used
         trace.metadata["stream_bootstrap_recovered"] = False
         trace.metadata["stream_bootstrap_failed"] = False
         trace.metadata.pop("stream_bootstrap_last_error", None)
@@ -320,7 +329,9 @@ async def convert_streaming_response(
                 except Exception as stream_err:
                     if not first_chunk_sent and request_provider and attempt < total_attempts:
                         if trace:
-                            trace.metadata["stream_bootstrap_retries_used"] = attempt
+                            trace.metadata["stream_bootstrap_retries_used"] = (
+                                initial_bootstrap_retries_used + attempt
+                            )
                             trace.metadata["stream_bootstrap_last_error"] = str(stream_err)[:256]
                             trace.metadata["stream_bootstrap_last_error_type"] = type(stream_err).__name__
                         log.warning(f"[STREAM_BOOTSTRAP_RETRY] attempt={attempt}/{total_attempts} err={stream_err}")
@@ -329,7 +340,9 @@ async def convert_streaming_response(
                     raise
 
             if trace:
-                trace.metadata["stream_bootstrap_retries_used"] = max(0, attempt - 1)
+                trace.metadata["stream_bootstrap_retries_used"] = (
+                    initial_bootstrap_retries_used + max(0, attempt - 1)
+                )
                 trace.metadata["stream_bootstrap_recovered"] = (
                     trace.metadata["stream_bootstrap_retries_used"] > 0 and first_chunk_sent
                 )
@@ -342,7 +355,9 @@ async def convert_streaming_response(
 
         except Exception as e:
             if trace:
-                trace.metadata["stream_bootstrap_retries_used"] = max(0, attempt - 1)
+                trace.metadata["stream_bootstrap_retries_used"] = (
+                    initial_bootstrap_retries_used + max(0, attempt - 1)
+                )
                 trace.metadata["stream_bootstrap_failed"] = (
                     (not first_chunk_sent) and attempt >= total_attempts
                 )
