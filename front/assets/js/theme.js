@@ -9,6 +9,7 @@
   'use strict';
 
   const STORAGE_KEY = 'amb2api-theme';
+  const LEGACY_STORAGE_KEY = 'theme';
 
   function currentTheme() {
     return document.documentElement.getAttribute('data-theme') || 'light';
@@ -24,11 +25,14 @@
       root.setAttribute('data-theme', theme);
       if (opts.persist !== false) persistTheme(theme);
       updateLegacyToggle(theme);
+      if (typeof window.refreshThemeAwareComponents === 'function') {
+        window.refreshThemeAwareComponents();
+      }
       window.dispatchEvent(new CustomEvent('themechange', { detail: { theme: theme } }));
     };
 
-    // View Transitions
-    if (document.startViewTransition && !opts.noAnim) {
+    const shouldAnimate = !opts.noAnim;
+    if (document.startViewTransition && shouldAnimate) {
       const x = (opts.x !== undefined) ? opts.x : window.innerWidth - 32;
       const y = (opts.y !== undefined) ? opts.y : 32;
       root.style.setProperty('--theme-x', x + 'px');
@@ -50,7 +54,7 @@
   function persistTheme(theme) {
     try {
       localStorage.setItem(STORAGE_KEY, theme);
-      localStorage.setItem('theme', theme);
+      localStorage.setItem(LEGACY_STORAGE_KEY, theme);
     } catch (e) {}
   }
 
@@ -71,16 +75,16 @@
 
   function init() {
     let stored = null;
-    try { stored = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('theme'); } catch (e) {}
+    try { stored = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY); } catch (e) {}
     const initial = stored || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     document.documentElement.setAttribute('data-theme', initial);
     if (stored) persistTheme(initial);
     updateLegacyToggle(initial);
 
-    // 兼容旧 .theme-toggle 元素
+    // 新入口使用 data-action，旧 .theme-toggle 已有自身点击处理，避免一次点击被处理两次。
     document.addEventListener('click', (evt) => {
       if (evt.defaultPrevented) return;
-      const tgt = evt.target.closest('.theme-toggle, [data-action="toggle-theme"]');
+      const tgt = evt.target.closest('[data-action="toggle-theme"]');
       if (tgt) {
         evt.preventDefault();
         toggleTheme(evt);
@@ -93,7 +97,7 @@
       const handler = (e) => {
         // 仅在用户从未手动选择时跟随系统
         try {
-          if (localStorage.getItem(STORAGE_KEY) || localStorage.getItem('theme')) return;
+          if (localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY)) return;
         } catch (err) { /* ignore */ }
         setTheme(e.matches ? 'dark' : 'light', { noAnim: true, persist: false });
       };

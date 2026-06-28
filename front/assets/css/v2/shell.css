@@ -12,6 +12,7 @@
 /* 标记位（boot-v2.js 在登录后给 body 添加；登出移除） */
 body[data-shell="v2"] {
   --sidebar-w-current: var(--sidebar-w);
+  --shell-content-gutter: clamp(24px, 2.4vw, 40px);
 }
 body[data-shell="v2"][data-sidebar="mini"] {
   --sidebar-w-current: var(--sidebar-w-mini);
@@ -186,6 +187,12 @@ body[data-sidebar="mini"] .v2-sidebar__section-label {
   padding-top: 0;
   padding-bottom: 0;
 }
+body[data-sidebar="mini"] .v2-sidebar__nav {
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-4) 0;
+  overflow-x: visible;
+}
 
 .v2-nav-item {
   position: relative;
@@ -309,11 +316,16 @@ body[data-sidebar="mini"] .v2-nav-item[data-active="true"] .v2-nav-item__shortcu
   margin-right: 0;
   opacity: 0;
   pointer-events: none;
+  display: none;
 }
 body[data-sidebar="mini"] .v2-nav-item {
+  width: 40px;
+  height: 40px;
   padding: 0;
   gap: 0;
+  flex: 0 0 40px;
   justify-content: center;
+  border-radius: var(--r-2);
 }
 
 /* mini 态：用浏览器原生 title (在 shell.js 中由 data-label 派发) 作为 tooltip，
@@ -329,6 +341,7 @@ body[data-sidebar="mini"] .v2-nav-item {
 }
 body[data-sidebar="mini"] .v2-sidebar__footer {
   justify-content: center;
+  padding: var(--s-3) 0;
 }
 .v2-sidebar__collapse {
   display: inline-flex;
@@ -537,24 +550,54 @@ body[data-sidebar="mini"] .v2-sidebar__collapse svg {
 /* ============================================================
  * 主内容偏移
  *
- * v2 模式下：旧 .fixed-header 隐藏；body 给 sidebar / appbar 留位置；
- * #mainSection > .tab-content-wrapper 接管真正的滚动容器。
+ * v2 模式下不要让 Sidebar 浮在业务内容之上。Sidebar 仍然 fixed，
+ * 但 .container、AppBar 和内容区都用同一个 --sidebar-w-current
+ * 同步位移，折叠/展开时形成一个联动的 app shell。
  * ============================================================ */
 @media (min-width: 1025px) {
   /* base.css 用 `html body { padding: 0 !important }` 击杀旧 inline 样式，
      这里必须叠加 !important 才能让 body 给固定 sidebar / appbar 让位。 */
   body[data-shell="v2"] {
-    padding-left: var(--sidebar-w-current, var(--sidebar-w)) !important;
-    padding-top: var(--appbar-h) !important;
-    transition: padding-left var(--dur-fast) var(--ease-standard);
+    padding-left: 0 !important;
+    padding-top: 0 !important;
+    overflow-x: hidden;
   }
+
   body[data-shell="v2"] > .container > #mainSection > .fixed-header {
     display: none !important;
   }
+
+  body[data-shell="v2"] > .container {
+    background: transparent !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 0 0 calc(var(--sidebar-w-current, var(--sidebar-w)) + var(--shell-content-gutter)) !important;
+    max-width: none !important;
+    width: calc(100% - var(--sidebar-w-current, var(--sidebar-w)) - var(--shell-content-gutter)) !important;
+    min-height: 100vh;
+    transition:
+      margin-left var(--dur-fast) var(--ease-standard),
+      width var(--dur-fast) var(--ease-standard);
+  }
+
+  body[data-shell="v2"] > .container > #mainSection {
+    padding-top: var(--appbar-h);
+    min-height: 100vh;
+  }
+
   body[data-shell="v2"] > .container > #mainSection > .tab-content-wrapper {
-    padding: var(--s-6) var(--s-7) var(--s-7);
-    max-width: var(--content-max);
-    margin: 0 auto;
+    box-sizing: border-box;
+    padding: var(--s-6) var(--s-7) var(--s-7) !important;
+    max-width: var(--content-max) !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+    overflow-x: clip;
+  }
+
+  body[data-shell="v2"] > .theme-toggle,
+  body[data-shell="v2"] .theme-toggle {
+    display: none !important;
   }
 }
 
@@ -564,14 +607,12 @@ body[data-sidebar="mini"] .v2-sidebar__collapse svg {
   body[data-shell="v2"] .v2-appbar {
     display: none !important;
   }
-}
 
-/* 旧 .container 在 v2 模式下保持透明 / full width，让 sidebar+appbar 接管视觉 */
-body[data-shell="v2"] > .container {
-  background: transparent !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  max-width: none !important;
-  width: 100% !important;
+  body[data-shell="v2"] > .theme-toggle {
+    top: auto !important;
+    right: 16px !important;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 16px) !important;
+    left: auto !important;
+    z-index: 100000 !important;
+  }
 }

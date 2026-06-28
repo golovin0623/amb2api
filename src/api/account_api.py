@@ -98,6 +98,17 @@ def _summarize_headers_for_log(headers: Any) -> Dict[str, Any]:
             summary[key] = _truncate_log_value(header_map.get(key), 240)
     return summary
 
+
+def _dashboard_next_url(path: str, params: Optional[Dict[str, Any]] = None) -> str:
+    """Build the Next-Url header for Assembly Dashboard RSC requests."""
+    from urllib.parse import urlencode
+
+    next_path = path.removeprefix("/dashboard") or "/"
+    next_params = {k: v for k, v in (params or {}).items() if k != "_rsc"}
+    if not next_params:
+        return next_path
+    return f"{next_path}?{urlencode(next_params, doseq=True)}"
+
 def _cache_get(key: str) -> Optional[Dict[str, Any]]:
     entry = _cache_store.get(key)
     if not entry:
@@ -932,6 +943,7 @@ def _prepare_dashboard_request(
     params: Optional[Dict],
     *,
     allow_bearer: bool = True,
+    rsc: bool = True,
 ):
     """构造 Dashboard 请求的 (url, headers)。
 
@@ -982,24 +994,29 @@ def _prepare_dashboard_request(
     if cookies:
         headers["Cookie"] = "; ".join(cookies)
 
-    if path.startswith("/dashboard/"):
+    if path.startswith("/dashboard/") and rsc:
         headers["Accept"] = "text/x-component"
         headers["RSC"] = "1"
-        if params:
-            try:
-                from urllib.parse import urlencode
-                next_params = {k: v for k, v in params.items() if k != "_rsc"}
-                if next_params:
-                    qs = urlencode(next_params, doseq=True)
-                    headers["Next-Url"] = f"{path}?{qs}"
-                else:
-                    headers["Next-Url"] = path
-            except Exception:
-                headers["Next-Url"] = path
-        else:
-            headers["Next-Url"] = path
+        try:
+            headers["Next-Url"] = _dashboard_next_url(path, params)
+        except Exception:
+            headers["Next-Url"] = _dashboard_next_url(path)
         headers.setdefault("priority", "u=1, i")
         headers["X-Requested-With"] = "NextJS-RSC"
+        if path.endswith("/usage"):
+            headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/usage"
+        elif path.endswith("/code"):
+            headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/code"
+        elif path.endswith("/cost"):
+            headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/cost"
+        elif "/account/billing" in path:
+            headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/account/billing"
+        return f"{ASSEMBLY_DASHBOARD_BASE}{path}", headers
+
+    if path.startswith("/dashboard/"):
+        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        headers.pop("RSC", None)
+        headers.pop("X-Requested-With", None)
         if path.endswith("/usage"):
             headers["Referer"] = f"{ASSEMBLY_DASHBOARD_BASE}/dashboard/usage"
         elif path.endswith("/code"):
@@ -1023,6 +1040,7 @@ async def _make_dashboard_request(
     data: Optional[Dict] = None,
     params: Optional[Dict] = None,
     account_email: Optional[str] = None,
+    rsc: bool = True,
 ) -> Optional[Dict[str, Any]]:
     """
     发送 Dashboard API 请求
@@ -1033,6 +1051,8 @@ async def _make_dashboard_request(
         data: POST 数据
         params: 查询参数
         account_email: 账户邮箱，如果为None则使用当前账户
+        rsc: 是否按 Next.js RSC 请求发送。部分页面（billing）直接请求
+            RSC 在缺少完整 router state 时会返回 _not-found。
     
     Returns:
         响应数据或 None
@@ -1057,7 +1077,11 @@ async def _make_dashboard_request(
                 and _session_needs_renewal(sess)
             )
             url, headers = _prepare_dashboard_request(
-                sess, path, params, allow_bearer=not jwt_stale
+                sess,
+                path,
+                params,
+                allow_bearer=not jwt_stale,
+                rsc=rsc,
             )
             if method.upper() == "GET":
                 return await client.get(url, headers=headers, params=params)
@@ -1086,6 +1110,15 @@ async def _make_dashboard_request(
                 raise HTTPException(
                     status_code=401, detail="Session expired. Please login again."
                 )
+
+        final_path = str(resp.url.path)
+        matched_path = resp.headers.get("x-matched-path", "")
+        if final_path.endswith("/dashboard/login") or matched_path == "/login":
+            log.warning(f"Dashboard request redirected to login for {path}")
+            raise HTTPException(
+                status_code=401,
+                detail="Dashboard session expired or requested page requires login.",
+            )
 
         if resp.status_code >= 400:
             log.error(f"Dashboard API error: {resp.status_code} - {resp.text[:500]}")
@@ -1443,8 +1476,14 @@ async def get_account_overview(force: bool = False, account_email: Optional[str]
     
     async def get_billing():
         try:
-            params = {"view": "US", "_rsc": "10s30"}
-            page = await _make_dashboard_request("GET", "/dashboard/account/billing", params=params, account_email=account_email)
+            params = {"view": "US"}
+            page = await _make_dashboard_request(
+                "GET",
+                "/dashboard/account/billing",
+                params=params,
+                account_email=account_email,
+                rsc=False,
+            )
             if page and "raw" in page:
                 raw_text = page["raw"].strip()
                 if raw_text and not raw_text.startswith("<!DOCTYPE"):
@@ -1453,10 +1492,32 @@ async def get_account_overview(force: bool = False, account_email: Optional[str]
                         "balance": parsed.get("balance") or 0.0,
                         "total_spend_30_days": parsed.get("total_spend_30_days") or 0.0,
                         "spend_trend": parsed.get("spend_trend", []),
+                        "balance_found": parsed.get("balance") is not None,
+                    }
+                if raw_text:
+                    parsed = _parse_billing_rsc_data(page)
+                    return {
+                        "balance": parsed.get("balance") or 0.0,
+                        "total_spend_30_days": parsed.get("total_spend_30_days") or 0.0,
+                        "spend_trend": parsed.get("spend_trend", []),
+                        "balance_found": parsed.get("balance") is not None,
                     }
         except Exception as e:
             log.warning(f"Failed to get billing in overview: {e}")
-        return {"balance": 0.0, "total_spend_30_days": 0.0, "spend_trend": []}
+            return {
+                "balance": 0.0,
+                "total_spend_30_days": 0.0,
+                "spend_trend": [],
+                "balance_found": False,
+                "error": str(e),
+            }
+        return {
+            "balance": 0.0,
+            "total_spend_30_days": 0.0,
+            "spend_trend": [],
+            "balance_found": False,
+            "error": "Billing data was not found in the dashboard response.",
+        }
     
     async def get_api_keys():
         try:
@@ -1507,7 +1568,8 @@ async def get_account_overview(force: bool = False, account_email: Optional[str]
         "api_keys": api_keys,
     }
     
-    _cache_set(cache_key, result)
+    if billing.get("balance_found", True) and not billing.get("error"):
+        _cache_set(cache_key, result)
     log.info(f"Overview data fetched for {session_email}: balance=${billing.get('balance', 0)}, {len(api_keys)} keys")
     return result
 
@@ -1676,41 +1738,47 @@ async def get_billing_info(force: bool = False, account_email: Optional[str] = N
         "total_spend_30_days": 0.0,
         "cost_breakdown": {},
         "spend_trend": [],
+        "balance_found": False,
     }
     
-    # 计算日期范围（最近30天）
-    from datetime import datetime, timedelta
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=30)
-    
     try:
-        # 只发一个请求，使用最可靠的参数
-        params = {"view": "US", "_rsc": "10s30"}
-        page = await _make_dashboard_request("GET", "/dashboard/account/billing", params=params, account_email=account_email)
+        params = {"view": "US"}
+        page = await _make_dashboard_request(
+            "GET",
+            "/dashboard/account/billing",
+            params=params,
+            account_email=account_email,
+            rsc=False,
+        )
         
         best_result = None
         if page and "raw" in page:
             raw_text = page["raw"].strip()
-            if raw_text and not raw_text.startswith("<!DOCTYPE"):
+            if raw_text:
                 best_result = _parse_billing_rsc_data(page)
                 best_result["_source"] = f"billing with {params}"
         
-        if best_result:
+        if best_result and best_result.get("balance") is not None:
             result["balance"] = best_result.get("balance") or 0.0
             result["total_spend_30_days"] = best_result.get("total_spend_30_days") or 0.0
             result["spend_trend"] = best_result.get("spend_trend", [])
+            result["balance_found"] = True
             if best_result.get("by_service"):
                 result["cost_breakdown"] = {s.get("service"): s.get("cost", 0.0) for s in best_result.get("by_service", [])}
             result["debug_info"] = {"source": best_result.get("_source", "unknown")}
-            log.info(f"Parsed billing from RSC: balance=${result['balance']}, spend=${result['total_spend_30_days']} (source: {best_result.get('_source', 'unknown')})")
+            log.info(f"Parsed billing from dashboard: balance=${result['balance']}, spend=${result['total_spend_30_days']} (source: {best_result.get('_source', 'unknown')})")
         else:
             log.warning("No valid billing data from any source")
+            result["balance_found"] = False
+            result["error"] = "Billing balance was not found in the dashboard response."
     
     except Exception as e:
         log.error(f"Failed to fetch billing info: {e}")
+        result["balance_found"] = False
         result["error"] = str(e)
     
-    _cache_set(cache_key, result)
+    if result.get("balance_found"):
+        _cache_set(cache_key, result)
     return result
 
 
@@ -2184,8 +2252,9 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
         rsc = await _make_dashboard_request(
             "GET",
             "/dashboard/account/billing",
-            params={"view": region, "_rsc": "10s30"},
+            params={"view": region},
             account_email=account_email,
+            rsc=False,
         )
         parsed = _parse_rates_rsc_data(rsc)
         log.info(f"Parsed rates from billing API: {len(parsed.get('llm_gateway_input', []))} input, {len(parsed.get('llm_gateway_output', []))} output")
@@ -2425,6 +2494,214 @@ def _parse_rsc_data(data: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+def _extract_rsc_json_values(raw_text: str) -> List[Any]:
+    """Parse JSON payloads embedded in a Next.js RSC response."""
+    values: List[Any] = []
+
+    for line in raw_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        json_part = line
+        if not line.startswith(("{", "[", '"')):
+            prefix, sep, rest = line.partition(":")
+            if sep and prefix.isalnum():
+                json_part = rest.strip()
+
+        if not json_part or not json_part.startswith(("{", "[", '"')):
+            continue
+
+        try:
+            values.append(json.loads(json_part))
+        except json.JSONDecodeError:
+            continue
+
+    return values
+
+
+def _coerce_amount(value: Any) -> Optional[float]:
+    """Convert a dashboard money-like value to float without logging raw input."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str):
+        return None
+
+    text = value.strip()
+    if not text:
+        return None
+
+    import re
+
+    match = re.search(r"-?\d[\d,]*(?:\.\d+)?", text)
+    if not match:
+        return None
+    try:
+        return float(match.group(0).replace(",", ""))
+    except ValueError:
+        return None
+
+
+def _first_amount_in_value(value: Any) -> Optional[float]:
+    """Find the first amount in a structured balance object."""
+    amount = _coerce_amount(value)
+    if amount is not None:
+        return amount
+
+    if isinstance(value, dict):
+        preferred_keys = (
+            "amount",
+            "balance",
+            "current_balance",
+            "currentBalance",
+            "remaining_balance",
+            "remainingBalance",
+            "available_balance",
+            "availableBalance",
+            "value",
+        )
+        for key in preferred_keys:
+            if key in value:
+                amount = _first_amount_in_value(value.get(key))
+                if amount is not None:
+                    return amount
+
+        for nested in value.values():
+            amount = _first_amount_in_value(nested)
+            if amount is not None:
+                return amount
+
+    if isinstance(value, list):
+        for item in value:
+            amount = _first_amount_in_value(item)
+            if amount is not None:
+                return amount
+
+    return None
+
+
+def _extract_structured_balance(values: List[Any]) -> Optional[float]:
+    """Extract balance from JSON objects with balance-ish keys."""
+    precise_balance_key_fragments = (
+        "currentbalance",
+        "availablebalance",
+        "remainingbalance",
+        "creditbalance",
+    )
+    reject_key_fragments = ("card", "threshold")
+    candidates: List[tuple[int, int, float]] = []
+    order = 0
+
+    def key_score(normalized_key: str) -> int:
+        if any(fragment in normalized_key for fragment in precise_balance_key_fragments):
+            return 100
+        if "balance" in normalized_key:
+            return 50
+        return 0
+
+    def walk(value: Any) -> None:
+        nonlocal order
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                normalized_key = str(key).replace("_", "").replace("-", "").lower()
+                score = key_score(normalized_key)
+                if score and not any(fragment in normalized_key for fragment in reject_key_fragments):
+                    amount = _first_amount_in_value(nested)
+                    if amount is not None:
+                        candidates.append((score, order, amount))
+                        order += 1
+
+            for nested in value.values():
+                walk(nested)
+
+        if isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    for value in values:
+        walk(value)
+    if candidates:
+        candidates.sort(key=lambda item: (-item[0], item[1]))
+        return candidates[0][2]
+    return None
+
+
+def _flatten_rsc_text(values: List[Any]) -> str:
+    """Flatten display strings from parsed RSC JSON values."""
+    parts: List[str] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, str):
+            if value and value != "$":
+                parts.append(value)
+            elif value == "$":
+                parts.append(value)
+            return
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            parts.append(str(value))
+            return
+        if isinstance(value, dict):
+            for nested in value.values():
+                walk(nested)
+            return
+        if isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    for value in values:
+        walk(value)
+
+    return " ".join(parts)
+
+
+def _money_amounts_with_positions(text: str) -> List[tuple[int, float]]:
+    import re
+
+    amounts: List[tuple[int, float]] = []
+    money_patterns = [
+        r"(?:US\$|\${1,2})\s*([0-9][\d,]*(?:\.\d+)?)",
+        r"([0-9][\d,]*(?:\.\d+)?)\s*(?:USD|usd)\b",
+    ]
+    for pattern in money_patterns:
+        for match in re.finditer(pattern, text):
+            amount = _coerce_amount(match.group(1))
+            if amount is not None:
+                amounts.append((match.start(), amount))
+
+    amounts.sort(key=lambda item: item[0])
+    return amounts
+
+
+def _extract_labeled_balance(raw_text: str, values: List[Any]) -> Optional[float]:
+    import re
+
+    text_sources = [_flatten_rsc_text(values), raw_text]
+    label_pattern = re.compile(
+        r"current\s*balance|available\s*balance|remaining\s*balance|credit\s*balance|账户余额|当前余额|余额|balance",
+        re.IGNORECASE,
+    )
+
+    for source in text_sources:
+        text = re.sub(r"\s+", " ", source)
+        if not text:
+            continue
+
+        for label in label_pattern.finditer(text):
+            after = text[label.end(): label.end() + 300]
+            amounts = _money_amounts_with_positions(after)
+            if amounts:
+                return amounts[0][1]
+
+            before = text[max(0, label.start() - 160): label.start()]
+            amounts = _money_amounts_with_positions(before)
+            if amounts:
+                return amounts[-1][1]
+
+    return None
+
+
 
 def _parse_billing_rsc_data(data: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -2450,25 +2727,22 @@ def _parse_billing_rsc_data(data: Dict[str, Any]) -> Dict[str, Any]:
     
     try:
         log.debug(f"Parsing billing RSC data, length: {len(raw_text)}")
-        
-        # 1. 提取余额 - 多种格式尝试
-        # 格式1: "children":"$$58.49928" (双美元符号)
-        balance_pattern1 = r'"children":\s*"\$\$(\d+\.?\d*)"'
-        balance_matches = re.findall(balance_pattern1, raw_text)
-        
-        if not balance_matches:
-            # 格式2: "children":"$58.49928" (单美元符号)
-            balance_pattern2 = r'"children":\s*"\$(\d+\.?\d*)"'
-            balance_matches = re.findall(balance_pattern2, raw_text)
-        
-        if not balance_matches:
-            # 格式3: 直接匹配 $$数字 格式
-            balance_pattern3 = r'\$\$(\d+\.?\d*)'
-            balance_matches = re.findall(balance_pattern3, raw_text)
-        
-        if balance_matches:
-            # 取第一个匹配的余额值（通常是账户余额）
-            result["balance"] = float(balance_matches[0])
+
+        rsc_values = _extract_rsc_json_values(raw_text)
+
+        # 1. 提取余额 - 优先解析结构化 balance 字段和带标签的金额，避免把
+        #    页面其他 $0.00000 指标误当成余额。
+        balance = _extract_structured_balance(rsc_values)
+        if balance is None:
+            balance = _extract_labeled_balance(raw_text, rsc_values)
+        if balance is None:
+            # 兼容旧格式：billing 页面只有一个 "$58.49928" / "$$58.49928" 文本。
+            balance_matches = _money_amounts_with_positions(raw_text)
+            if balance_matches:
+                balance = balance_matches[0][1]
+
+        if balance is not None:
+            result["balance"] = balance
             log.info(f"Extracted balance: ${result['balance']}")
         else:
             log.warning("No balance found in RSC data")
