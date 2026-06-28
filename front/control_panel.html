@@ -20584,6 +20584,20 @@
                 if (!res.ok) throw new Error('加载失败');
                 const data = await res.json();
                 let html = '<div style="display: grid; gap: 20px;">';
+                const rateWarnings = Array.isArray(data.warnings) ? data.warnings : [];
+                const rateMeta = data.metadata || {};
+
+                if (rateWarnings.length > 0) {
+                    const sourceLabel = ({
+                        fallback: '内置备用表',
+                        mixed: 'Dashboard + 内置备用表',
+                        dashboard: 'AssemblyAI Dashboard'
+                    })[rateMeta.source] || rateMeta.source;
+                    html += '<div class="status warning" style="margin: 0;">' +
+                        rateWarnings.map(w => escapeHtml(String(w))).join('<br>') +
+                        (sourceLabel ? '<div style="margin-top: 6px; font-size: 12px;">数据来源: ' + escapeHtml(String(sourceLabel)) + '</div>' : '') +
+                        '</div>';
+                }
 
                 // LLM Gateway - 合并输入/输出两列并优先展示
                 if ((data.llm_gateway_input && data.llm_gateway_input.length > 0) || (data.llm_gateway_output && data.llm_gateway_output.length > 0)) {
@@ -20596,19 +20610,21 @@
                         const originalName = item.model || '-';
                         const k = normalizeModelName(originalName);
                         if (!modelDisplayNames[k]) modelDisplayNames[k] = originalName;
-                        if (!map[k]) map[k] = { in: 0, out: 0, inDisplay: '-', outDisplay: '-', unit: item.unit || '' };
+                        if (!map[k]) map[k] = { in: 0, out: 0, inDisplay: '-', outDisplay: '-', unit: item.unit || '', source: item.price_source || '' };
                         map[k].in = item.rate || 0;
                         map[k].inDisplay = item.rate_display || ('$' + (item.rate || 0).toFixed(2));
                         map[k].unit = item.unit || map[k].unit || '';
+                        if (item.price_source === 'fallback') map[k].source = 'fallback';
                     });
                     (data.llm_gateway_output || []).forEach(item => {
                         const originalName = item.model || '-';
                         const k = normalizeModelName(originalName);
                         if (!modelDisplayNames[k]) modelDisplayNames[k] = originalName;
-                        if (!map[k]) map[k] = { in: 0, out: 0, inDisplay: '-', outDisplay: '-', unit: item.unit || '' };
+                        if (!map[k]) map[k] = { in: 0, out: 0, inDisplay: '-', outDisplay: '-', unit: item.unit || '', source: item.price_source || '' };
                         map[k].out = item.rate || 0;
                         map[k].outDisplay = item.rate_display || ('$' + (item.rate || 0).toFixed(2));
                         map[k].unit = item.unit || map[k].unit || '';
+                        if (item.price_source === 'fallback') map[k].source = 'fallback';
                     });
                     const rows = Object.keys(map).map(k => ({
                         model: modelDisplayNames[k] || k, // 使用原始模型名称用于显示
@@ -20616,7 +20632,8 @@
                         out: map[k].out,
                         inDisplay: map[k].inDisplay,
                         outDisplay: map[k].outDisplay,
-                        unit: map[k].unit
+                        unit: map[k].unit,
+                        source: map[k].source
                     })).sort((a, b) => {
                         // 厂商分类：GPT/OpenAI(0), Claude(1), Gemini(2), 其他(3)
                         function vendor(n) {
@@ -20706,7 +20723,10 @@
                         groupRows.forEach(r => {
                             const inTxt = r.inDisplay || '-';
                             const outTxt = r.outDisplay || '-';
-                            html += `<tr><td>${r.model}</td><td>${inTxt}</td><td>${outTxt}</td><td class="rates-unit-col">${r.unit || '-'}</td></tr>`;
+                            const sourceBadge = r.source === 'fallback'
+                                ? ' <span style="display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--border-color); color: var(--text-secondary); font-size: 11px;">备用</span>'
+                                : '';
+                            html += `<tr><td>${escapeHtml(String(r.model))}${sourceBadge}</td><td>${escapeHtml(String(inTxt))}</td><td>${escapeHtml(String(outTxt))}</td><td class="rates-unit-col">${escapeHtml(String(r.unit || '-'))}</td></tr>`;
                         });
                         isFirstGroup = false;
                     });
