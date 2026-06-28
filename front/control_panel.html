@@ -6710,10 +6710,10 @@
     <link rel="stylesheet" href="/static/css/legacy-bridge.css">
     <link rel="stylesheet" href="/static/css/components.css">
     <link rel="stylesheet" href="/static/css/layout.css">
-    <link rel="stylesheet" href="/static/css/effects.css">
+    <link rel="stylesheet" href="/static/css/effects.css?v=20260628-themefx1">
     <link rel="stylesheet" href="/static/css/pages.css">
     <!-- V2 AppShell · 仅在 body[data-shell="v2"] 时生效 -->
-    <link rel="stylesheet" href="/static/css/v2/shell.css">
+    <link rel="stylesheet" href="/static/css/v2/shell.css?v=20260628-shell11">
     <!-- V2 #ratelimitTab 深度精化（顶级 dashboard） -->
     <link rel="stylesheet" href="/static/css/v2/ratelimit.css">
     <!-- V2 #systemTab 深度精化（用户令牌 + 界面设计） -->
@@ -9229,6 +9229,7 @@
             // 按新主题的明度/彩度重算自定义极光：此内联路径不派发 themechange 事件，
             // 故直接调用，确保切换主题后自定义色相不会沿用旧主题的 L/C。
             if (typeof applyUiDesign === 'function') { applyUiDesign(); uidRenderSwatches(); }
+            window.dispatchEvent(new CustomEvent('themechange', { detail: { theme: newTheme } }));
         }
 
         // 刷新需要响应主题变化的组件
@@ -17370,6 +17371,36 @@
         }
 
         // 检查账户登录状态
+        function buildAccountBillingHtml(billingData) {
+            const billing = billingData || {};
+            const balanceFound = billing.balance_found !== false && !billing.error;
+            const balance = Number(billing.balance || 0);
+            const totalSpend = Number(billing.total_spend_30_days || 0);
+            const balanceText = balanceFound ? ('$' + balance.toFixed(5)) : '获取失败';
+            const balanceClass = balanceFound ? 'balance-amount' : '';
+            const balanceStyle = balanceFound
+                ? 'font-size: 36px; font-weight: bold;'
+                : 'font-size: 22px; font-weight: 700; color: #ffc107;';
+            let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px;">';
+            html += '<div style="text-align: center; padding: 24px; background: linear-gradient(135deg, var(--card-bg) 0%, rgba(255,77,77,0.05) 100%); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 4px 15px rgba(255,77,77,0.1);">';
+            html += '<div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">当前余额</div>';
+            html += '<div class="' + balanceClass + '" style="' + balanceStyle + '">' + balanceText + '</div>';
+            html += '</div>';
+            html += '<div style="text-align: center; padding: 24px; background: linear-gradient(135deg, var(--card-bg) 0%, rgba(40,167,69,0.05) 100%); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 4px 15px rgba(40,167,69,0.1);">';
+            html += '<div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">30天消费</div>';
+            html += '<div class="spend-amount" style="font-size: 36px; font-weight: bold;">$' + totalSpend.toFixed(5) + '</div>';
+            html += '</div></div>';
+            html += '<div style="margin-top: 16px; text-align: center;">';
+            html += '<a href="https://www.assemblyai.com/dashboard/account/billing" target="_blank" class="btn btn-sm" style="background: linear-gradient(135deg, #17a2b8, #138496); border: none; padding: 8px 20px;">充值</a>';
+            html += '<button class="btn btn-sm" onclick="loadAccountBilling(true)" style="margin-left: 8px; padding: 8px 20px;">刷新</button>';
+            html += '</div>';
+            if (!balanceFound) {
+                const message = billing.error || '未能从 AssemblyAI billing 页面读取余额，请刷新或重新登录账户。';
+                html += '<div class="status warning" style="margin-top: 12px;">余额获取失败: ' + escapeHtml(message) + '</div>';
+            }
+            return html;
+        }
+
         // 加载概览数据（合并 info + billing + apiKeys，减少请求数量）
         async function loadAccountOverviewData(force = false) {
             if (!currentAccountEmail) return;
@@ -17402,21 +17433,7 @@
 
                 // 更新 billing 缓存和显示
                 if (data.billing) {
-                    const balance = data.billing.balance || 0;
-                    const totalSpend = data.billing.total_spend_30_days || 0;
-                    let billingHtml = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px;">';
-                    billingHtml += '<div style="text-align: center; padding: 24px; background: linear-gradient(135deg, var(--card-bg) 0%, rgba(255,77,77,0.05) 100%); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 4px 15px rgba(255,77,77,0.1);">';
-                    billingHtml += '<div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">当前余额</div>';
-                    billingHtml += '<div class="balance-amount" style="font-size: 36px; font-weight: bold;">$' + balance.toFixed(5) + '</div>';
-                    billingHtml += '</div>';
-                    billingHtml += '<div style="text-align: center; padding: 24px; background: linear-gradient(135deg, var(--card-bg) 0%, rgba(40,167,69,0.05) 100%); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 4px 15px rgba(40,167,69,0.1);">';
-                    billingHtml += '<div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">30天消费</div>';
-                    billingHtml += '<div class="spend-amount" style="font-size: 36px; font-weight: bold;">$' + totalSpend.toFixed(5) + '</div>';
-                    billingHtml += '</div></div>';
-                    billingHtml += '<div style="margin-top: 16px; text-align: center;">';
-                    billingHtml += '<a href="https://www.assemblyai.com/dashboard/account/billing" target="_blank" class="btn btn-sm" style="background: linear-gradient(135deg, #17a2b8, #138496); border: none; padding: 8px 20px;">充值</a>';
-                    billingHtml += '<button class="btn btn-sm" onclick="loadAccountBilling(true)" style="margin-left: 8px; padding: 8px 20px;">刷新</button>';
-                    billingHtml += '</div>';
+                    const billingHtml = buildAccountBillingHtml(data.billing);
                     accountCache.billing = { ts: Date.now(), html: billingHtml };
                     const balanceEl = document.getElementById('accountBalanceContent');
                     if (balanceEl) balanceEl.innerHTML = billingHtml;
@@ -17862,29 +17879,7 @@
                 if (!res.ok) throw new Error('加载失败');
                 const data = await res.json();
 
-                const balance = data.balance || 0;
-                const totalSpend = data.total_spend_30_days || 0;
-
-                let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px;">';
-                // 余额卡片 - 红色动态效果
-                html += '<div style="text-align: center; padding: 24px; background: linear-gradient(135deg, var(--card-bg) 0%, rgba(255,77,77,0.05) 100%); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 4px 15px rgba(255,77,77,0.1);">';
-                html += '<div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">当前余额</div>';
-                html += '<div class="balance-amount" style="font-size: 36px; font-weight: bold;">$' + balance.toFixed(5) + '</div>';
-                html += '</div>';
-                // 消费卡片 - 绿色动态效果
-                html += '<div style="text-align: center; padding: 24px; background: linear-gradient(135deg, var(--card-bg) 0%, rgba(40,167,69,0.05) 100%); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 4px 15px rgba(40,167,69,0.1);">';
-                html += '<div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">30天消费</div>';
-                html += '<div class="spend-amount" style="font-size: 36px; font-weight: bold;">$' + totalSpend.toFixed(5) + '</div>';
-                html += '</div></div>';
-                html += '<div style="margin-top: 16px; text-align: center;">';
-                html += '<a href="https://www.assemblyai.com/dashboard/account/billing" target="_blank" class="btn btn-sm" style="background: linear-gradient(135deg, #17a2b8, #138496); border: none; padding: 8px 20px;">充值</a>';
-                html += '<button class="btn btn-sm" onclick="loadAccountBilling(true)" style="margin-left: 8px; padding: 8px 20px;">刷新</button>';
-                html += '</div>';
-
-                if (data.error) {
-                    html += '<div class="status warning" style="margin-top: 12px;">注意: ' + data.error + '</div>';
-                }
-
+                const html = buildAccountBillingHtml(data);
                 accountCache.billing = { ts: Date.now(), html };
                 el.innerHTML = html;
             } catch (e) {
@@ -20922,10 +20917,10 @@
          ui.js 包装 showStatus → toast。 -->
     <script src="/static/js/icons.js"></script>
     <script src="/static/js/ui.js"></script>
-    <script src="/static/js/theme.js"></script>
+    <script src="/static/js/theme.js?v=20260628-theme3"></script>
     <script src="/static/js/boot.js"></script>
     <!-- V2 AppShell：在 #mainSection 显示后注入 sidebar+appbar，并镜像旧 #mainTabs -->
-    <script src="/static/js/v2/shell.js"></script>
+    <script src="/static/js/v2/shell.js?v=20260628-shell11"></script>
     <!-- =================================================================== -->
 </body>
 

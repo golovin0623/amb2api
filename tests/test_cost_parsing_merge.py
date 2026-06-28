@@ -27,3 +27,93 @@ def test_cost_merge_input_output_unknown():
     assert abs(gem["input_cost"] - 2.5) < 1e-6
     assert abs(gem["cost"] - 2.5) < 1e-6
 
+
+def test_billing_balance_reads_legacy_money_child_string():
+    from src.api.account_api import _parse_billing_rsc_data
+
+    raw = '1:["$","span",null,{"children":"$58.49928"}]'
+
+    result = _parse_billing_rsc_data({"raw": raw})
+
+    assert result["balance"] == 58.49928
+
+
+def test_billing_balance_prefers_labeled_current_balance_over_first_money_value():
+    from src.api.account_api import _parse_billing_rsc_data
+
+    raw = "\n".join(
+        [
+            '1:["$","div",null,{"children":"30-day spend"}]',
+            '2:["$","span",null,{"children":"$0.00000"}]',
+            '3:["$","div",null,{"children":"Current balance"}]',
+            '4:["$","span",null,{"children":["$","58.49928"]}]',
+        ]
+    )
+
+    result = _parse_billing_rsc_data({"raw": raw})
+
+    assert result["balance"] == 58.49928
+
+
+def test_billing_balance_prefers_specific_label_over_earlier_generic_balance_label():
+    from src.api.account_api import _parse_billing_rsc_data
+
+    raw = "\n".join(
+        [
+            '1:["$","div",null,{"children":"Balance and usage overview"}]',
+            '2:["$","div",null,{"children":"30-day spend"}]',
+            '3:["$","span",null,{"children":"$0.00000"}]',
+            '4:["$","div",null,{"children":"Current balance"}]',
+            '5:["$","span",null,{"children":["$","58.49928"]}]',
+        ]
+    )
+
+    result = _parse_billing_rsc_data({"raw": raw})
+
+    assert result["balance"] == 58.49928
+
+
+def test_billing_balance_reads_structured_balance_amounts():
+    from src.api.account_api import _parse_billing_rsc_data
+
+    raw = '1:{"billing":{"currentBalance":{"amount":"12.34567","currency":"USD"}}}'
+
+    result = _parse_billing_rsc_data({"raw": raw})
+
+    assert result["balance"] == 12.34567
+
+
+def test_billing_balance_reads_structured_balance_after_rsc_alpha_tag():
+    from src.api.account_api import _parse_billing_rsc_data
+
+    raw = '1:I{"billing":{"currentBalance":{"amount":"23.45678","currency":"USD"}}}'
+
+    result = _parse_billing_rsc_data({"raw": raw})
+
+    assert result["balance"] == 23.45678
+
+
+def test_billing_balance_prefers_precise_structured_balance_keys():
+    from src.api.account_api import _parse_billing_rsc_data
+
+    raw = "\n".join(
+        [
+            '1:{"billingSummary":{"balance":0}}',
+            '2:{"billing":{"currentBalance":{"amount":"58.49928","currency":"USD"}}}',
+        ]
+    )
+
+    result = _parse_billing_rsc_data({"raw": raw})
+
+    assert result["balance"] == 58.49928
+
+
+def test_dashboard_next_url_uses_app_route_without_dashboard_base_path():
+    from src.api.account_api import _dashboard_next_url
+
+    next_url = _dashboard_next_url(
+        "/dashboard/account/billing",
+        {"view": "US", "_rsc": "10s30"},
+    )
+
+    assert next_url == "/account/billing?view=US"

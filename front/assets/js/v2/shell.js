@@ -25,6 +25,7 @@
   ];
 
   const SIDEBAR_KEY = 'amb2api.v2.sidebar';
+  const DESKTOP_MEDIA = window.matchMedia ? window.matchMedia('(min-width: 1025px)') : null;
 
   function $(sel, root) { return (root || document).querySelector(sel); }
   function $all(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
@@ -38,11 +39,34 @@
     return span;
   }
 
-  function syncThemeIcon(theme) {
+  function currentThemeName() {
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  }
+
+  function syncThemeIcon() {
     const host = $('.v2-theme-icon');
     if (!host) return;
     host.innerHTML = '';
-    host.appendChild(ensureSvg(theme === 'dark' ? 'sun' : 'moon', 16));
+    host.appendChild(ensureSvg(currentThemeName() === 'dark' ? 'sun' : 'moon', 16));
+  }
+
+  function toggleShellTheme(evt) {
+    const next = currentThemeName() === 'dark' ? 'light' : 'dark';
+    if (window.theme && typeof window.theme.set === 'function') {
+      window.theme.set(next, {
+        x: evt && evt.clientX !== undefined ? evt.clientX : undefined,
+        y: evt && evt.clientY !== undefined ? evt.clientY : undefined,
+      });
+    } else if (typeof window.toggleTheme === 'function') {
+      window.toggleTheme();
+    } else {
+      document.documentElement.setAttribute('data-theme', next);
+      try {
+        localStorage.setItem('theme', next);
+        localStorage.setItem('amb2api-theme', next);
+      } catch (_) {}
+    }
+    syncThemeIcon();
   }
 
   function buildSidebar() {
@@ -132,19 +156,13 @@
     document.body.appendChild(bar);
 
     bar.querySelector('.v2-cmdk-icon').appendChild(ensureSvg('search', 14));
-    bar.querySelector('.v2-theme-icon').appendChild(ensureSvg('moon', 16));
+    syncThemeIcon();
     bar.querySelector('.v2-logout-icon').appendChild(ensureSvg('log-out', 14));
-    syncThemeIcon(document.documentElement.getAttribute('data-theme') || 'light');
 
-    $('#v2ThemeToggle', bar).addEventListener('click', (e) => {
-      // 优先调 window.theme.toggle —— 旧 .theme-toggle 在 V2 模式下被隐藏，
-      // 浏览器对 display:none 元素的 programmatic click 行为不一致。
-      if (window.theme && typeof window.theme.toggle === 'function') {
-        window.theme.toggle(e);
-      } else {
-        const legacy = document.querySelector('.theme-toggle');
-        if (legacy) legacy.click();
-      }
+    $('#v2ThemeToggle', bar).addEventListener('click', (evt) => {
+      evt.preventDefault();
+      evt.stopPropagation();
+      toggleShellTheme(evt);
     });
     $('#v2LogoutBtn', bar).addEventListener('click', () => {
       if (typeof window.logout === 'function') window.logout();
@@ -202,11 +220,42 @@
     try { localStorage.setItem(SIDEBAR_KEY, next); } catch (_) {}
   }
 
+  function hideLegacyShellControls() {
+    const legacyTheme = document.querySelector('.theme-toggle');
+    if (!legacyTheme) return;
+    if (!legacyTheme.dataset.v2DisplayBackup) {
+      legacyTheme.dataset.v2DisplayBackup = legacyTheme.style.display || '__empty__';
+    }
+    legacyTheme.style.setProperty('display', 'none', 'important');
+    legacyTheme.setAttribute('aria-hidden', 'true');
+    legacyTheme.setAttribute('tabindex', '-1');
+  }
+
+  function restoreLegacyShellControls() {
+    const legacyTheme = document.querySelector('.theme-toggle');
+    if (!legacyTheme) return;
+    const backup = legacyTheme.dataset.v2DisplayBackup;
+    legacyTheme.style.removeProperty('display');
+    if (backup && backup !== '__empty__') {
+      legacyTheme.style.display = backup;
+    }
+    delete legacyTheme.dataset.v2DisplayBackup;
+    legacyTheme.removeAttribute('aria-hidden');
+    legacyTheme.removeAttribute('tabindex');
+  }
+
+  function syncLegacyShellControlsVisibility() {
+    const desktopShell = document.body.getAttribute('data-shell') === 'v2' && (!DESKTOP_MEDIA || DESKTOP_MEDIA.matches);
+    if (desktopShell) hideLegacyShellControls();
+    else restoreLegacyShellControls();
+  }
+
   function activateShell() {
     document.body.setAttribute('data-shell', 'v2');
     applySidebarPref();
     buildSidebar();
     buildAppBar();
+    syncLegacyShellControlsVisibility();
     observeLegacyTabs();
   }
   function deactivateShell() {
@@ -214,7 +263,23 @@
     document.body.removeAttribute('data-sidebar');
     const a = $('.v2-sidebar'); if (a) a.remove();
     const b = $('.v2-appbar'); if (b) b.remove();
+    restoreLegacyShellControls();
   }
+
+  if (DESKTOP_MEDIA) {
+    const onShellViewportChange = () => syncLegacyShellControlsVisibility();
+    if (typeof DESKTOP_MEDIA.addEventListener === 'function') {
+      DESKTOP_MEDIA.addEventListener('change', onShellViewportChange);
+    } else if (typeof DESKTOP_MEDIA.addListener === 'function') {
+      DESKTOP_MEDIA.addListener(onShellViewportChange);
+    }
+  }
+
+  window.addEventListener('themechange', syncThemeIcon);
+  new MutationObserver(syncThemeIcon).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  });
 
   function watchMainSection() {
     const main = $('#mainSection');
