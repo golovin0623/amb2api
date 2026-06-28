@@ -1111,7 +1111,8 @@ async def _make_dashboard_request(
                     status_code=401, detail="Session expired. Please login again."
                 )
 
-        final_path = str(resp.url.path)
+        resp_url = getattr(resp, "url", None)
+        final_path = str(getattr(resp_url, "path", ""))
         matched_path = resp.headers.get("x-matched-path", "")
         if final_path.endswith("/dashboard/login") or matched_path == "/login":
             log.warning(f"Dashboard request redirected to login for {path}")
