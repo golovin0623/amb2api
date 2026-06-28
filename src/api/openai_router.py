@@ -42,10 +42,12 @@ async def _should_use_fake_streaming(model: str, forced_by_model_prefix: bool) -
     if forced_by_model_prefix:
         return True, "model-prefix"
 
-    from config import get_fake_streaming_enabled, supports_real_streaming_model
+    from config import get_enable_real_streaming, get_fake_streaming_enabled, supports_real_streaming_model
 
     if await get_fake_streaming_enabled():
         return True, "global-fake-streaming"
+    if not await get_enable_real_streaming():
+        return True, "legacy-real-streaming-disabled"
     if not supports_real_streaming_model(model):
         return True, "unsupported-native-streaming"
     return False, "native-streaming-supported"
@@ -579,7 +581,8 @@ async def anthropic_messages(
     if use_fake_streaming:
         request_data.model = get_base_model_from_feature_model(model)
         model = request_data.model
-        trace.model = model
+        if trace:
+            trace.model = model
     message_count = len(getattr(request_data, "messages", []) or [])
 
     log.info(
@@ -887,7 +890,8 @@ async def chat_completions(
     if use_fake_streaming:
         request_data.model = get_base_model_from_feature_model(model)
         model = request_data.model
-        trace.model = model
+        if trace:
+            trace.model = model
 
     # 特征前缀已在上方剥离，其余模型名直接透传给 AssemblyAI。
 

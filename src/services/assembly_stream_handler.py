@@ -112,10 +112,14 @@ def _normalize_openai_stream_chunk(
 ) -> Dict[str, Any]:
     """Pass through an OpenAI chunk while filling fields strict clients expect."""
     out = dict(chunk)
-    out.setdefault("id", response_id)
-    out.setdefault("object", "chat.completion.chunk")
-    out.setdefault("created", int(time.time()))
-    out.setdefault("model", model)
+    if out.get("id") is None:
+        out["id"] = response_id
+    if out.get("object") is None:
+        out["object"] = "chat.completion.chunk"
+    if out.get("created") is None:
+        out["created"] = int(time.time())
+    if out.get("model") is None:
+        out["model"] = model
     if not isinstance(out.get("choices"), list):
         out["choices"] = []
     return out
