@@ -7,7 +7,7 @@ import ast
 import time
 import uuid
 import asyncio
-from typing import Optional, Callable, Awaitable, Any
+from typing import Optional, Callable, Awaitable, Any, Dict
 
 from fastapi.responses import StreamingResponse, JSONResponse
 
@@ -93,6 +93,34 @@ def _summarize_upstream_response_shape(response_data: Any) -> dict:
     return summary
 
 
+def _is_openai_stream_chunk(chunk: Any) -> bool:
+    """Return True when upstream already emitted an OpenAI-compatible SSE chunk."""
+    if not isinstance(chunk, dict):
+        return False
+    if chunk.get("object") == "chat.completion.chunk" and isinstance(chunk.get("choices"), list):
+        return True
+    choices = chunk.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return False
+    return any(isinstance(choice, dict) and isinstance(choice.get("delta"), dict) for choice in choices)
+
+
+def _normalize_openai_stream_chunk(
+    chunk: Dict[str, Any],
+    model: str,
+    response_id: str,
+) -> Dict[str, Any]:
+    """Pass through an OpenAI chunk while filling fields strict clients expect."""
+    out = dict(chunk)
+    out.setdefault("id", response_id)
+    out.setdefault("object", "chat.completion.chunk")
+    out.setdefault("created", int(time.time()))
+    out.setdefault("model", model)
+    if not isinstance(out.get("choices"), list):
+        out["choices"] = []
+    return out
+
+
 async def convert_streaming_response(
     gemini_response,
     model: str,
@@ -168,7 +196,10 @@ async def convert_streaming_response(
                 return None
 
             gemini_chunk = json.loads(payload_text)
-            openai_chunk = gemini_stream_chunk_to_openai(gemini_chunk, model, response_id)
+            if _is_openai_stream_chunk(gemini_chunk):
+                openai_chunk = _normalize_openai_stream_chunk(gemini_chunk, model, response_id)
+            else:
+                openai_chunk = gemini_stream_chunk_to_openai(gemini_chunk, model, response_id)
             usage_raw = (
                 (openai_chunk.get("usage") if isinstance(openai_chunk, dict) else None)
                 or (gemini_chunk.get("usage") if isinstance(gemini_chunk, dict) else None)

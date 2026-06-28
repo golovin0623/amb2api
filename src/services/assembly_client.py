@@ -1966,7 +1966,7 @@ async def send_assembly_request(
                     await unified_stats.record_call(api_key, openai_request.model, success=True)
                     log.debug(f"Recorded streaming usage stats for key {_mask_key(api_key)}, model {openai_request.model}")
                 except Exception as e:
-                    log.error(f"Failed to record streaming usage statistics: {e}", exc_info=True)
+                    log.error(f"Failed to record streaming usage statistics: {e}")
 
                 async def upstream_stream_generator():
                     try:
@@ -2207,7 +2207,7 @@ async def send_assembly_request(
                     await unified_stats.record_call(api_key, openai_request.model, success=True)
                     log.debug(f"Successfully recorded usage stats for key {_mask_key(api_key)}, model {openai_request.model}")
                 except Exception as e:
-                    log.error(f"Failed to record usage statistics: {e}", exc_info=True)
+                    log.error(f"Failed to record usage statistics: {e}")
             else:
                 # 记录失败的调用
                 try:
@@ -2236,8 +2236,7 @@ async def send_assembly_request(
                 await asyncio.sleep(retry_interval)
                 continue
             else:
-                log.error(f"AssemblyAI request failed ({error_type}): {error_msg}", exc_info=True)
-                from fastapi.responses import JSONResponse
+                log.error(f"AssemblyAI request failed ({error_type}): {error_msg}")
                 return JSONResponse(content={"error": {"message": f"Request failed ({error_type}): {error_msg}", "type": "api_error"}}, status_code=500)
         finally:
             # 统一归还本次尝试的配额预占：覆盖成功/失败/重试(continue)/早返回/异常所有路径，

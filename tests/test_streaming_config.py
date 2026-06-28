@@ -6,7 +6,9 @@ import pytest
 import os
 from unittest.mock import patch, AsyncMock
 from config import (
+    get_fake_streaming_enabled,
     get_enable_real_streaming,
+    supports_real_streaming_model,
     get_stream_keepalive_seconds,
     get_stream_bootstrap_retries,
 )
@@ -14,6 +16,43 @@ from config import (
 
 class TestStreamingConfig:
     """测试流式模式配置"""
+
+    @pytest.mark.parametrize(
+        ("model", "expected"),
+        [
+            ("gpt-5.5", True),
+            ("gpt-5-nano", True),
+            ("openai/gpt-5-nano", True),
+            ("chatgpt-4o-latest", True),
+            ("o4-mini", True),
+            ("gpt-oss-20b", False),
+            ("openai/gpt-oss-120b", False),
+            ("claude-haiku-4-5-20251001", False),
+            ("gemini-3.1-flash-lite", False),
+            ("kimi-k2.5", False),
+        ],
+    )
+    def test_supports_real_streaming_model_follows_official_openai_scope(self, model, expected):
+        """真实流式只按官方 OpenAI 模型范围自动放行，非 OpenAI/OSS 模型走假流式。"""
+        assert supports_real_streaming_model(model) is expected
+
+    @pytest.mark.asyncio
+    async def test_fake_streaming_global_switch_defaults_false(self):
+        """全局假流式默认关闭；关闭时仍可按模型自动选择真/假流式。"""
+        with patch.dict(os.environ, {}, clear=True):
+            with patch('config.get_config_value', new_callable=AsyncMock) as mock_config:
+                mock_config.return_value = False
+                result = await get_fake_streaming_enabled()
+                assert result is False
+
+    @pytest.mark.asyncio
+    async def test_fake_streaming_global_switch_from_storage(self):
+        """面板开启全局假流式后，所有客户端 stream 请求都应走非流式上游 + 假流式输出。"""
+        with patch.dict(os.environ, {}, clear=True):
+            with patch('config.get_config_value', new_callable=AsyncMock) as mock_config:
+                mock_config.return_value = True
+                result = await get_fake_streaming_enabled()
+                assert result is True
     
     @pytest.mark.asyncio
     async def test_default_value_is_true(self):

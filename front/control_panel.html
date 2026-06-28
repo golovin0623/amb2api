@@ -7614,7 +7614,7 @@
                                         <input type="checkbox" id="fakeStreamEnabled" class="config-checkbox" />
                                         启用全局假流式
                                     </label>
-                                    <small class="config-note">将非流式响应转换为渐进式流式输出</small>
+                                    <small class="config-note">开启后所有流式请求都改为上游非流式请求，再由本服务模拟 SSE 输出</small>
                                 </div>
 
                                 <div class="form-group">
@@ -7622,28 +7622,6 @@
                                     <input type="number" id="fakeStreamSpeed" class="config-input" min="10" max="2000"
                                         value="100" />
                                     <small class="config-note">每秒向客户端输出的字符数，越大越快</small>
-                                </div>
-
-                                <div class="form-group">
-                                    <label>
-                                        <input type="checkbox" id="enableRealStreaming" class="config-checkbox" />
-                                        启用真实流式（实验性）
-                                    </label>
-                                    <small class="config-note">直接透传上游流式响应；关闭时使用假流式</small>
-                                </div>
-
-                                <div class="form-group">
-                                    <label for="streamKeepaliveSeconds">流式 Keepalive 秒数:</label>
-                                    <input type="number" id="streamKeepaliveSeconds" class="config-input" min="0"
-                                        max="120" step="1" value="0" />
-                                    <small class="config-note">每隔 N 秒发送 SSE keepalive 注释帧；设为 0 表示禁用</small>
-                                </div>
-
-                                <div class="form-group">
-                                    <label for="streamBootstrapRetries">Bootstrap 重试次数:</label>
-                                    <input type="number" id="streamBootstrapRetries" class="config-input" min="0"
-                                        max="10" step="1" value="1" />
-                                    <small class="config-note">仅在首包前失败时重试；首包后不自动重试</small>
                                 </div>
 
                             </div>
@@ -12102,14 +12080,8 @@
             // 全局假流式配置
             const fakeStreamEnEl = document.getElementById('fakeStreamEnabled');
             const fakeStreamSpeedEl = document.getElementById('fakeStreamSpeed');
-            const enableRealStreamEl = document.getElementById('enableRealStreaming');
-            const streamKeepaliveEl = document.getElementById('streamKeepaliveSeconds');
-            const streamBootstrapEl = document.getElementById('streamBootstrapRetries');
             if (fakeStreamEnEl) fakeStreamEnEl.checked = !!currentConfig.fake_stream_enabled;
             if (fakeStreamSpeedEl) fakeStreamSpeedEl.value = currentConfig.fake_stream_speed ?? 100;
-            if (enableRealStreamEl) enableRealStreamEl.checked = !!currentConfig.enable_real_streaming;
-            if (streamKeepaliveEl) streamKeepaliveEl.value = currentConfig.stream_keepalive_seconds ?? 0;
-            if (streamBootstrapEl) streamBootstrapEl.value = currentConfig.stream_bootstrap_retries ?? 1;
             // 秘钥配置不做锁定
             lockField('useAssembly', 'USE_ASSEMBLY');
             lockField('configApiPassword', 'API_PASSWORD');
@@ -12135,9 +12107,6 @@
             lockField('retry429Interval', 'RETRY_429_INTERVAL');
             lockField('autoBanEnabled', 'AUTO_BAN');
             lockField('autoBanErrorCodes', 'AUTO_BAN_ERROR_CODES');
-            lockField('enableRealStreaming', 'ENABLE_REAL_STREAMING');
-            lockField('streamKeepaliveSeconds', 'STREAM_KEEPALIVE_SECONDS');
-            lockField('streamBootstrapRetries', 'STREAM_BOOTSTRAP_RETRIES');
             lockField('modelRegion', 'MODEL_REGION');
         }
 
@@ -12190,10 +12159,7 @@
                 auto_ban_error_codes: document.getElementById('autoBanErrorCodes').value,
                 max_tokens_mode: document.getElementById('maxTokensMode')?.value || 'off',
                 fake_stream_enabled: !!document.getElementById('fakeStreamEnabled')?.checked,
-                fake_stream_speed: parseInt(document.getElementById('fakeStreamSpeed')?.value) || 100,
-                enable_real_streaming: !!document.getElementById('enableRealStreaming')?.checked,
-                stream_keepalive_seconds: parseFloat(document.getElementById('streamKeepaliveSeconds')?.value) || 0,
-                stream_bootstrap_retries: parseInt(document.getElementById('streamBootstrapRetries')?.value) || 0
+                fake_stream_speed: parseInt(document.getElementById('fakeStreamSpeed')?.value) || 100
             };
             // 仅当区域路由未被 env 锁定（字段可编辑）时才写回。否则面板显示的是 env 生效值，
             // 若一并保存会把它固化进存储、覆盖原有存储默认值（env 移除后路由会意外保持改变）。
@@ -12461,9 +12427,6 @@
                     assembly_dashboard_session: '会话信息',
                     fake_stream_enabled: '假流式',
                     fake_stream_speed: '流式速度',
-                    enable_real_streaming: '真实流式',
-                    stream_keepalive_seconds: '流式Keepalive',
-                    stream_bootstrap_retries: '首包重试',
                     max_tokens_mode: '最大令牌',
                     model_region: '区域路由'
                 };

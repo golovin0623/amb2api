@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from config import get_available_models_async, is_fake_streaming_model
+from config import get_available_models_async, get_base_model_from_feature_model, is_fake_streaming_model
 from log import log
 from ..services.assembly_client import send_assembly_request
 from ..services.assembly_stream_handler import fake_stream_response_for_assembly, convert_streaming_response
@@ -36,6 +36,19 @@ router = APIRouter()
 security = HTTPBearer()
 
 # AssemblyAI 适配不需要 Google 凭证管理器
+
+
+async def _should_use_fake_streaming(model: str, forced_by_model_prefix: bool) -> tuple[bool, str]:
+    if forced_by_model_prefix:
+        return True, "model-prefix"
+
+    from config import get_fake_streaming_enabled, supports_real_streaming_model
+
+    if await get_fake_streaming_enabled():
+        return True, "global-fake-streaming"
+    if not supports_real_streaming_model(model):
+        return True, "unsupported-native-streaming"
+    return False, "native-streaming-supported"
 
 async def _resolve_identity(request: Request, token: str) -> bool:
     """把 token 解析为身份并挂到 request.state.identity。
@@ -190,6 +203,37 @@ def _parse_response_json(text: str, response: Any) -> Any:
             except Exception:
                 parsed = None
     return parsed
+
+
+async def _forward_openai_error_response(
+    response: Any,
+    response_status: int,
+    trace: Any = None,
+    tracker: Any = None,
+) -> JSONResponse:
+    """Return an upstream JSON/non-JSON error without wrapping it as a stream."""
+    try:
+        parsed_error = _parse_response_json(_extract_response_text(response), response)
+    except Exception:
+        parsed_error = None
+
+    if trace and tracker:
+        try:
+            await tracker.end_trace(trace.trace_id)
+        except Exception:
+            pass
+
+    if isinstance(parsed_error, dict):
+        return JSONResponse(content=parsed_error, status_code=response_status)
+    return JSONResponse(
+        content={
+            "error": {
+                "message": f"Upstream request failed with status {response_status}",
+                "type": "api_error",
+            }
+        },
+        status_code=response_status,
+    )
 
 
 def _build_openai_fallback_text_response(model: str, text: str) -> Dict[str, Any]:
@@ -532,6 +576,10 @@ async def anthropic_messages(
     model = request_data.model
     is_streaming = bool(getattr(request_data, "stream", False))
     use_fake_streaming = is_fake_streaming_model(model)
+    if use_fake_streaming:
+        request_data.model = get_base_model_from_feature_model(model)
+        model = request_data.model
+        trace.model = model
     message_count = len(getattr(request_data, "messages", []) or [])
 
     log.info(
@@ -539,16 +587,16 @@ async def anthropic_messages(
         f"max_tokens={getattr(request_data, 'max_tokens', None)} messages={message_count}"
     )
 
-    if use_fake_streaming and is_streaming:
-        request_data.stream = False
-        openai_stream = await fake_stream_response_for_assembly(request_data, trace=trace)
-        return await _convert_openai_stream_to_anthropic(openai_stream, model)
-
     if is_streaming:
-        from config import get_enable_real_streaming
-
-        enable_real_streaming = await get_enable_real_streaming()
-        if enable_real_streaming:
+        use_fake_route, stream_route_reason = await _should_use_fake_streaming(
+            model, use_fake_streaming
+        )
+        if use_fake_route:
+            log.info(f"使用假流式模式（{stream_route_reason}）")
+            request_data.stream = False
+            openai_stream = await fake_stream_response_for_assembly(request_data, trace=trace)
+        else:
+            log.info("使用真实流式模式（自动路由）")
             async def request_provider():
                 return await send_assembly_request(request_data, True, trace=trace)
 
@@ -559,8 +607,6 @@ async def anthropic_messages(
                 trace=trace,
                 request_provider=request_provider,
             )
-        else:
-            openai_stream = await fake_stream_response_for_assembly(request_data, trace=trace)
 
         return await _convert_openai_stream_to_anthropic(openai_stream, model)
 
@@ -838,37 +884,44 @@ async def chat_completions(
     # 处理模型名称和功能检测
     model = request_data.model
     use_fake_streaming = is_fake_streaming_model(model)
+    if use_fake_streaming:
+        request_data.model = get_base_model_from_feature_model(model)
+        model = request_data.model
+        trace.model = model
 
-    # AssemblyAI 直接使用传入模型名，无需特征前缀转换
-
-    # 处理假流式
-    if use_fake_streaming and getattr(request_data, "stream", False):
-        request_data.stream = False
-        return await fake_stream_response_for_assembly(request_data, trace=trace)
+    # 特征前缀已在上方剥离，其余模型名直接透传给 AssemblyAI。
 
     # 发送到 AssemblyAI（非流式）
     is_streaming = getattr(request_data, "stream", False)
     if is_streaming:
-        # 检查是否启用真实流式
-        from config import get_enable_real_streaming
-        enable_real_streaming = await get_enable_real_streaming()
-        
-        if enable_real_streaming:
-            log.info("使用真实流式模式（实验性）")
-            # 真实流式模式：首包前支持 bootstrap 重试，首包后不重试
-            async def request_provider():
-                return await send_assembly_request(request_data, True, trace=trace)
-
-            response = await request_provider()
-            return await convert_streaming_response(
-                response,
-                model,
-                trace=trace,
-                request_provider=request_provider,
-            )
-        else:
-            log.info("使用假流式模式")
+        use_fake_route, stream_route_reason = await _should_use_fake_streaming(
+            model, use_fake_streaming
+        )
+        if use_fake_route:
+            log.info(f"使用假流式模式（{stream_route_reason}）")
+            request_data.stream = False
             return await fake_stream_response_for_assembly(request_data, trace=trace)
+
+        log.info("使用真实流式模式（自动路由）")
+        # 真实流式模式：首包前支持 bootstrap 重试，首包后不重试
+        async def request_provider():
+            return await send_assembly_request(request_data, True, trace=trace)
+
+        response = await request_provider()
+        response_status = getattr(response, "status_code", 200)
+        if response_status >= 400:
+            return await _forward_openai_error_response(
+                response,
+                response_status,
+                trace=trace,
+                tracker=tracker,
+            )
+        return await convert_streaming_response(
+            response,
+            model,
+            trace=trace,
+            request_provider=request_provider,
+        )
     
     log.info(f"REQ model={model}")
     log.debug(f"Sending request to AssemblyAI - stream: {is_streaming}, messages: {len(request_data.messages)}")
@@ -878,28 +931,11 @@ async def chat_completions(
     # 上游或网关已返回错误响应时，直接透传状态码和错误体
     response_status = getattr(response, "status_code", 200)
     if response_status >= 400:
-        try:
-            if hasattr(response, "body") and response.body:
-                raw = response.body.decode("utf-8", errors="replace") if isinstance(response.body, bytes) else str(response.body)
-                parsed_error = json.loads(raw)
-            elif hasattr(response, "text"):
-                parsed_error = response.json() if hasattr(response, "json") else json.loads(response.text or "{}")
-            else:
-                parsed_error = None
-        except Exception:
-            parsed_error = None
-
-        if trace:
-            try:
-                await tracker.end_trace(trace.trace_id)
-            except Exception:
-                pass
-
-        if isinstance(parsed_error, dict):
-            return JSONResponse(content=parsed_error, status_code=response_status)
-        return JSONResponse(
-            content={"error": {"message": f"Upstream request failed with status {response_status}", "type": "api_error"}},
-            status_code=response_status,
+        return await _forward_openai_error_response(
+            response,
+            response_status,
+            trace=trace,
+            tracker=tracker,
         )
     
     # 性能追踪：上游响应完成

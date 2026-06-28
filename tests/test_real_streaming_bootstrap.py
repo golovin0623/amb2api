@@ -6,6 +6,11 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, patch
 
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.testclient import TestClient
+
+from src.api import openai_router
 from src.services.assembly_stream_handler import convert_streaming_response
 
 
@@ -32,6 +37,42 @@ class TraceStub:
 
     def mark(self, stage: str):
         self.marked.append(stage)
+
+
+class RouterTraceStub:
+    def __init__(self, trace_id):
+        self.trace_id = trace_id
+        self.model = "pending"
+        self.metadata = {}
+
+    def mark(self, _):
+        return None
+
+
+class RouterTrackerStub:
+    def start_trace(self, trace_id, _):
+        return RouterTraceStub(trace_id)
+
+    async def end_trace(self, *args, **kwargs):
+        return None
+
+
+async def _auth_override():
+    return "ok"
+
+
+def _build_openai_test_app():
+    app = FastAPI()
+    app.include_router(openai_router.router)
+    app.dependency_overrides[openai_router.authenticate] = _auth_override
+    return app
+
+
+def _done_stream():
+    async def iterator():
+        yield b"data: [DONE]\n\n"
+
+    return StreamingResponse(iterator(), media_type="text/event-stream")
 
 
 @pytest.mark.asyncio
@@ -108,3 +149,149 @@ async def test_bootstrap_retry_only_before_first_chunk():
         assert trace.metadata["stream_bootstrap_recovered"] is True
         assert trace.metadata["stream_bootstrap_failed"] is False
         assert "bootstrap failed" in trace.metadata["stream_bootstrap_last_error"]
+
+
+@pytest.mark.asyncio
+async def test_real_streaming_passes_openai_chunks_without_gemini_conversion():
+    async def openai_stream():
+        yield (
+            b'data: {"id":"upstream-1","object":"chat.completion.chunk","created":123,'
+            b'"model":"gpt-5.5","choices":[{"index":0,"delta":{"content":"pong"},'
+            b'"finish_reason":null}]}\n\n'
+        )
+        yield (
+            b'data: {"id":"upstream-1","object":"chat.completion.chunk","created":123,'
+            b'"model":"gpt-5.5","choices":[{"index":0,"delta":{},'
+            b'"finish_reason":"stop"}]}\n\n'
+        )
+        yield b"data: [DONE]\n\n"
+
+    with patch("src.services.assembly_stream_handler.get_stream_keepalive_seconds", new_callable=AsyncMock) as keepalive_mock, \
+         patch("src.services.assembly_stream_handler.get_stream_bootstrap_retries", new_callable=AsyncMock) as bootstrap_mock:
+        keepalive_mock.return_value = 0
+        bootstrap_mock.return_value = 0
+
+        response = await convert_streaming_response(
+            FakeStreamResponse(openai_stream()),
+            model="gpt-5.5",
+        )
+
+        chunks = []
+        async for item in response.body_iterator:
+            chunks.append(item.decode("utf-8", errors="replace"))
+
+    assert any('"content":"pong"' in chunk for chunk in chunks)
+    assert any('"finish_reason":"stop"' in chunk for chunk in chunks)
+    assert not any('"choices":[]' in chunk for chunk in chunks)
+    assert chunks[-1].strip() == "data: [DONE]"
+
+
+def test_openai_streaming_upstream_json_error_preserves_status():
+    app = _build_openai_test_app()
+
+    gateway_error = JSONResponse(
+        content={"error": {"message": "Upstream HTTP 500", "type": "api_error"}},
+        status_code=500,
+    )
+
+    with patch("src.api.openai_router.get_performance_tracker", new=AsyncMock(return_value=RouterTrackerStub())), \
+         patch("config.get_fake_streaming_enabled", new=AsyncMock(return_value=False)), \
+         patch("src.api.openai_router.send_assembly_request", new=AsyncMock(return_value=gateway_error)):
+        client = TestClient(app)
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.5",
+                "messages": [{"role": "user", "content": "hello"}],
+                "stream": True,
+            },
+            headers={"Authorization": "Bearer test"},
+        )
+
+    assert response.status_code == 500
+    assert response.json()["error"]["type"] == "api_error"
+
+
+def test_global_fake_streaming_forces_non_stream_upstream_for_native_model():
+    app = _build_openai_test_app()
+    fake_stream = AsyncMock(return_value=_done_stream())
+    send_request = AsyncMock(side_effect=AssertionError("global fake streaming must not open native upstream stream"))
+
+    with patch("src.api.openai_router.get_performance_tracker", new=AsyncMock(return_value=RouterTrackerStub())), \
+         patch("config.get_fake_streaming_enabled", new=AsyncMock(return_value=True), create=True), \
+         patch("src.api.openai_router.fake_stream_response_for_assembly", new=fake_stream), \
+         patch("src.api.openai_router.send_assembly_request", new=send_request):
+        client = TestClient(app)
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.5",
+                "messages": [{"role": "user", "content": "hello"}],
+                "stream": True,
+            },
+            headers={"Authorization": "Bearer test"},
+        )
+
+    assert response.status_code == 200
+    fake_stream.assert_awaited_once()
+    routed_request = fake_stream.await_args.args[0]
+    assert routed_request.model == "gpt-5.5"
+    assert routed_request.stream is False
+    send_request.assert_not_awaited()
+
+
+def test_unsupported_streaming_model_uses_fake_stream_when_global_fake_disabled():
+    app = _build_openai_test_app()
+    fake_stream = AsyncMock(return_value=_done_stream())
+    send_request = AsyncMock(side_effect=AssertionError("unsupported native stream model must not send stream=true upstream"))
+
+    with patch("src.api.openai_router.get_performance_tracker", new=AsyncMock(return_value=RouterTrackerStub())), \
+         patch("config.get_fake_streaming_enabled", new=AsyncMock(return_value=False), create=True), \
+         patch("src.api.openai_router.fake_stream_response_for_assembly", new=fake_stream), \
+         patch("src.api.openai_router.send_assembly_request", new=send_request):
+        client = TestClient(app)
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gemini-3.1-flash-lite",
+                "messages": [{"role": "user", "content": "hello"}],
+                "stream": True,
+            },
+            headers={"Authorization": "Bearer test"},
+        )
+
+    assert response.status_code == 200
+    fake_stream.assert_awaited_once()
+    routed_request = fake_stream.await_args.args[0]
+    assert routed_request.model == "gemini-3.1-flash-lite"
+    assert routed_request.stream is False
+    send_request.assert_not_awaited()
+
+
+def test_supported_streaming_model_uses_native_stream_when_global_fake_disabled():
+    app = _build_openai_test_app()
+    upstream_response = FakeStreamResponse(iter(()))
+    fake_stream = AsyncMock(side_effect=AssertionError("supported native stream model should not use fake stream"))
+    converted_stream = AsyncMock(return_value=_done_stream())
+
+    with patch("src.api.openai_router.get_performance_tracker", new=AsyncMock(return_value=RouterTrackerStub())), \
+         patch("config.get_fake_streaming_enabled", new=AsyncMock(return_value=False), create=True), \
+         patch("src.api.openai_router.send_assembly_request", new=AsyncMock(return_value=upstream_response)) as send_request, \
+         patch("src.api.openai_router.convert_streaming_response", new=converted_stream), \
+         patch("src.api.openai_router.fake_stream_response_for_assembly", new=fake_stream):
+        client = TestClient(app)
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.5",
+                "messages": [{"role": "user", "content": "hello"}],
+                "stream": True,
+            },
+            headers={"Authorization": "Bearer test"},
+        )
+
+    assert response.status_code == 200
+    send_request.assert_awaited_once()
+    assert send_request.await_args.args[1] is True
+    converted_stream.assert_awaited_once()
+    fake_stream.assert_not_awaited()
