@@ -601,6 +601,14 @@ body[data-sidebar="mini"] .v2-sidebar__collapse svg {
   }
 }
 
+body[data-shell="v2"] > .theme-toggle {
+  top: auto !important;
+  right: 16px !important;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px) !important;
+  left: auto !important;
+  z-index: 100000 !important;
+}
+
 @media (max-width: 1024px) {
   /* 平板/移动：sidebar / appbar 隐藏，恢复旧顶栏 */
   body[data-shell="v2"] .v2-sidebar,
@@ -608,7 +616,7 @@ body[data-sidebar="mini"] .v2-sidebar__collapse svg {
     display: none !important;
   }
 
-  body[data-shell="v2"] > .theme-toggle {
+  html body > .theme-toggle {
     top: auto !important;
     right: 16px !important;
     bottom: calc(env(safe-area-inset-bottom, 0px) + 16px) !important;

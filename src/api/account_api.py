@@ -103,7 +103,9 @@ def _dashboard_next_url(path: str, params: Optional[Dict[str, Any]] = None) -> s
     """Build the Next-Url header for Assembly Dashboard RSC requests."""
     from urllib.parse import urlencode
 
-    next_path = path.removeprefix("/dashboard") or "/"
+    next_path = path[10:] if path.startswith("/dashboard") else path
+    if not next_path:
+        next_path = "/"
     next_params = {k: v for k, v in (params or {}).items() if k != "_rsc"}
     if not next_params:
         return next_path
@@ -2510,6 +2512,9 @@ def _extract_rsc_json_values(raw_text: str) -> List[Any]:
             if sep and prefix.isalnum():
                 json_part = rest.strip()
 
+        if json_part:
+            json_part = json_part.lstrip("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
         if not json_part or not json_part.startswith(("{", "[", '"')):
             continue
 
@@ -2679,26 +2684,28 @@ def _extract_labeled_balance(raw_text: str, values: List[Any]) -> Optional[float
     import re
 
     text_sources = [_flatten_rsc_text(values), raw_text]
-    label_pattern = re.compile(
-        r"current\s*balance|available\s*balance|remaining\s*balance|credit\s*balance|账户余额|当前余额|余额|balance",
+    specific_pattern = re.compile(
+        r"current\s*balance|available\s*balance|remaining\s*balance|credit\s*balance|账户余额|当前余额",
         re.IGNORECASE,
     )
+    generic_pattern = re.compile(r"\bbalance\b|余额", re.IGNORECASE)
 
-    for source in text_sources:
-        text = re.sub(r"\s+", " ", source)
-        if not text:
-            continue
+    for pattern in (specific_pattern, generic_pattern):
+        for source in text_sources:
+            text = re.sub(r"\s+", " ", source)
+            if not text:
+                continue
 
-        for label in label_pattern.finditer(text):
-            after = text[label.end(): label.end() + 300]
-            amounts = _money_amounts_with_positions(after)
-            if amounts:
-                return amounts[0][1]
+            for label in pattern.finditer(text):
+                after = text[label.end(): label.end() + 300]
+                amounts = _money_amounts_with_positions(after)
+                if amounts:
+                    return amounts[0][1]
 
-            before = text[max(0, label.start() - 160): label.start()]
-            amounts = _money_amounts_with_positions(before)
-            if amounts:
-                return amounts[-1][1]
+                before = text[max(0, label.start() - 160): label.start()]
+                amounts = _money_amounts_with_positions(before)
+                if amounts:
+                    return amounts[-1][1]
 
     return None
 
