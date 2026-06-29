@@ -261,6 +261,48 @@ def get_base_model_from_feature_model(model_name: str) -> str:
             return model_name[len(prefix):]
     return model_name
 
+
+def supports_real_streaming_model(model_name: str) -> bool:
+    """Return whether AssemblyAI Gateway should be asked for native SSE.
+
+    The Gateway API reference currently scopes native streaming to OpenAI-hosted
+    models. Keep this as an allow-list instead of a failure blacklist so Gemini,
+    Claude, Kimi, Qwen, and open-weight GPT-OSS models route through non-stream
+    upstream calls plus amb2api's fake-stream adapter.
+    """
+    model = get_base_model_from_feature_model(str(model_name or "")).strip().lower()
+    if not model:
+        return False
+
+    if "/" in model:
+        provider, model = model.split("/", 1)
+        if provider != "openai":
+            return False
+
+    if model.startswith("gpt-oss-"):
+        return False
+
+    return (
+        model.startswith("gpt-3.5")
+        or model.startswith("gpt-4")
+        or model.startswith("gpt-5")
+        or model.startswith("chatgpt-")
+        or model.startswith("o1")
+        or model.startswith("o3")
+        or model.startswith("o4")
+    )
+
+
+async def get_fake_streaming_enabled() -> bool:
+    """
+    Get global fake streaming switch.
+
+    When enabled, every client ``stream=true`` request is sent upstream as a
+    non-streaming request and amb2api emits OpenAI-compatible SSE chunks.
+    """
+    value = await get_config_value("fake_stream_enabled", False)
+    return _coerce_bool(value, False)
+
 # Server Configuration
 async def get_server_host() -> str:
     """

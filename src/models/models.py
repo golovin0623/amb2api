@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 class Model(BaseModel):
     id: str
     object: str = "model"
-    created: Optional[int] = None
+    created: int = 0
     owned_by: Optional[str] = "assemblyai"
 
 class ModelList(BaseModel):

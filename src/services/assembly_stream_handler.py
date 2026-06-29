@@ -7,7 +7,7 @@ import ast
 import time
 import uuid
 import asyncio
-from typing import Optional, Callable, Awaitable, Any
+from typing import Optional, Callable, Awaitable, Any, Dict
 
 from fastapi.responses import StreamingResponse, JSONResponse
 
@@ -93,21 +93,66 @@ def _summarize_upstream_response_shape(response_data: Any) -> dict:
     return summary
 
 
+def _is_openai_stream_chunk(chunk: Any) -> bool:
+    """Return True when upstream already emitted an OpenAI-compatible SSE chunk."""
+    if not isinstance(chunk, dict):
+        return False
+    if chunk.get("object") == "chat.completion.chunk" and isinstance(chunk.get("choices"), list):
+        return True
+    choices = chunk.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return False
+    return any(isinstance(choice, dict) and isinstance(choice.get("delta"), dict) for choice in choices)
+
+
+def _normalize_openai_stream_chunk(
+    chunk: Dict[str, Any],
+    model: str,
+    response_id: str,
+) -> Dict[str, Any]:
+    """Pass through an OpenAI chunk while filling fields strict clients expect."""
+    out = dict(chunk)
+    if out.get("id") is None:
+        out["id"] = response_id
+    if out.get("object") is None:
+        out["object"] = "chat.completion.chunk"
+    if out.get("created") is None:
+        out["created"] = int(time.time())
+    if out.get("model") is None:
+        out["model"] = model
+    if not isinstance(out.get("choices"), list):
+        out["choices"] = []
+    return out
+
+
 async def convert_streaming_response(
     gemini_response,
     model: str,
     trace=None,
     request_provider: Optional[Callable[[], Awaitable[Any]]] = None,
+    bootstrap_retries_override: Optional[int] = None,
 ) -> StreamingResponse:
     """转换流式响应为OpenAI格式（支持 keepalive 与首包前 bootstrap 重试）"""
     response_id = str(uuid.uuid4())
 
     keepalive_seconds = await get_stream_keepalive_seconds()
-    bootstrap_retries = await get_stream_bootstrap_retries()
+    if bootstrap_retries_override is None:
+        bootstrap_retries = await get_stream_bootstrap_retries()
+    else:
+        bootstrap_retries = bootstrap_retries_override
     if keepalive_seconds < 0:
         keepalive_seconds = 0
     if bootstrap_retries < 0:
         bootstrap_retries = 0
+
+    initial_bootstrap_retries_used = 0
+    if trace:
+        try:
+            initial_bootstrap_retries_used = int(
+                trace.metadata.get("stream_bootstrap_retries_used", 0) or 0
+            )
+        except (TypeError, ValueError):
+            initial_bootstrap_retries_used = 0
 
     if trace:
         trace.metadata["stream_mode"] = "real"
@@ -115,7 +160,7 @@ async def convert_streaming_response(
         trace.metadata["stream_bootstrap_retries_config"] = bootstrap_retries
         trace.metadata["stream_keepalive_count"] = 0
         trace.metadata["stream_bootstrap_attempts"] = 0
-        trace.metadata["stream_bootstrap_retries_used"] = 0
+        trace.metadata["stream_bootstrap_retries_used"] = initial_bootstrap_retries_used
         trace.metadata["stream_bootstrap_recovered"] = False
         trace.metadata["stream_bootstrap_failed"] = False
         trace.metadata.pop("stream_bootstrap_last_error", None)
@@ -168,7 +213,10 @@ async def convert_streaming_response(
                 return None
 
             gemini_chunk = json.loads(payload_text)
-            openai_chunk = gemini_stream_chunk_to_openai(gemini_chunk, model, response_id)
+            if _is_openai_stream_chunk(gemini_chunk):
+                openai_chunk = _normalize_openai_stream_chunk(gemini_chunk, model, response_id)
+            else:
+                openai_chunk = gemini_stream_chunk_to_openai(gemini_chunk, model, response_id)
             usage_raw = (
                 (openai_chunk.get("usage") if isinstance(openai_chunk, dict) else None)
                 or (gemini_chunk.get("usage") if isinstance(gemini_chunk, dict) else None)
@@ -281,7 +329,9 @@ async def convert_streaming_response(
                 except Exception as stream_err:
                     if not first_chunk_sent and request_provider and attempt < total_attempts:
                         if trace:
-                            trace.metadata["stream_bootstrap_retries_used"] = attempt
+                            trace.metadata["stream_bootstrap_retries_used"] = (
+                                initial_bootstrap_retries_used + attempt
+                            )
                             trace.metadata["stream_bootstrap_last_error"] = str(stream_err)[:256]
                             trace.metadata["stream_bootstrap_last_error_type"] = type(stream_err).__name__
                         log.warning(f"[STREAM_BOOTSTRAP_RETRY] attempt={attempt}/{total_attempts} err={stream_err}")
@@ -290,7 +340,9 @@ async def convert_streaming_response(
                     raise
 
             if trace:
-                trace.metadata["stream_bootstrap_retries_used"] = max(0, attempt - 1)
+                trace.metadata["stream_bootstrap_retries_used"] = (
+                    initial_bootstrap_retries_used + max(0, attempt - 1)
+                )
                 trace.metadata["stream_bootstrap_recovered"] = (
                     trace.metadata["stream_bootstrap_retries_used"] > 0 and first_chunk_sent
                 )
@@ -303,7 +355,9 @@ async def convert_streaming_response(
 
         except Exception as e:
             if trace:
-                trace.metadata["stream_bootstrap_retries_used"] = max(0, attempt - 1)
+                trace.metadata["stream_bootstrap_retries_used"] = (
+                    initial_bootstrap_retries_used + max(0, attempt - 1)
+                )
                 trace.metadata["stream_bootstrap_failed"] = (
                     (not first_chunk_sent) and attempt >= total_attempts
                 )
