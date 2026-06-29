@@ -9,7 +9,7 @@ import asyncio
 import json
 import time
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from fastapi.responses import JSONResponse
@@ -2288,6 +2288,7 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
         return cached
 
     parsed = {}
+    fetch_error = None
     try:
         # 优先从 billing 页面获取费率数据（包含完整的费率表格）
         rsc = await _make_dashboard_request(
@@ -2300,6 +2301,7 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
         parsed = _parse_rates_rsc_data(rsc)
         log.info(f"Parsed rates from billing API: {len(parsed.get('llm_gateway_input', []))} input, {len(parsed.get('llm_gateway_output', []))} output")
     except Exception as e:
+        fetch_error = str(e)
         log.warning(f"Failed to fetch rates from API: {e}")
         parsed = {}
 
@@ -2383,6 +2385,19 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
             if "rate" in item:
                 item["rate_display"] = format_price(item["rate"], region)
         return items
+
+    def mark_price_source(items, source):
+        result = []
+        for item in items or []:
+            new_item = dict(item)
+            new_item["price_source"] = source
+            result.append(new_item)
+        return result
+
+    def choose_rates_with_source(api_rates, fallback_rates):
+        if api_rates:
+            return mark_price_source(api_rates, "dashboard")
+        return mark_price_source(fallback_rates, "fallback")
     
     def merge_rates_with_fallback(api_rates, fallback_rates):
         """
@@ -2439,6 +2454,7 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
                 new_item = dict(item)
                 normalized = normalize_model_name(item.get("model", ""))
                 new_item["model"] = get_display_name(normalized, item.get("model", ""))
+                new_item["price_source"] = "fallback"
                 result.append(new_item)
             return result
         
@@ -2454,6 +2470,7 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
             new_item = dict(item)
             normalized = normalize_model_name(item.get("model", ""))
             new_item["model"] = get_display_name(normalized, item.get("model", ""))
+            new_item["price_source"] = "dashboard"
             result.append(new_item)
         
         # 从 fallback 中补充 API 没有的模型
@@ -2462,19 +2479,20 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
             if fb_normalized and fb_normalized not in api_models:
                 new_item = dict(fb_item)
                 new_item["model"] = get_display_name(fb_normalized, fb_item.get("model", ""))
+                new_item["price_source"] = "fallback"
                 result.append(new_item)
         
         return result
     
     result = {"region": region}
     result["speech_to_text"] = add_price_display(
-        parsed.get("speech_to_text") or fallback["speech_to_text"], region
+        choose_rates_with_source(parsed.get("speech_to_text"), fallback["speech_to_text"]), region
     )
     result["streaming"] = add_price_display(
-        parsed.get("streaming") or fallback["streaming"], region
+        choose_rates_with_source(parsed.get("streaming"), fallback["streaming"]), region
     )
     result["speech_understanding"] = add_price_display(
-        parsed.get("speech_understanding") or fallback["speech_understanding"], region
+        choose_rates_with_source(parsed.get("speech_understanding"), fallback["speech_understanding"]), region
     )
     # LLM Gateway: 合并 API 数据与 fallback，补充缺失的模型
     result["llm_gateway_input"] = add_price_display(
@@ -2484,6 +2502,46 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
         merge_rates_with_fallback(parsed.get("llm_gateway_output"), fallback["llm_gateway_output"]), region
     )
     result["notes"] = fallback["notes"]
+
+    categories = [
+        "speech_to_text",
+        "streaming",
+        "speech_understanding",
+        "llm_gateway_input",
+        "llm_gateway_output",
+    ]
+    dashboard_counts = {key: len(parsed.get(key) or []) for key in categories}
+    dashboard_count = sum(dashboard_counts.values())
+    fallback_count = sum(
+        1
+        for key in categories
+        for item in result.get(key, [])
+        if item.get("price_source") == "fallback"
+    )
+    if dashboard_count and fallback_count:
+        source = "mixed"
+    elif dashboard_count:
+        source = "dashboard"
+    else:
+        source = "fallback"
+
+    warnings = []
+    if source == "fallback":
+        warnings.append("未能从 AssemblyAI Dashboard 解析到实时费率，当前展示内置备用费率，可能滞后。")
+    elif source == "mixed":
+        warnings.append("部分模型未在 AssemblyAI Dashboard 响应中解析到，已使用内置备用费率补齐。")
+    if fetch_error:
+        warnings.append("Dashboard 费率请求失败，已回退到备用费率。")
+
+    result["metadata"] = {
+        "source": source,
+        "dashboard_counts": dashboard_counts,
+        "dashboard_count": dashboard_count,
+        "fallback_count": fallback_count,
+        "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "cache_ttl_seconds": _cache_ttl_seconds,
+    }
+    result["warnings"] = warnings
 
     _cache_set(cache_key, result)
     return result
@@ -3969,32 +4027,32 @@ def _parse_rates_rsc_data(data: Dict[str, Any]) -> Dict[str, Any]:
                 # 根据费率位置和单位判断分类
                 # 支持 1K tokens 和 1M tokens 两种单位
                 if "tokens" in unit.lower():
-                    if llm_output_pos > 0 and rate_pos > llm_output_pos:
+                    if llm_output_pos >= 0 and rate_pos > llm_output_pos:
                         result["llm_gateway_output"].append({
                             "model": clean_name,
                             "rate": rate,
                             "unit": unit
                         })
-                    elif llm_input_pos > 0 and rate_pos > llm_input_pos:
+                    elif llm_input_pos >= 0 and rate_pos > llm_input_pos:
                         result["llm_gateway_input"].append({
                             "model": clean_name,
                             "rate": rate,
                             "unit": unit
                         })
                 elif "hour" in unit:
-                    if understanding_pos > 0 and rate_pos > understanding_pos and (llm_input_pos < 0 or rate_pos < llm_input_pos):
+                    if understanding_pos >= 0 and rate_pos > understanding_pos and (llm_input_pos < 0 or rate_pos < llm_input_pos):
                         result["speech_understanding"].append({
                             "feature": clean_name,
                             "rate": rate,
                             "unit": unit
                         })
-                    elif streaming_pos > 0 and rate_pos > streaming_pos and (understanding_pos < 0 or rate_pos < understanding_pos):
+                    elif streaming_pos >= 0 and rate_pos > streaming_pos and (understanding_pos < 0 or rate_pos < understanding_pos):
                         result["streaming"].append({
                             "model": clean_name,
                             "rate": rate,
                             "unit": unit
                         })
-                    elif stt_pos > 0 and rate_pos > stt_pos and (streaming_pos < 0 or rate_pos < streaming_pos):
+                    elif stt_pos >= 0 and rate_pos > stt_pos and (streaming_pos < 0 or rate_pos < streaming_pos):
                         result["speech_to_text"].append({
                             "model": clean_name,
                             "rate": rate,

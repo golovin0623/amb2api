@@ -2,6 +2,8 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+import pytest
+
 def test_cost_merge_input_output_unknown():
     from src.api.account_api import _parse_cost_rsc_data
     # 构造包含 chartExportData 的 RSC 片段：输入、输出、未标注方向
@@ -131,3 +133,48 @@ def test_dashboard_next_url_uses_app_route_without_dashboard_base_path():
     )
 
     assert next_url == "/account/billing?view=US"
+
+
+def test_rates_parser_extracts_dashboard_llm_gateway_prices():
+    from src.api.account_api import _parse_rates_rsc_data
+
+    raw = (
+        '"children":["LLM Gateway + LeMUR"," Input Tokens"]'
+        '"children":"GPT 5"'
+        '"$$1.25"," ",["$","span",null,{"children":[" / ","1M tokens"]}]'
+        '"children":["LLM Gateway + LeMUR"," Output Tokens"]'
+        '"children":"GPT 5"'
+        '"$$10.00"," ",["$","span",null,{"children":[" / ","1M tokens"]}]'
+    )
+
+    result = _parse_rates_rsc_data({"raw": raw})
+
+    assert result["llm_gateway_input"] == [
+        {"model": "GPT 5", "rate": 1.25, "unit": "1M tokens"}
+    ]
+    assert result["llm_gateway_output"] == [
+        {"model": "GPT 5", "rate": 10.0, "unit": "1M tokens"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_rates_response_marks_fallback_when_dashboard_parse_empty(monkeypatch):
+    from src.api import account_api
+
+    async def fake_get_session(account_email=None):
+        return {"email": "user@example.com"}
+
+    async def fake_dashboard_request(*args, **kwargs):
+        return {"raw": "<html>billing page without recognizable rates</html>"}
+
+    monkeypatch.setattr(account_api, "_get_session", fake_get_session)
+    monkeypatch.setattr(account_api, "_make_dashboard_request", fake_dashboard_request)
+    account_api._cache_store.clear()
+
+    result = await account_api.get_rates(region="US", force=True, account_email="user@example.com")
+
+    assert result["metadata"]["source"] == "fallback"
+    assert result["metadata"]["fallback_count"] > 0
+    assert result["metadata"]["dashboard_counts"]["llm_gateway_input"] == 0
+    assert any("备用费率" in warning for warning in result["warnings"])
+    assert all(item["price_source"] == "fallback" for item in result["llm_gateway_input"])
