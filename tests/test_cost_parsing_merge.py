@@ -289,6 +289,20 @@ def test_usage_parser_scales_fractional_million_tokens_to_tokens():
     ]
 
 
+def test_usage_parser_does_not_scale_non_llm_fractional_segments():
+    from src.api.account_api import _parse_usage_rsc_data
+
+    raw = '1:["$","$L14",null,{"segments":[{"value":0.5,"color":"#f60"},{"value":0.25,"color":"#0cc"}]}]'
+
+    result = _parse_usage_rsc_data({"raw": raw}, product="Speech-to-Text")
+
+    assert result["total_tokens"] == 0.75
+    assert result["segments"] == [
+        {"value": 0.5, "color": "#f60"},
+        {"value": 0.25, "color": "#0cc"},
+    ]
+
+
 @pytest.mark.asyncio
 async def test_rates_response_uses_official_pricing_when_dashboard_parse_empty(monkeypatch):
     from src.api import account_api

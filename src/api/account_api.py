@@ -1931,7 +1931,7 @@ async def get_usage_data(
         if rsc_data and "raw" in rsc_data:
             raw_text = rsc_data["raw"]
             if not (raw_text.strip().startswith("<!DOCTYPE") or raw_text.strip().startswith("<html")):
-                final_result = _parse_usage_rsc_data(rsc_data)
+                final_result = _parse_usage_rsc_data(rsc_data, product=product)
                 final_result["_source"] = f"{path} with {params}"
         
         if final_result:
@@ -3134,6 +3134,17 @@ def _normalize_usage_result_tokens(result: Dict[str, Any]) -> None:
         result["total_tokens"] = _normalize_usage_token_value(result.get("total_tokens", 0))
 
 
+def _coerce_usage_raw_number(value: Any) -> Any:
+    """Parse a usage number without applying token-unit scaling."""
+    if isinstance(value, str):
+        text = value.replace(",", "").strip()
+        try:
+            return float(text) if "." in text else int(text)
+        except ValueError:
+            return 0
+    return value
+
+
 def _extract_segments_from_rsc(raw_text: str) -> List[Dict[str, Any]]:
     """
     从 RSC 数据中提取 segments 数组
@@ -3181,7 +3192,7 @@ def _extract_segments_from_rsc(raw_text: str) -> List[Dict[str, Any]]:
             
             if segment_matches:
                 segments = [
-                    {"value": _normalize_usage_token_value(value), "color": color}
+                    {"value": _coerce_usage_raw_number(value), "color": color}
                     for value, color in segment_matches
                 ]
                 log.info(f"Extracted {len(segments)} segments using fallback method (method 2)")
@@ -3347,7 +3358,17 @@ def _extract_model_names_from_rsc(raw_text: str) -> List[Dict[str, Any]]:
     return models
 
 
-def _parse_usage_rsc_data(data: Dict[str, Any]) -> Dict[str, Any]:
+def _is_llm_usage_context(raw_text: str, product: Optional[str], result: Dict[str, Any]) -> bool:
+    """Return whether parsed usage quantities represent LLM Gateway tokens."""
+    product_text = (product or "").lower()
+    if product_text:
+        return "llm" in product_text or "lemur" in product_text
+    if result.get("by_model"):
+        return True
+    return "LLM Gateway + LeMUR" in raw_text or "LLM Gateway" in raw_text
+
+
+def _parse_usage_rsc_data(data: Dict[str, Any], product: Optional[str] = None) -> Dict[str, Any]:
     """
     解析使用量页面的 RSC 数据
     
@@ -3469,7 +3490,8 @@ def _parse_usage_rsc_data(data: Dict[str, Any]) -> Dict[str, Any]:
             log.warning("No usage data extracted from RSC response")
             result["debug_info"]["raw_sample"] = raw_text[:500] if len(raw_text) > 500 else raw_text
 
-        _normalize_usage_result_tokens(result)
+        if _is_llm_usage_context(raw_text, product, result):
+            _normalize_usage_result_tokens(result)
         
     except Exception as e:
         log.error(f"Failed to parse usage RSC data: {e}")
