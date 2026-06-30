@@ -1931,7 +1931,7 @@ async def get_usage_data(
         if rsc_data and "raw" in rsc_data:
             raw_text = rsc_data["raw"]
             if not (raw_text.strip().startswith("<!DOCTYPE") or raw_text.strip().startswith("<html")):
-                final_result = _parse_usage_rsc_data(rsc_data)
+                final_result = _parse_usage_rsc_data(rsc_data, product=product)
                 final_result["_source"] = f"{path} with {params}"
         
         if final_result:
@@ -2305,6 +2305,46 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
         log.warning(f"Failed to fetch rates from API: {e}")
         parsed = {}
 
+    official_error = None
+    try:
+        official_rates = await _fetch_official_pricing_page_rates()
+        if official_rates:
+            official_can_override_llm = (region or "").strip().upper() in {"US", "USA"}
+
+            def merge_official_llm_rates(existing_rates, official_values):
+                if not existing_rates or not official_can_override_llm:
+                    return official_values
+
+                def model_key(item):
+                    import re
+
+                    return re.sub(r"[\s\-_]+", "", str(item.get("model", "")).lower())
+
+                official_keys = {model_key(item) for item in official_values}
+                merged = list(official_values)
+                merged.extend(item for item in existing_rates if model_key(item) not in official_keys)
+                return merged
+
+            # 官方公开定价页是当前 LLM Gateway 费率的稳定来源；Dashboard
+            # 登录页 RSC 结构经常变化。官方页没有区域上下文，因此只有 US
+            # 视图可覆盖；其他 region 已解析到 Dashboard LLM 费率时保留 Dashboard。
+            for key, values in official_rates.items():
+                if values:
+                    if key in {"llm_gateway_input", "llm_gateway_output"}:
+                        if not official_can_override_llm:
+                            continue
+                        parsed[key] = merge_official_llm_rates(parsed.get(key), values)
+                    else:
+                        parsed[key] = values
+            log.info(
+                "Parsed rates from official pricing page: "
+                f"{len(official_rates.get('llm_gateway_input', []))} input, "
+                f"{len(official_rates.get('llm_gateway_output', []))} output"
+            )
+    except Exception as e:
+        official_error = str(e)
+        log.warning(f"Failed to fetch official pricing page rates: {e}")
+
     fallback = {
         "region": region,
         "speech_to_text": [
@@ -2390,7 +2430,7 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
         result = []
         for item in items or []:
             new_item = dict(item)
-            new_item["price_source"] = source
+            new_item["price_source"] = new_item.get("price_source") or source
             result.append(new_item)
         return result
 
@@ -2470,7 +2510,7 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
             new_item = dict(item)
             normalized = normalize_model_name(item.get("model", ""))
             new_item["model"] = get_display_name(normalized, item.get("model", ""))
-            new_item["price_source"] = "dashboard"
+            new_item["price_source"] = new_item.get("price_source") or "dashboard"
             result.append(new_item)
         
         # 从 fallback 中补充 API 没有的模型
@@ -2510,16 +2550,29 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
         "llm_gateway_input",
         "llm_gateway_output",
     ]
-    dashboard_counts = {key: len(parsed.get(key) or []) for key in categories}
+    dashboard_counts = {
+        key: sum(1 for item in (parsed.get(key) or []) if item.get("price_source") in (None, "dashboard"))
+        for key in categories
+    }
+    official_counts = {
+        key: sum(1 for item in (parsed.get(key) or []) if item.get("price_source") == "official_pricing")
+        for key in categories
+    }
     dashboard_count = sum(dashboard_counts.values())
+    official_count = sum(official_counts.values())
+    parsed_count = dashboard_count + official_count
     fallback_count = sum(
         1
         for key in categories
         for item in result.get(key, [])
         if item.get("price_source") == "fallback"
     )
-    if dashboard_count and fallback_count:
+    if parsed_count and fallback_count:
         source = "mixed"
+    elif official_count and dashboard_count:
+        source = "mixed"
+    elif official_count:
+        source = "official_pricing"
     elif dashboard_count:
         source = "dashboard"
     else:
@@ -2527,16 +2580,24 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
 
     warnings = []
     if source == "fallback":
-        warnings.append("未能从 AssemblyAI Dashboard 解析到实时费率，当前展示内置备用费率，可能滞后。")
+        warnings.append("未能从 AssemblyAI 官方定价页或 Dashboard 解析到实时费率，当前展示内置备用费率，可能滞后。")
     elif source == "mixed":
-        warnings.append("部分模型未在 AssemblyAI Dashboard 响应中解析到，已使用内置备用费率补齐。")
-    if fetch_error:
+        warnings.append("部分模型未在 AssemblyAI 官方来源中解析到，已使用内置备用费率补齐。")
+    if fetch_error and not official_count:
         warnings.append("Dashboard 费率请求失败，已回退到备用费率。")
+    elif fetch_error:
+        warnings.append("Dashboard 费率请求失败，已使用官方公开定价页和备用费率补齐。")
+    if official_error and not parsed_count:
+        warnings.append("AssemblyAI 官方定价页请求失败，已回退到备用费率。")
+    elif official_error:
+        warnings.append("AssemblyAI 官方定价页请求失败，已使用 Dashboard 和备用费率补齐。")
 
     result["metadata"] = {
         "source": source,
         "dashboard_counts": dashboard_counts,
         "dashboard_count": dashboard_count,
+        "official_counts": official_counts,
+        "official_count": official_count,
         "fallback_count": fallback_count,
         "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "cache_ttl_seconds": _cache_ttl_seconds,
@@ -3004,6 +3065,104 @@ def _sanitize_model_name(model_name: str) -> str:
     return sanitized
 
 
+def _normalize_usage_token_value(value: Any) -> int:
+    """
+    Convert Dashboard usage quantities to integer tokens.
+
+    AssemblyAI's usage UI can expose LLM Gateway usage as fractional millions
+    (for example ``0.004`` means 4,000 tokens). Token counts themselves are
+    integral, so decimal literals from the Dashboard usage view are scaled by
+    1M while integer-looking values such as ``12,089`` are preserved.
+    """
+    import math
+    import re
+
+    if value is None or isinstance(value, bool):
+        return 0
+
+    decimal_literal = False
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return 0
+        match = re.search(r"-?\d[\d,]*(?:\.\d+)?", text)
+        if not match:
+            return 0
+        numeric_text = match.group(0).replace(",", "")
+        decimal_literal = "." in numeric_text
+        try:
+            amount = float(numeric_text)
+        except ValueError:
+            return 0
+    elif isinstance(value, int):
+        amount = float(value)
+    elif isinstance(value, float):
+        amount = value
+        decimal_literal = not value.is_integer()
+    else:
+        return 0
+
+    if not math.isfinite(amount) or amount <= 0:
+        return 0
+
+    if decimal_literal:
+        return int(round(amount * 1_000_000))
+    return int(amount)
+
+
+def _normalize_usage_result_tokens(result: Dict[str, Any]) -> None:
+    """Normalize all token-valued fields in a parsed usage result in place."""
+    for item in result.get("by_model") or []:
+        item["tokens"] = _normalize_usage_token_value(item.get("tokens", 0))
+        if "input_tokens" in item:
+            item["input_tokens"] = _normalize_usage_token_value(item.get("input_tokens", 0))
+        if "output_tokens" in item:
+            item["output_tokens"] = _normalize_usage_token_value(item.get("output_tokens", 0))
+
+    for segment in result.get("segments") or []:
+        segment["value"] = _normalize_usage_token_value(segment.get("value", 0))
+
+    for item in result.get("items") or []:
+        if "tokens" in item:
+            item["tokens"] = _normalize_usage_token_value(item.get("tokens", 0))
+        if "usage" in item:
+            item["usage"] = _normalize_usage_token_value(item.get("usage", 0))
+
+    for day in result.get("daily_by_model") or []:
+        models = day.get("models")
+        if not isinstance(models, dict):
+            continue
+        for model_values in models.values():
+            if isinstance(model_values, dict):
+                input_tokens = _normalize_usage_token_value(model_values.get("input", 0))
+                output_tokens = _normalize_usage_token_value(model_values.get("output", 0))
+                if "total" in model_values and not (input_tokens or output_tokens):
+                    total_tokens = _normalize_usage_token_value(model_values.get("total", 0))
+                else:
+                    total_tokens = input_tokens + output_tokens
+                model_values["input"] = input_tokens
+                model_values["output"] = output_tokens
+                model_values["total"] = total_tokens
+
+    if result.get("by_model"):
+        result["total_tokens"] = sum(item.get("tokens", 0) for item in result.get("by_model") or [])
+    elif result.get("segments"):
+        result["total_tokens"] = sum(item.get("value", 0) for item in result.get("segments") or [])
+    else:
+        result["total_tokens"] = _normalize_usage_token_value(result.get("total_tokens", 0))
+
+
+def _coerce_usage_raw_number(value: Any) -> Any:
+    """Parse a usage number without applying token-unit scaling."""
+    if isinstance(value, str):
+        text = value.replace(",", "").strip()
+        try:
+            return float(text) if "." in text else int(text)
+        except ValueError:
+            return 0
+    return value
+
+
 def _extract_segments_from_rsc(raw_text: str) -> List[Dict[str, Any]]:
     """
     从 RSC 数据中提取 segments 数组
@@ -3046,12 +3205,12 @@ def _extract_segments_from_rsc(raw_text: str) -> List[Dict[str, Any]]:
         
         # 方法2: 如果方法1失败，尝试查找独立的 segment 对象
         if not segments:
-            segment_pattern = r'\{"value":\s*(\d+),\s*"color":\s*"([^"]+)"\}'
+            segment_pattern = r'\{"value":\s*([0-9][\d,]*(?:\.\d+)?),\s*"color":\s*"([^"]+)"\}'
             segment_matches = re.findall(segment_pattern, raw_text)
             
             if segment_matches:
                 segments = [
-                    {"value": int(value), "color": color}
+                    {"value": _coerce_usage_raw_number(value), "color": color}
                     for value, color in segment_matches
                 ]
                 log.info(f"Extracted {len(segments)} segments using fallback method (method 2)")
@@ -3129,7 +3288,7 @@ def _extract_model_names_from_rsc(raw_text: str) -> List[Dict[str, Any]]:
                     props = data[3]
                     if isinstance(props, dict) and "children" in props:
                         children = props["children"]
-                        if isinstance(children, list) and len(children) >= 2:
+                        if isinstance(children, list) and children:
                             # PART 2: Token Count 通常在第二个 child 中
                             # ["$","span",null,{"children":["12,089"," ",...]}]
                             token_count = 0
@@ -3144,12 +3303,10 @@ def _extract_model_names_from_rsc(raw_text: str) -> List[Dict[str, Any]]:
                                         # 情况A: ["12,089", " ", ...]
                                         if isinstance(grand_children, list) and len(grand_children) > 0:
                                             first_item = grand_children[0]
-                                            if isinstance(first_item, str) and re.match(r'^[\d,]+$', first_item.strip()):
-                                                try:
-                                                    token_count = int(first_item.replace(",", "").strip())
+                                            if isinstance(first_item, str) and re.match(r'^[\d,.]+$', first_item.strip()):
+                                                token_count = _normalize_usage_token_value(first_item)
+                                                if token_count > 0:
                                                     break
-                                                except ValueError:
-                                                    pass
                             
                             if model_name_from_key and token_count > 0:
                                 sanitized_name = _sanitize_model_name(model_name_from_key)
@@ -3186,32 +3343,29 @@ def _extract_model_names_from_rsc(raw_text: str) -> List[Dict[str, Any]]:
         # 除非它们在文本中紧邻。在 RSC 中它们通常是分开的组件。
         
         # 如果 JSON 解析失败，尝试旧的正则作为最后的手段
-        model_token_pattern = r'"children":\s*\[[^\]]*,\s*" ",\s*"([^"]+)"\][^}]*"children":\s*\["([\d,]+)"'
+        model_token_pattern = r'"children":\s*\[[^\]]*,\s*" ",\s*"([^"]+)"\][^}]*"children":\s*\["([\d,.]+)"'
         model_token_matches = re.findall(model_token_pattern, scan_text)
         
         for model_name, token_str in model_token_matches:
             if model_name and not model_name.lower() in ['tokens', 'total', 'hours']:
-                try:
-                    tokens = int(token_str.replace(",", ""))
-                    sanitized_name = _sanitize_model_name(model_name)
-                    if sanitized_name:
-                        models.append({
-                            "model": sanitized_name,
-                            "tokens": tokens
-                        })
-                except ValueError:
-                    continue
+                tokens = _normalize_usage_token_value(token_str)
+                sanitized_name = _sanitize_model_name(model_name)
+                if sanitized_name and tokens > 0:
+                    models.append({
+                        "model": sanitized_name,
+                        "tokens": tokens
+                    })
         
         if models:
             log.debug(f"Extracted {len(models)} model entries via regex")
         if not models:
             try:
-                div_token_pattern = r'\["\$","div","LLM Gateway \+ LeMUR-([^"]+)",[\s\S]*?"children":\s*\[[\s\S]*?"([\d,]+)"[\s\S]*?"tokens"'
+                div_token_pattern = r'\["\$","div","LLM Gateway \+ LeMUR-([^"]+)",[\s\S]*?"children":\s*\[[\s\S]*?"([\d,.]+)"[\s\S]*?"tokens"'
                 for m in re.finditer(div_token_pattern, scan_text):
                     name = m.group(1)
-                    val = int(m.group(2).replace(',', ''))
+                    val = _normalize_usage_token_value(m.group(2))
                     sanitized_name = _sanitize_model_name(name)
-                    if sanitized_name:
+                    if sanitized_name and val > 0:
                         models.append({"model": sanitized_name, "tokens": val})
             except Exception:
                 pass
@@ -3222,7 +3376,17 @@ def _extract_model_names_from_rsc(raw_text: str) -> List[Dict[str, Any]]:
     return models
 
 
-def _parse_usage_rsc_data(data: Dict[str, Any]) -> Dict[str, Any]:
+def _is_llm_usage_context(raw_text: str, product: Optional[str], result: Dict[str, Any]) -> bool:
+    """Return whether parsed usage quantities represent LLM Gateway tokens."""
+    product_text = (product or "").lower()
+    if product_text:
+        return "llm" in product_text or "lemur" in product_text
+    if result.get("debug_info", {}).get("llm_model_rows"):
+        return True
+    return "LLM Gateway + LeMUR" in raw_text
+
+
+def _parse_usage_rsc_data(data: Dict[str, Any], product: Optional[str] = None) -> Dict[str, Any]:
     """
     解析使用量页面的 RSC 数据
     
@@ -3276,6 +3440,7 @@ def _parse_usage_rsc_data(data: Dict[str, Any]) -> Dict[str, Any]:
         if models:
             result["by_model"] = models
             result["debug_info"]["extracted_models_count"] = len(models)
+            result["debug_info"]["llm_model_rows"] = True
             log.info(f"Extracted {len(models)} model entries")
         
         # 3. 如果有 segments 但没有模型名称，尝试关联
@@ -3343,6 +3508,9 @@ def _parse_usage_rsc_data(data: Dict[str, Any]) -> Dict[str, Any]:
         if result["total_tokens"] == 0 and not result["by_model"]:
             log.warning("No usage data extracted from RSC response")
             result["debug_info"]["raw_sample"] = raw_text[:500] if len(raw_text) > 500 else raw_text
+
+        if _is_llm_usage_context(raw_text, product, result):
+            _normalize_usage_result_tokens(result)
         
     except Exception as e:
         log.error(f"Failed to parse usage RSC data: {e}")
@@ -3927,6 +4095,141 @@ def _normalize_model_name(name: str) -> str:
         return f"{match.group(1)} {match.group(2)} {match.group(3)}"
     
     return name
+
+
+async def _fetch_official_pricing_page_rates() -> Dict[str, Any]:
+    """Fetch current public AssemblyAI pricing for LLM Gateway models."""
+    client = await _get_dashboard_client()
+    response = await client.get(
+        f"{ASSEMBLY_DASHBOARD_BASE}/pricing",
+        headers={"Accept": "text/html,application/xhtml+xml"},
+    )
+    response.raise_for_status()
+    return _parse_official_pricing_page_rates(response.text)
+
+
+def _html_text(fragment: str) -> str:
+    """Return normalized display text from a small HTML fragment."""
+    import html
+    import re
+
+    text = re.sub(r"<[^>]+>", " ", fragment)
+    text = html.unescape(text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _parse_official_pricing_page_rates(raw_text: str) -> Dict[str, Any]:
+    """
+    Parse AssemblyAI's public pricing page for LLM Gateway prices.
+
+    The public pricing page is the official pay-as-you-go source and currently
+    renders LLM Gateway as tab ``data-matrix-panel="5"`` with input/output
+    columns shown as ``$X / 1M``. We intentionally parse only those rows so
+    unrelated speech pricing does not get misclassified as token pricing.
+    """
+    import re
+
+    result = {
+        "llm_gateway_input": [],
+        "llm_gateway_output": [],
+    }
+
+    if not raw_text:
+        return result
+
+    tab_match = re.search(
+        r"<button\b[^>]*data-matrix-tab=\"([^\"]+)\"[^>]*>\s*LLM Gateway\s*</button>",
+        raw_text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    panel_id = tab_match.group(1) if tab_match else "5"
+    panel_match = re.search(
+        r"<div\b[^>]*data-matrix-panel=\"" + re.escape(panel_id) + r"\"[^>]*>",
+        raw_text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if panel_match:
+        start = panel_match.start()
+        next_panel = re.search(
+            r"<div\b[^>]*data-matrix-panel=\"[^\"]+\"",
+            raw_text[panel_match.end():],
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        end_candidates = [
+            panel_match.end() + next_panel.start() if next_panel else -1,
+            raw_text.find("<!-- Volume-based pricing CTA", start),
+            raw_text.find("</section>", start),
+        ]
+    else:
+        heading_match = re.search(
+            r"<h[1-6]\b[^>]*>\s*LLM Gateway\s*</h[1-6]>",
+            raw_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if not heading_match:
+            return result
+        start = heading_match.start()
+        next_heading = re.search(
+            r"<h[1-6]\b[^>]*>",
+            raw_text[heading_match.end():],
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        end_candidates = [
+            heading_match.end() + next_heading.start() if next_heading else -1,
+            raw_text.find("<!-- Volume-based pricing CTA", start),
+            raw_text.find("</section>", start),
+        ]
+    end = min([pos for pos in end_candidates if pos > start], default=len(raw_text))
+    llm_section = raw_text[start:end]
+
+    seen_models = set()
+    for row_match in re.finditer(r"<tr\b[^>]*>(.*?)</tr>", llm_section, flags=re.IGNORECASE | re.DOTALL):
+        row = row_match.group(1)
+        if not re.search(r"/\s*1M\b", _html_text(row), flags=re.IGNORECASE):
+            continue
+
+        cell_matches = re.findall(r"<td\b[^>]*>(.*?)</td>", row, flags=re.IGNORECASE | re.DOTALL)
+        if not cell_matches:
+            continue
+
+        first_cell = cell_matches[0]
+        model_match = re.search(r"<span\b[^>]*>(.*?)</span>", first_cell, flags=re.IGNORECASE | re.DOTALL)
+        model = _html_text(model_match.group(1) if model_match else first_cell)
+        model = model.replace("*", "").strip()
+        if not model or model.lower() in {"models", "model", "custom"}:
+            continue
+
+        amounts = []
+        for cell in cell_matches[1:]:
+            cell_text = _html_text(cell)
+            if not re.search(r"/\s*1M\b", cell_text, flags=re.IGNORECASE):
+                continue
+            amount = _coerce_amount(cell_text)
+            if amount is not None:
+                amounts.append(amount)
+
+        if len(amounts) < 2 or model in seen_models:
+            continue
+
+        seen_models.add(model)
+        result["llm_gateway_input"].append(
+            {
+                "model": model,
+                "rate": amounts[0],
+                "unit": "1M tokens",
+                "price_source": "official_pricing",
+            }
+        )
+        result["llm_gateway_output"].append(
+            {
+                "model": model,
+                "rate": amounts[1],
+                "unit": "1M tokens",
+                "price_source": "official_pricing",
+            }
+        )
+
+    return result
 
 
 def _parse_rates_rsc_data(data: Dict[str, Any]) -> Dict[str, Any]:
