@@ -1,4 +1,6 @@
 import json
+import time
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -7,6 +9,12 @@ from src.api import admin_routes
 from src.stats.unified_stats import mask_key
 import src.stats.performance_tracker as performance_tracker_module
 import src.stats.unified_stats as unified_stats_module
+
+
+TRACE_RESET_TIME = "2099-01-01T07:00:00+00:00"
+TRACE_WINDOW_START = datetime(2098, 12, 31, 7, tzinfo=timezone.utc).timestamp()
+TRACE_IN_WINDOW = datetime(2098, 12, 31, 8, tzinfo=timezone.utc).timestamp()
+TRACE_BEFORE_WINDOW = datetime(2098, 12, 31, 6, 59, tzinfo=timezone.utc).timestamp()
 
 
 class _UsageTraceAdapter:
@@ -43,7 +51,9 @@ class _UsageTraceAdapter:
         return True
 
 
-def _trace(trace_id, model, key_masked, start_time, *, success=True):
+def _trace(trace_id, model, key_masked, start_time=None, *, success=True, response_complete_ms=300.0):
+    if start_time is None:
+        start_time = time.time()
     return {
         "trace_id": trace_id,
         "model": model,
@@ -52,7 +62,7 @@ def _trace(trace_id, model, key_masked, start_time, *, success=True):
             "request_received": 0.0,
             "upstream_first_byte": 100.0,
             "first_chunk_sent": 120.0,
-            "response_complete": 300.0,
+            "response_complete": response_complete_ms,
         },
         "metadata": {"usage_success": success},
         "prompt_tokens": 10,
@@ -73,13 +83,13 @@ async def test_usage_aggregated_backfills_empty_unified_stats_from_request_trace
     key = "45d00000000000000c0c"
     masked = mask_key(key)
     traces = [
-        _trace("t1", "gemini-3.1-flash-lite", masked, 1000.0),
-        _trace("t2", "gemini-3.1-flash-lite", masked, 1001.0),
-        _trace("t3", "gemini-3.1-flash-lite", masked, 1002.0),
-        _trace("t4", "gemini-3.1-flash-lite", masked, 1003.0),
-        _trace("t5", "gemini-3.1-flash-lite", masked, 1004.0),
-        _trace("t6", "claude-haiku-4-5-20251001", masked, 1005.0),
-        _trace("t7", "claude-haiku-4-5-20251001", masked, 1006.0),
+        _trace("t1", "gemini-3.1-flash-lite", masked),
+        _trace("t2", "gemini-3.1-flash-lite", masked),
+        _trace("t3", "gemini-3.1-flash-lite", masked),
+        _trace("t4", "gemini-3.1-flash-lite", masked),
+        _trace("t5", "gemini-3.1-flash-lite", masked),
+        _trace("t6", "claude-haiku-4-5-20251001", masked),
+        _trace("t7", "claude-haiku-4-5-20251001", masked),
     ]
     adapter = _UsageTraceAdapter(keys=[key], traces=traces)
 
@@ -111,7 +121,7 @@ async def test_usage_aggregated_does_not_double_count_when_unified_stats_already
     key = "45d00000000000000c0c"
     masked = mask_key(key)
     traces = [
-        _trace(f"t{i}", "gemini-3.1-flash-lite", masked, 1000.0 + i)
+        _trace(f"t{i}", "gemini-3.1-flash-lite", masked, TRACE_IN_WINDOW + i)
         for i in range(5)
     ]
     adapter = _UsageTraceAdapter(
@@ -124,7 +134,7 @@ async def test_usage_aggregated_does_not_double_count_when_unified_stats_already
                 "model_counts": {"gemini-3.1-flash-lite": {"ok": 5, "fail": 0}},
                 "daily_limit_total": 1000,
                 "daily_limit_models": {},
-                "next_reset_time": "2099-01-01T07:00:00+00:00",
+                "next_reset_time": TRACE_RESET_TIME,
             }
         },
         traces=traces,
@@ -162,11 +172,11 @@ async def test_usage_aggregated_preserves_failed_trace_status():
                 "model_counts": {"gemini-3.1-flash-lite": {"ok": 0, "fail": 1}},
                 "daily_limit_total": 1000,
                 "daily_limit_models": {},
-                "next_reset_time": "2099-01-01T07:00:00+00:00",
+                "next_reset_time": TRACE_RESET_TIME,
             }
         },
         traces=[
-            _trace("failed", "gemini-3.1-flash-lite", masked, 1000.0, success=False),
+            _trace("failed", "gemini-3.1-flash-lite", masked, TRACE_IN_WINDOW, success=False),
         ],
     )
 
@@ -205,13 +215,22 @@ async def test_usage_aggregated_rebuilds_global_totals_from_merged_keys():
                 "model_counts": {"gemini-3.1-flash-lite": {"ok": 5, "fail": 0}},
                 "daily_limit_total": 1000,
                 "daily_limit_models": {},
-                "next_reset_time": "2099-01-01T07:00:00+00:00",
+                "next_reset_time": TRACE_RESET_TIME,
+            },
+            masked_b: {
+                "full_key_hash": "",
+                "success_count": 0,
+                "failure_count": 0,
+                "model_counts": {},
+                "daily_limit_total": 1000,
+                "daily_limit_models": {},
+                "next_reset_time": TRACE_RESET_TIME,
             }
         },
         traces=[
-            _trace("t1", "gemini-3.1-flash-lite", masked_b, 1000.0),
-            _trace("t2", "gemini-3.1-flash-lite", masked_b, 1001.0),
-            _trace("t3", "gemini-3.1-flash-lite", masked_b, 1002.0),
+            _trace("t1", "gemini-3.1-flash-lite", masked_b, TRACE_IN_WINDOW),
+            _trace("t2", "gemini-3.1-flash-lite", masked_b, TRACE_IN_WINDOW + 1),
+            _trace("t3", "gemini-3.1-flash-lite", masked_b, TRACE_IN_WINDOW + 2),
         ],
     )
 
@@ -243,8 +262,8 @@ async def test_usage_aggregated_ignores_traces_for_unconfigured_keys():
     adapter = _UsageTraceAdapter(
         keys=[active_key],
         traces=[
-            _trace("active", "gemini-3.1-flash-lite", active_masked, 1000.0),
-            _trace("removed", "claude-haiku-4-5-20251001", removed_masked, 1001.0),
+            _trace("active", "gemini-3.1-flash-lite", active_masked),
+            _trace("removed", "claude-haiku-4-5-20251001", removed_masked),
         ],
     )
 
@@ -264,6 +283,91 @@ async def test_usage_aggregated_ignores_traces_for_unconfigured_keys():
     assert active_masked in summary["keys"]
     assert removed_masked not in summary["keys"]
     assert summary["models"] == {"gemini-3.1-flash-lite": {"ok": 1, "fail": 0}}
+
+
+@pytest.mark.asyncio
+async def test_usage_aggregated_ignores_traces_before_current_reset_window():
+    key = "45d00000000000000c0c"
+    masked = mask_key(key)
+    adapter = _UsageTraceAdapter(
+        keys=[key],
+        unified_stats={
+            masked: {
+                "full_key_hash": "",
+                "success_count": 0,
+                "failure_count": 0,
+                "model_counts": {},
+                "daily_limit_total": 1000,
+                "daily_limit_models": {},
+                "next_reset_time": TRACE_RESET_TIME,
+            }
+        },
+        traces=[
+            _trace("bad-start", "gemini-3.1-flash-lite", masked, "not-a-timestamp"),
+            _trace("old", "gemini-3.1-flash-lite", masked, TRACE_BEFORE_WINDOW),
+            _trace("current", "gemini-3.1-flash-lite", masked, TRACE_IN_WINDOW),
+        ],
+    )
+
+    _reset_stats_singletons()
+    try:
+        with patch("src.api.admin_routes.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+            with patch("src.stats.unified_stats.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+                with patch("src.storage.storage_adapter.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+                    response = await admin_routes.usage_aggregated(token="x")
+    finally:
+        _reset_stats_singletons()
+
+    payload = json.loads(response.body.decode("utf-8"))
+    summary = payload["log_summary"]
+
+    assert payload["total_all_model_calls"] == 1
+    assert summary["total"] == {"ok": 1, "fail": 0}
+    assert summary["keys"][masked]["model_counts"] == {"gemini-3.1-flash-lite": 1}
+
+
+@pytest.mark.asyncio
+async def test_usage_aggregated_uses_completion_time_for_reset_window():
+    key = "45d00000000000000c0c"
+    masked = mask_key(key)
+    adapter = _UsageTraceAdapter(
+        keys=[key],
+        unified_stats={
+            masked: {
+                "full_key_hash": "",
+                "success_count": 0,
+                "failure_count": 0,
+                "model_counts": {},
+                "daily_limit_total": 1000,
+                "daily_limit_models": {},
+                "next_reset_time": TRACE_RESET_TIME,
+            }
+        },
+        traces=[
+            _trace(
+                "cross-reset",
+                "gemini-3.1-flash-lite",
+                masked,
+                TRACE_WINDOW_START - 1,
+                response_complete_ms=2000.0,
+            ),
+        ],
+    )
+
+    _reset_stats_singletons()
+    try:
+        with patch("src.api.admin_routes.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+            with patch("src.stats.unified_stats.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+                with patch("src.storage.storage_adapter.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+                    response = await admin_routes.usage_aggregated(token="x")
+    finally:
+        _reset_stats_singletons()
+
+    payload = json.loads(response.body.decode("utf-8"))
+    summary = payload["log_summary"]
+
+    assert payload["total_all_model_calls"] == 1
+    assert summary["keys"][masked]["model_counts"] == {"gemini-3.1-flash-lite": 1}
 
 
 @pytest.mark.asyncio
