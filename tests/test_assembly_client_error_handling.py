@@ -50,6 +50,13 @@ class _FakeStreamingClient:
         return self._stream_ctx
 
 
+class _Trace:
+    def __init__(self):
+        self.metadata = {}
+        self.key_index = -1
+        self.key_masked = ""
+
+
 def _patch_send_assembly_for_streaming(monkeypatch, stream_ctx):
     monkeypatch.setattr(
         "src.services.assembly_client.get_model_region",
@@ -124,6 +131,22 @@ async def test_streaming_upstream_error_returns_json_response(monkeypatch):
     assert body["error"]["type"] == "api_error"
     assert "upstream failed" in body["error"]["message"]
     assert stream_ctx.closed is True
+
+
+@pytest.mark.asyncio
+async def test_streaming_success_records_usage_timestamp_on_trace(monkeypatch):
+    stream_ctx = _FakeStreamContext(response=_FakeStreamResponse(status_code=200))
+    _patch_send_assembly_for_streaming(monkeypatch, stream_ctx)
+
+    req = ChatCompletionRequest(
+        model="gemini-3.5-flash",
+        messages=[{"role": "user", "content": "hi"}],
+    )
+    trace = _Trace()
+    response = await send_assembly_request(req, is_streaming=True, trace=trace)
+
+    assert response.status_code == 200
+    assert isinstance(trace.metadata["usage_recorded_at"], float)
 
 
 @pytest.mark.asyncio
