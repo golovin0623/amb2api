@@ -2310,6 +2310,21 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
         official_rates = await _fetch_official_pricing_page_rates()
         if official_rates:
             official_can_override_llm = (region or "").strip().upper() in {"US", "USA"}
+
+            def merge_official_llm_rates(existing_rates, official_values):
+                if not existing_rates or not official_can_override_llm:
+                    return official_values
+
+                def model_key(item):
+                    import re
+
+                    return re.sub(r"[\s\-_]+", "", str(item.get("model", "")).lower())
+
+                official_keys = {model_key(item) for item in official_values}
+                merged = list(official_values)
+                merged.extend(item for item in existing_rates if model_key(item) not in official_keys)
+                return merged
+
             # 官方公开定价页是当前 LLM Gateway 费率的稳定来源；Dashboard
             # 登录页 RSC 结构经常变化。官方页没有区域上下文，因此只有 US
             # 视图可覆盖；其他 region 已解析到 Dashboard LLM 费率时保留 Dashboard。
@@ -2317,7 +2332,10 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
                 if values:
                     if key in {"llm_gateway_input", "llm_gateway_output"} and parsed.get(key) and not official_can_override_llm:
                         continue
-                    parsed[key] = values
+                    if key in {"llm_gateway_input", "llm_gateway_output"}:
+                        parsed[key] = merge_official_llm_rates(parsed.get(key), values)
+                    else:
+                        parsed[key] = values
             log.info(
                 "Parsed rates from official pricing page: "
                 f"{len(official_rates.get('llm_gateway_input', []))} input, "
@@ -3363,9 +3381,9 @@ def _is_llm_usage_context(raw_text: str, product: Optional[str], result: Dict[st
     product_text = (product or "").lower()
     if product_text:
         return "llm" in product_text or "lemur" in product_text
-    if result.get("by_model"):
+    if result.get("debug_info", {}).get("llm_model_rows"):
         return True
-    return "LLM Gateway + LeMUR" in raw_text or "LLM Gateway" in raw_text
+    return "LLM Gateway + LeMUR" in raw_text
 
 
 def _parse_usage_rsc_data(data: Dict[str, Any], product: Optional[str] = None) -> Dict[str, Any]:
@@ -3422,6 +3440,7 @@ def _parse_usage_rsc_data(data: Dict[str, Any], product: Optional[str] = None) -
         if models:
             result["by_model"] = models
             result["debug_info"]["extracted_models_count"] = len(models)
+            result["debug_info"]["llm_model_rows"] = True
             log.info(f"Extracted {len(models)} model entries")
         
         # 3. 如果有 segments 但没有模型名称，尝试关联

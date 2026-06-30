@@ -303,6 +303,21 @@ def test_usage_parser_does_not_scale_non_llm_fractional_segments():
     ]
 
 
+def test_usage_context_requires_explicit_llm_signal_when_product_is_absent():
+    from src.api.account_api import _is_llm_usage_context
+
+    assert not _is_llm_usage_context(
+        "Speech-to-Text usage payload",
+        None,
+        {"by_model": [{"model": "Best", "tokens": 0.5}], "debug_info": {}},
+    )
+    assert _is_llm_usage_context(
+        "Usage payload",
+        None,
+        {"by_model": [{"model": "Claude 4.5 Haiku", "tokens": 4000}], "debug_info": {"llm_model_rows": True}},
+    )
+
+
 @pytest.mark.asyncio
 async def test_rates_response_uses_official_pricing_when_dashboard_parse_empty(monkeypatch):
     from src.api import account_api
@@ -335,6 +350,57 @@ async def test_rates_response_uses_official_pricing_when_dashboard_parse_empty(m
     assert result["llm_gateway_input"][0]["model"] == "GPT 5.5"
     assert result["llm_gateway_input"][0]["price_source"] == "official_pricing"
     assert any(item["price_source"] == "fallback" for item in result["speech_to_text"])
+
+
+@pytest.mark.asyncio
+async def test_rates_response_merges_us_official_prices_with_dashboard_only_llm_models(monkeypatch):
+    from src.api import account_api
+
+    async def fake_get_session(account_email=None):
+        return {"email": "user@example.com"}
+
+    async def fake_dashboard_request(*args, **kwargs):
+        return {"raw": "<html>billing page</html>"}
+
+    def fake_parse_rates(_data):
+        return {
+            "llm_gateway_input": [
+                {"model": "GPT 5", "rate": 9.99, "unit": "1M tokens"},
+                {"model": "Dashboard Beta", "rate": 3.33, "unit": "1M tokens"},
+            ],
+            "llm_gateway_output": [
+                {"model": "GPT 5", "rate": 19.99, "unit": "1M tokens"},
+                {"model": "Dashboard Beta", "rate": 6.66, "unit": "1M tokens"},
+            ],
+        }
+
+    async def fake_official_pricing():
+        return {
+            "llm_gateway_input": [
+                {"model": "GPT 5", "rate": 1.25, "unit": "1M tokens", "price_source": "official_pricing"},
+            ],
+            "llm_gateway_output": [
+                {"model": "GPT 5", "rate": 10.0, "unit": "1M tokens", "price_source": "official_pricing"},
+            ],
+        }
+
+    monkeypatch.setattr(account_api, "_get_session", fake_get_session)
+    monkeypatch.setattr(account_api, "_make_dashboard_request", fake_dashboard_request)
+    monkeypatch.setattr(account_api, "_parse_rates_rsc_data", fake_parse_rates)
+    monkeypatch.setattr(account_api, "_fetch_official_pricing_page_rates", fake_official_pricing)
+    account_api._cache_store.clear()
+
+    result = await account_api.get_rates(region="US", force=True, account_email="user@example.com")
+
+    input_by_model = {item["model"]: item for item in result["llm_gateway_input"]}
+    output_by_model = {item["model"]: item for item in result["llm_gateway_output"]}
+
+    assert input_by_model["GPT 5"]["rate"] == 1.25
+    assert input_by_model["GPT 5"]["price_source"] == "official_pricing"
+    assert input_by_model["Dashboard Beta"]["rate"] == 3.33
+    assert input_by_model["Dashboard Beta"]["price_source"] == "dashboard"
+    assert output_by_model["GPT 5"]["rate"] == 10.0
+    assert output_by_model["Dashboard Beta"]["rate"] == 6.66
 
 
 @pytest.mark.asyncio
