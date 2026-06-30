@@ -12,6 +12,7 @@ import src.stats.unified_stats as unified_stats_module
 
 
 TRACE_RESET_TIME = "2099-01-01T07:00:00+00:00"
+TRACE_WINDOW_START = datetime(2098, 12, 31, 7, tzinfo=timezone.utc).timestamp()
 TRACE_IN_WINDOW = datetime(2098, 12, 31, 8, tzinfo=timezone.utc).timestamp()
 TRACE_BEFORE_WINDOW = datetime(2098, 12, 31, 6, 59, tzinfo=timezone.utc).timestamp()
 
@@ -50,7 +51,7 @@ class _UsageTraceAdapter:
         return True
 
 
-def _trace(trace_id, model, key_masked, start_time=None, *, success=True):
+def _trace(trace_id, model, key_masked, start_time=None, *, success=True, response_complete_ms=300.0):
     if start_time is None:
         start_time = time.time()
     return {
@@ -61,7 +62,7 @@ def _trace(trace_id, model, key_masked, start_time=None, *, success=True):
             "request_received": 0.0,
             "upstream_first_byte": 100.0,
             "first_chunk_sent": 120.0,
-            "response_complete": 300.0,
+            "response_complete": response_complete_ms,
         },
         "metadata": {"usage_success": success},
         "prompt_tokens": 10,
@@ -302,6 +303,7 @@ async def test_usage_aggregated_ignores_traces_before_current_reset_window():
             }
         },
         traces=[
+            _trace("bad-start", "gemini-3.1-flash-lite", masked, "not-a-timestamp"),
             _trace("old", "gemini-3.1-flash-lite", masked, TRACE_BEFORE_WINDOW),
             _trace("current", "gemini-3.1-flash-lite", masked, TRACE_IN_WINDOW),
         ],
@@ -321,6 +323,50 @@ async def test_usage_aggregated_ignores_traces_before_current_reset_window():
 
     assert payload["total_all_model_calls"] == 1
     assert summary["total"] == {"ok": 1, "fail": 0}
+    assert summary["keys"][masked]["model_counts"] == {"gemini-3.1-flash-lite": 1}
+
+
+@pytest.mark.asyncio
+async def test_usage_aggregated_uses_completion_time_for_reset_window():
+    key = "45d00000000000000c0c"
+    masked = mask_key(key)
+    adapter = _UsageTraceAdapter(
+        keys=[key],
+        unified_stats={
+            masked: {
+                "full_key_hash": "",
+                "success_count": 0,
+                "failure_count": 0,
+                "model_counts": {},
+                "daily_limit_total": 1000,
+                "daily_limit_models": {},
+                "next_reset_time": TRACE_RESET_TIME,
+            }
+        },
+        traces=[
+            _trace(
+                "cross-reset",
+                "gemini-3.1-flash-lite",
+                masked,
+                TRACE_WINDOW_START - 1,
+                response_complete_ms=2000.0,
+            ),
+        ],
+    )
+
+    _reset_stats_singletons()
+    try:
+        with patch("src.api.admin_routes.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+            with patch("src.stats.unified_stats.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+                with patch("src.storage.storage_adapter.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+                    response = await admin_routes.usage_aggregated(token="x")
+    finally:
+        _reset_stats_singletons()
+
+    payload = json.loads(response.body.decode("utf-8"))
+    summary = payload["log_summary"]
+
+    assert payload["total_all_model_calls"] == 1
     assert summary["keys"][masked]["model_counts"] == {"gemini-3.1-flash-lite": 1}
 
 

@@ -61,6 +61,40 @@ def _extract_usage_tokens(raw: Dict[str, Any]) -> Dict[str, int]:
     }
 
 
+def _normalize_usage_windows(active_windows: Optional[Dict[str, Any]]) -> Dict[str, tuple]:
+    normalized: Dict[str, tuple] = {}
+    if not active_windows:
+        return normalized
+    for key, window in active_windows.items():
+        if not isinstance(window, (tuple, list)) or len(window) != 2:
+            continue
+        try:
+            start_ts = float(window[0])
+            end_ts = float(window[1])
+        except (TypeError, ValueError):
+            continue
+        normalized[str(key)] = (start_ts, end_ts)
+    return normalized
+
+
+def _trace_usage_timestamp(trace: Dict[str, Any]) -> Optional[float]:
+    try:
+        start_ts = float(trace.get("start_time", 0))
+    except (TypeError, ValueError):
+        return None
+
+    timestamps = trace.get("timestamps")
+    if isinstance(timestamps, dict) and timestamps.get("response_complete") is not None:
+        try:
+            complete_ms = float(timestamps.get("response_complete"))
+        except (TypeError, ValueError):
+            complete_ms = None
+        if complete_ms is not None and complete_ms >= 0:
+            return start_ts + complete_ms / 1000
+
+    return start_ts
+
+
 @dataclass
 class RequestTrace:
     """单个请求的追踪数据"""
@@ -289,6 +323,7 @@ class PerformanceTracker:
     async def get_usage_summary(self, active_windows: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Aggregate request traces into the usage log-summary shape."""
         all_traces = await self._load_all_traces()
+        usage_windows = _normalize_usage_windows(active_windows)
         summary: Dict[str, Any] = {
             "models": {},
             "keys": {},
@@ -303,17 +338,13 @@ class PerformanceTracker:
                 if key_index >= 0:
                     key_masked = f"Key #{key_index}"
 
-            if active_windows and key_masked in active_windows:
-                window = active_windows.get(key_masked)
-                if isinstance(window, (tuple, list)) and len(window) == 2:
-                    start_ts, end_ts = window
-                    trace_start = trace.get("start_time", 0)
-                    try:
-                        trace_start = float(trace_start)
-                    except (TypeError, ValueError):
-                        trace_start = 0
-                    if trace_start < float(start_ts) or trace_start >= float(end_ts):
-                        continue
+            if usage_windows and key_masked in usage_windows:
+                usage_ts = _trace_usage_timestamp(trace)
+                if usage_ts is None:
+                    continue
+                start_ts, end_ts = usage_windows[key_masked]
+                if usage_ts < start_ts or usage_ts >= end_ts:
+                    continue
 
             metadata = trace.get("metadata") if isinstance(trace.get("metadata"), dict) else {}
             trace_success = metadata.get("usage_success")
