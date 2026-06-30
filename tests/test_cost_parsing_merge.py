@@ -449,6 +449,39 @@ async def test_rates_response_preserves_dashboard_llm_rates_for_non_us_region(mo
 
 
 @pytest.mark.asyncio
+async def test_rates_response_ignores_official_llm_rates_for_non_us_region_when_dashboard_empty(monkeypatch):
+    from src.api import account_api
+
+    async def fake_get_session(account_email=None):
+        return {"email": "user@example.com"}
+
+    async def fake_dashboard_request(*args, **kwargs):
+        return {"raw": "<html>billing page</html>"}
+
+    async def fake_official_pricing():
+        return {
+            "llm_gateway_input": [
+                {"model": "GPT 5", "rate": 1.25, "unit": "1M tokens", "price_source": "official_pricing"},
+            ],
+            "llm_gateway_output": [
+                {"model": "GPT 5", "rate": 10.0, "unit": "1M tokens", "price_source": "official_pricing"},
+            ],
+        }
+
+    monkeypatch.setattr(account_api, "_get_session", fake_get_session)
+    monkeypatch.setattr(account_api, "_make_dashboard_request", fake_dashboard_request)
+    monkeypatch.setattr(account_api, "_parse_rates_rsc_data", lambda _data: {})
+    monkeypatch.setattr(account_api, "_fetch_official_pricing_page_rates", fake_official_pricing)
+    account_api._cache_store.clear()
+
+    result = await account_api.get_rates(region="Europe", force=True, account_email="user@example.com")
+
+    assert result["metadata"]["official_count"] == 0
+    assert result["llm_gateway_input"][0]["price_source"] == "fallback"
+    assert result["llm_gateway_output"][0]["price_source"] == "fallback"
+
+
+@pytest.mark.asyncio
 async def test_rates_response_warns_when_official_pricing_fails_after_dashboard_parse(monkeypatch):
     from src.api import account_api
 

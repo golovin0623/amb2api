@@ -2330,9 +2330,9 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
             # 视图可覆盖；其他 region 已解析到 Dashboard LLM 费率时保留 Dashboard。
             for key, values in official_rates.items():
                 if values:
-                    if key in {"llm_gateway_input", "llm_gateway_output"} and parsed.get(key) and not official_can_override_llm:
-                        continue
                     if key in {"llm_gateway_input", "llm_gateway_output"}:
+                        if not official_can_override_llm:
+                            continue
                         parsed[key] = merge_official_llm_rates(parsed.get(key), values)
                     else:
                         parsed[key] = values
