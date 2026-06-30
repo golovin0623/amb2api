@@ -1,6 +1,6 @@
 import os
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
@@ -215,12 +215,37 @@ def _filter_trace_usage_summary(trace_summary: Dict[str, Any], valid_keys: Optio
     return filtered
 
 
+def _build_trace_usage_windows(stats_data: Dict[str, Any]) -> Dict[str, Any]:
+    windows: Dict[str, Any] = {}
+    for masked_key, key_data in (stats_data.get("keys") or {}).items():
+        if not isinstance(key_data, dict):
+            continue
+        raw_reset = key_data.get("next_reset_time")
+        if not raw_reset or not isinstance(raw_reset, str):
+            continue
+        text = raw_reset.strip()
+        if not text:
+            continue
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            reset_at = datetime.fromisoformat(text)
+        except Exception:
+            continue
+        if reset_at.tzinfo is None:
+            reset_at = reset_at.replace(tzinfo=timezone.utc)
+        reset_at = reset_at.astimezone(timezone.utc)
+        start_at = reset_at - timedelta(days=1)
+        windows[str(masked_key)] = (start_at.timestamp(), reset_at.timestamp())
+    return windows
+
+
 async def _backfill_usage_stats_from_traces(stats_data: Dict[str, Any], valid_keys: Optional[List[str]] = None) -> None:
     try:
         from ..stats.performance_tracker import get_performance_tracker
 
         tracker = await get_performance_tracker()
-        trace_summary = await tracker.get_usage_summary()
+        trace_summary = await tracker.get_usage_summary(active_windows=_build_trace_usage_windows(stats_data))
         trace_summary = _filter_trace_usage_summary(trace_summary, valid_keys)
         _merge_trace_usage_summary(stats_data, trace_summary)
     except Exception as e:

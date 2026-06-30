@@ -286,7 +286,7 @@ class PerformanceTracker:
                 log.warning(f"Failed to load shard {i}: {e}")
         return all_traces
 
-    async def get_usage_summary(self) -> Dict[str, Any]:
+    async def get_usage_summary(self, active_windows: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Aggregate request traces into the usage log-summary shape."""
         all_traces = await self._load_all_traces()
         summary: Dict[str, Any] = {
@@ -302,6 +302,18 @@ class PerformanceTracker:
                 key_index = _to_non_negative_int(trace.get("key_index", -1), -1)
                 if key_index >= 0:
                     key_masked = f"Key #{key_index}"
+
+            if active_windows and key_masked in active_windows:
+                window = active_windows.get(key_masked)
+                if isinstance(window, (tuple, list)) and len(window) == 2:
+                    start_ts, end_ts = window
+                    trace_start = trace.get("start_time", 0)
+                    try:
+                        trace_start = float(trace_start)
+                    except (TypeError, ValueError):
+                        trace_start = 0
+                    if trace_start < float(start_ts) or trace_start >= float(end_ts):
+                        continue
 
             metadata = trace.get("metadata") if isinstance(trace.get("metadata"), dict) else {}
             trace_success = metadata.get("usage_success")
