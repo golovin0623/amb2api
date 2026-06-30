@@ -226,6 +226,11 @@ async def test_billing_keeps_api_balance_when_settings_page_fails():
             account_api,
             "_fetch_dashboard_billing_page",
             AsyncMock(side_effect=Exception("Dashboard API error: 404")),
+        ), \
+        patch.object(
+            account_api,
+            "_fetch_cost_data_internal",
+            AsyncMock(return_value={"total_cost": 0.0}),
         ):
         result = await account_api.get_billing_info(force=True, account_email="user@example.com")
 
@@ -233,6 +238,88 @@ async def test_billing_keeps_api_balance_when_settings_page_fails():
     assert result["balance"] == 58.49928
     assert "error" not in result
     mock_cache_set.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_billing_uses_cost_total_when_billing_spend_is_missing():
+    session = {"email": "user@example.com", "user_info": {}}
+
+    with patch.object(account_api, "_get_session", AsyncMock(return_value=session)), \
+        patch.object(account_api, "_cache_get", return_value=None), \
+        patch.object(account_api, "_cache_set"), \
+        patch.object(
+            account_api,
+            "_fetch_dashboard_account_balance",
+            AsyncMock(return_value=43.62),
+        ), \
+        patch.object(
+            account_api,
+            "_fetch_dashboard_billing_page",
+            AsyncMock(return_value={
+                "balance": None,
+                "total_spend_30_days": 0.0,
+                "spend_trend": [],
+                "by_service": [],
+                "_source": "billing page",
+            }),
+        ), \
+        patch.object(
+            account_api,
+            "_fetch_cost_data_internal",
+            AsyncMock(return_value={
+                "total_cost": 0.00478,
+                "spend_trend": [{"date": "2026-06-28T00:00:00.000Z", "amount": 0.00478}],
+                "by_service": [{"service": "LLM Gateway Output Tokens", "cost": 0.00478}],
+            }),
+        ):
+        result = await account_api.get_billing_info(force=True, account_email="user@example.com")
+
+    assert result["balance"] == 43.62
+    assert result["total_spend_30_days"] == 0.00478
+    assert result["spend_trend"] == [{"date": "2026-06-28T00:00:00.000Z", "amount": 0.00478}]
+    assert result["cost_breakdown"] == {"LLM Gateway Output Tokens": 0.00478}
+    assert result["debug_info"]["spend_source"] == "dashboard cost"
+
+
+@pytest.mark.asyncio
+async def test_overview_billing_uses_cost_total_when_billing_spend_is_missing():
+    session = {"email": "user@example.com", "user_info": {}}
+
+    with patch.object(account_api, "_get_session", AsyncMock(return_value=session)), \
+        patch.object(account_api, "_get_preload_cache", AsyncMock(return_value=None)), \
+        patch.object(account_api, "_cache_get", return_value=None), \
+        patch.object(account_api, "_cache_set"), \
+        patch.object(
+            account_api,
+            "_fetch_dashboard_account_balance",
+            AsyncMock(return_value=43.62),
+        ), \
+        patch.object(
+            account_api,
+            "_fetch_dashboard_billing_page",
+            AsyncMock(return_value={
+                "balance": None,
+                "total_spend_30_days": 0.0,
+                "spend_trend": [],
+            }),
+        ), \
+        patch.object(
+            account_api,
+            "_fetch_cost_data_internal",
+            AsyncMock(return_value={
+                "total_cost": 0.00478,
+                "spend_trend": [{"date": "2026-06-28T00:00:00.000Z", "amount": 0.00478}],
+                "by_service": [{"service": "LLM Gateway Output Tokens", "cost": 0.00478}],
+            }),
+        ), \
+        patch.object(account_api, "_make_dashboard_request", AsyncMock(return_value={"raw": ""})):
+        result = await account_api.get_account_overview(force=True, account_email="user@example.com")
+
+    assert result["billing"]["balance"] == 43.62
+    assert result["billing"]["total_spend_30_days"] == 0.00478
+    assert result["billing"]["spend_trend"] == [{"date": "2026-06-28T00:00:00.000Z", "amount": 0.00478}]
+    assert result["billing"]["cost_breakdown"] == {"LLM Gateway Output Tokens": 0.00478}
+    assert result["billing"]["debug_info"]["spend_source"] == "dashboard cost"
 
 
 def test_extract_aai_extended_session_handles_multiple_set_cookie():
