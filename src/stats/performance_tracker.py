@@ -822,51 +822,54 @@ class PerformanceTracker:
         adapter = await get_storage_adapter()
 
         removed = 0
-        for shard_idx in range(ShardManager.MAX_SHARDS):
-            shard_key = f"perf_traces_{shard_idx}"
-            try:
-                shard_data = await adapter.get_perf(shard_key, None)
-                if not isinstance(shard_data, list) or not shard_data:
-                    continue
+        async with self._save_lock:
+            for shard_idx in range(ShardManager.MAX_SHARDS):
+                shard_key = f"perf_traces_{shard_idx}"
+                try:
+                    shard_data = await adapter.get_perf(shard_key, None)
+                    if not isinstance(shard_data, list) or not shard_data:
+                        continue
 
-                filtered = [
-                    trace for trace in shard_data
-                    if str(trace.get("key_masked", "")).strip() != masked_key
-                ]
-                if len(filtered) == len(shard_data):
-                    continue
+                    filtered = [
+                        trace for trace in shard_data
+                        if not isinstance(trace, dict)
+                        or str(trace.get("key_masked", "")).strip() != masked_key
+                    ]
+                    if len(filtered) == len(shard_data):
+                        continue
 
-                removed += len(shard_data) - len(filtered)
-                if filtered:
-                    await adapter.set_perf(shard_key, filtered)
-                    self.shard_manager.shard_counts[shard_idx] = len(filtered)
-                else:
-                    await adapter.delete_perf(shard_key)
-                    self.shard_manager.shard_counts.pop(shard_idx, None)
-            except Exception as e:
-                log.warning(f"Failed to clear traces for key from shard {shard_idx}: {e}")
+                    removed += len(shard_data) - len(filtered)
+                    if filtered:
+                        await adapter.set_perf(shard_key, filtered)
+                        self.shard_manager.shard_counts[shard_idx] = len(filtered)
+                    else:
+                        await adapter.delete_perf(shard_key)
+                        self.shard_manager.shard_counts.pop(shard_idx, None)
+                except Exception as e:
+                    log.warning(f"Failed to clear traces for key from shard {shard_idx}: {e}")
 
-        if removed:
-            await adapter.set_perf("perf_meta", self.shard_manager.to_dict())
-            self._stats_cache = None
+            if removed:
+                await adapter.set_perf("perf_meta", self.shard_manager.to_dict())
+                self._stats_cache = None
         return removed
 
     async def clear_all(self):
         """清除所有追踪数据"""
         from ..storage.storage_adapter import get_storage_adapter
         adapter = await get_storage_adapter()
-        
-        # 扫描固定分片，避免 perf_meta 缺失或过期时遗留旧请求明细。
-        for shard_idx in range(ShardManager.MAX_SHARDS):
-            shard_key = f"perf_traces_{shard_idx}"
-            try:
-                await adapter.delete_perf(shard_key)
-            except Exception:
-                pass
-        
-        self.shard_manager = ShardManager()
-        await adapter.set_perf("perf_meta", self.shard_manager.to_dict())
-        self._stats_cache = None
+
+        async with self._save_lock:
+            # 扫描固定分片，避免 perf_meta 缺失或过期时遗留旧请求明细。
+            for shard_idx in range(ShardManager.MAX_SHARDS):
+                shard_key = f"perf_traces_{shard_idx}"
+                try:
+                    await adapter.delete_perf(shard_key)
+                except Exception:
+                    pass
+
+            self.shard_manager = ShardManager()
+            await adapter.set_perf("perf_meta", self.shard_manager.to_dict())
+            self._stats_cache = None
         
         log.info("All performance traces cleared")
 

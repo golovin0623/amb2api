@@ -49,3 +49,7 @@ def test_account_charts_share_coordinate_helpers_and_hide_tooltips_on_scroll():
     assert 'ontouchcancel="finishCostTouch()"' in html
     assert "window.addEventListener('scroll', hideAccountChartTooltips" in html
     assert "shouldDismissAccountChartTouch" in html
+    assert "dismissed: false" in html
+    assert "start.dismissed = true;" in html
+    assert "shouldDismissAccountChartTouch(event, 'usage', hideUsageTooltip)" in html
+    assert "shouldDismissAccountChartTouch(event, 'cost', hideCostTooltip)" in html

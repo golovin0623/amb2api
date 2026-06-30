@@ -123,19 +123,19 @@ def _merge_trace_usage_summary(stats_data: Dict[str, Any], trace_summary: Dict[s
 
     for key_name, trace_key in (trace_summary.get("keys") or {}).items():
         masked_key = str(key_name or "").strip()
-        if not masked_key:
+        if not masked_key or not isinstance(trace_key, dict):
             continue
         key_entry = _ensure_summary_key_entry(keys, masked_key)
         key_models = key_entry.setdefault("models", {})
         key_model_counts = key_entry.setdefault("model_counts", {})
 
-        for model_name, trace_model_detail in ((trace_key or {}).get("models") or {}).items():
+        for model_name, trace_model_detail in (trace_key.get("models") or {}).items():
             model = str(model_name or "").strip()
-            if not model:
+            if not model or not isinstance(trace_model_detail, dict):
                 continue
             model_detail = key_models.setdefault(model, {"ok": 0, "fail": 0})
-            trace_ok = _as_usage_count((trace_model_detail or {}).get("ok"))
-            trace_fail = _as_usage_count((trace_model_detail or {}).get("fail"))
+            trace_ok = _as_usage_count(trace_model_detail.get("ok"))
+            trace_fail = _as_usage_count(trace_model_detail.get("fail"))
             model_detail["ok"] = max(_as_usage_count(model_detail.get("ok")), trace_ok)
             model_detail["fail"] = max(_as_usage_count(model_detail.get("fail")), trace_fail)
             key_model_counts[model] = max(_as_usage_count(key_model_counts.get(model)), model_detail["ok"])
@@ -144,12 +144,12 @@ def _merge_trace_usage_summary(stats_data: Dict[str, Any], trace_summary: Dict[s
         fail_from_models = sum(_as_usage_count(v.get("fail")) for v in key_models.values() if isinstance(v, dict))
         key_entry["ok"] = max(
             _as_usage_count(key_entry.get("ok")),
-            _as_usage_count((trace_key or {}).get("ok")),
+            _as_usage_count(trace_key.get("ok")),
             ok_from_models,
         )
         key_entry["fail"] = max(
             _as_usage_count(key_entry.get("fail")),
-            _as_usage_count((trace_key or {}).get("fail")),
+            _as_usage_count(trace_key.get("fail")),
             fail_from_models,
         )
         key_entry["total"] = key_entry["ok"] + key_entry["fail"]
@@ -201,12 +201,16 @@ def _filter_trace_usage_summary(trace_summary: Dict[str, Any], valid_keys: Optio
     }
 
     for key_data in filtered_keys.values():
-        filtered["total"]["ok"] += _as_usage_count((key_data or {}).get("ok"))
-        filtered["total"]["fail"] += _as_usage_count((key_data or {}).get("fail"))
-        for model, detail in ((key_data or {}).get("models") or {}).items():
+        if not isinstance(key_data, dict):
+            continue
+        filtered["total"]["ok"] += _as_usage_count(key_data.get("ok"))
+        filtered["total"]["fail"] += _as_usage_count(key_data.get("fail"))
+        for model, detail in (key_data.get("models") or {}).items():
+            if not isinstance(detail, dict):
+                continue
             model_entry = filtered["models"].setdefault(model, {"ok": 0, "fail": 0})
-            model_entry["ok"] += _as_usage_count((detail or {}).get("ok"))
-            model_entry["fail"] += _as_usage_count((detail or {}).get("fail"))
+            model_entry["ok"] += _as_usage_count(detail.get("ok"))
+            model_entry["fail"] += _as_usage_count(detail.get("fail"))
 
     return filtered
 

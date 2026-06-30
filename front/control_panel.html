@@ -18611,16 +18611,25 @@
         function rememberAccountChartTouch(event, chartKey) {
             const touch = event.touches && event.touches[0];
             if (!touch) return;
-            accountChartTouchState[chartKey] = { x: touch.clientX, y: touch.clientY };
+            accountChartTouchState[chartKey] = { x: touch.clientX, y: touch.clientY, dismissed: false };
         }
 
-        function shouldDismissAccountChartTouch(event, chartKey) {
+        function shouldDismissAccountChartTouch(event, chartKey, hideFn) {
             const touch = event.touches && event.touches[0];
             const start = accountChartTouchState[chartKey];
             if (!touch || !start) return false;
+            if (start.dismissed) {
+                hideFn();
+                return true;
+            }
             const dx = Math.abs(touch.clientX - start.x);
             const dy = Math.abs(touch.clientY - start.y);
-            return dy > 12 && dy > dx * 1.2;
+            if (dy > 12 && dy > dx * 1.2) {
+                start.dismissed = true;
+                hideFn();
+                return true;
+            }
+            return false;
         }
 
         function finishAccountChartTouch(chartKey, hideFn) {
@@ -19059,8 +19068,7 @@
             if (event.touches && event.touches.length > 0) {
                 if (event.type === 'touchstart') {
                     rememberAccountChartTouch(event, 'usage');
-                } else if (shouldDismissAccountChartTouch(event, 'usage')) {
-                    finishUsageTouch();
+                } else if (shouldDismissAccountChartTouch(event, 'usage', hideUsageTooltip)) {
                     return;
                 }
                 const touch = event.touches[0];
@@ -20412,8 +20420,7 @@
             if (event.touches && event.touches.length > 0) {
                 if (event.type === 'touchstart') {
                     rememberAccountChartTouch(event, 'cost');
-                } else if (shouldDismissAccountChartTouch(event, 'cost')) {
-                    finishCostTouch();
+                } else if (shouldDismissAccountChartTouch(event, 'cost', hideCostTooltip)) {
                     return;
                 }
                 const touch = event.touches[0];
