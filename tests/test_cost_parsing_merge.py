@@ -157,6 +157,123 @@ def test_rates_parser_extracts_dashboard_llm_gateway_prices():
     ]
 
 
+def test_official_pricing_parser_extracts_llm_gateway_tables():
+    from src.api.account_api import _parse_official_pricing_page_rates
+
+    raw = """
+    <button data-matrix-tab="7">LLM Gateway</button>
+    <div data-matrix-panel="5">
+      <table>
+        <tr>
+          <td><span>Speech Model</span></td>
+          <td><strong>$0.12</strong><span> / 1M</span></td>
+          <td><strong>$0.24</strong><span> / 1M</span></td>
+        </tr>
+      </table>
+    </div>
+    <div data-matrix-panel="7">
+      <table>
+        <tbody>
+          <tr>
+            <td><span>GPT 5.5</span></td>
+            <td><strong>$2.00</strong><span> / 1M</span></td>
+            <td><strong>$16.00</strong><span> / 1M</span></td>
+          </tr>
+          <tr>
+            <td><span>Gemini 2.5 Flash Lite</span></td>
+            <td><strong>$0.10</strong><span> / 1M</span></td>
+            <td><strong>$0.40</strong><span> / 1M</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="lg:hidden">
+        <div><span>GPT 5.5</span><span>$2.00</span><span> / 1M</span></div>
+      </div>
+    </div>
+    <!-- Volume-based pricing CTA -->
+    """
+
+    result = _parse_official_pricing_page_rates(raw)
+
+    assert result["llm_gateway_input"] == [
+        {"model": "GPT 5.5", "rate": 2.0, "unit": "1M tokens", "price_source": "official_pricing"},
+        {"model": "Gemini 2.5 Flash Lite", "rate": 0.1, "unit": "1M tokens", "price_source": "official_pricing"},
+    ]
+    assert result["llm_gateway_output"] == [
+        {"model": "GPT 5.5", "rate": 16.0, "unit": "1M tokens", "price_source": "official_pricing"},
+        {"model": "Gemini 2.5 Flash Lite", "rate": 0.4, "unit": "1M tokens", "price_source": "official_pricing"},
+    ]
+
+
+def test_usage_token_normalization_preserves_raw_integers_and_scales_decimal_units():
+    from src.api.account_api import _normalize_usage_token_value
+
+    assert _normalize_usage_token_value("12,089") == 12089
+    assert _normalize_usage_token_value(12089) == 12089
+    assert _normalize_usage_token_value("0.004") == 4000
+    assert _normalize_usage_token_value(0.004) == 4000
+    assert _normalize_usage_token_value("1.0") == 1_000_000
+    assert _normalize_usage_token_value(1.0) == 1_000_000
+
+
+def test_usage_parser_scales_fractional_million_tokens_to_tokens():
+    from src.api.account_api import _parse_usage_rsc_data
+
+    raw = "\n".join(
+        [
+            '1:["$","div","LLM Gateway + LeMUR-Claude 4.5 Haiku",{"children":[["$","span",null,{"children":["0.004"," ",["$","span",null,{"children":["tokens"]}]]}]]}]',
+            '2:["$","div","LLM Gateway + LeMUR-Gemini 3.5 Flash",{"children":[["$","span",null,{"children":["0.006"," ",["$","span",null,{"children":["tokens"]}]]}]]}]',
+            '3:["$","$L14",null,{"segments":[{"value":0.004,"color":"#f60"},{"value":0.006,"color":"#0cc"}]}]',
+        ]
+    )
+
+    result = _parse_usage_rsc_data({"raw": raw})
+
+    assert result["total_tokens"] == 10000
+    assert result["by_model"] == [
+        {"model": "Claude 4.5 Haiku", "tokens": 4000},
+        {"model": "Gemini 3.5 Flash", "tokens": 6000},
+    ]
+    assert result["segments"] == [
+        {"value": 4000, "color": "#f60"},
+        {"value": 6000, "color": "#0cc"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_rates_response_uses_official_pricing_when_dashboard_parse_empty(monkeypatch):
+    from src.api import account_api
+
+    async def fake_get_session(account_email=None):
+        return {"email": "user@example.com"}
+
+    async def fake_dashboard_request(*args, **kwargs):
+        return {"raw": "<html>billing page without recognizable rates</html>"}
+
+    async def fake_official_pricing():
+        return {
+            "llm_gateway_input": [
+                {"model": "GPT 5.5", "rate": 2.0, "unit": "1M tokens", "price_source": "official_pricing"},
+            ],
+            "llm_gateway_output": [
+                {"model": "GPT 5.5", "rate": 16.0, "unit": "1M tokens", "price_source": "official_pricing"},
+            ],
+        }
+
+    monkeypatch.setattr(account_api, "_get_session", fake_get_session)
+    monkeypatch.setattr(account_api, "_make_dashboard_request", fake_dashboard_request)
+    monkeypatch.setattr(account_api, "_fetch_official_pricing_page_rates", fake_official_pricing)
+    account_api._cache_store.clear()
+
+    result = await account_api.get_rates(region="US", force=True, account_email="user@example.com")
+
+    assert result["metadata"]["source"] == "mixed"
+    assert result["metadata"]["official_counts"]["llm_gateway_input"] == 1
+    assert result["llm_gateway_input"][0]["model"] == "GPT 5.5"
+    assert result["llm_gateway_input"][0]["price_source"] == "official_pricing"
+    assert any(item["price_source"] == "fallback" for item in result["speech_to_text"])
+
+
 @pytest.mark.asyncio
 async def test_rates_response_marks_fallback_when_dashboard_parse_empty(monkeypatch):
     from src.api import account_api
@@ -167,8 +284,12 @@ async def test_rates_response_marks_fallback_when_dashboard_parse_empty(monkeypa
     async def fake_dashboard_request(*args, **kwargs):
         return {"raw": "<html>billing page without recognizable rates</html>"}
 
+    async def fake_official_pricing():
+        return {}
+
     monkeypatch.setattr(account_api, "_get_session", fake_get_session)
     monkeypatch.setattr(account_api, "_make_dashboard_request", fake_dashboard_request)
+    monkeypatch.setattr(account_api, "_fetch_official_pricing_page_rates", fake_official_pricing)
     account_api._cache_store.clear()
 
     result = await account_api.get_rates(region="US", force=True, account_email="user@example.com")
