@@ -83,8 +83,8 @@ def _trace_usage_timestamp(trace: Dict[str, Any]) -> Optional[float]:
     except (TypeError, ValueError):
         return None
 
-    metadata = trace.get("metadata") if isinstance(trace.get("metadata"), dict) else {}
-    if str(metadata.get("stream_mode", "")).lower() == "real":
+    metadata = trace.get("metadata")
+    if isinstance(metadata, dict) and str(metadata.get("stream_mode", "")).lower() == "real":
         return start_ts
 
     timestamps = trace.get("timestamps")
