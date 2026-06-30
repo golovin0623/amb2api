@@ -2567,6 +2567,8 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
         warnings.append("Dashboard 费率请求失败，已使用官方公开定价页和备用费率补齐。")
     if official_error and not parsed_count:
         warnings.append("AssemblyAI 官方定价页请求失败，已回退到备用费率。")
+    elif official_error:
+        warnings.append("AssemblyAI 官方定价页请求失败，已使用 Dashboard 和备用费率补齐。")
 
     result["metadata"] = {
         "source": source,
@@ -3050,6 +3052,7 @@ def _normalize_usage_token_value(value: Any) -> int:
     integral, so decimal literals from the Dashboard usage view are scaled by
     1M while integer-looking values such as ``12,089`` are preserved.
     """
+    import math
     import re
 
     if value is None or isinstance(value, bool):
@@ -3077,7 +3080,7 @@ def _normalize_usage_token_value(value: Any) -> int:
     else:
         return 0
 
-    if amount <= 0:
+    if not math.isfinite(amount) or amount <= 0:
         return 0
 
     if decimal_literal:
@@ -4100,20 +4103,37 @@ def _parse_official_pricing_page_rates(raw_text: str) -> Dict[str, Any]:
         raw_text,
         flags=re.IGNORECASE | re.DOTALL,
     )
-    if not panel_match:
-        return result
-
-    start = panel_match.start()
-    next_panel = re.search(
-        r"<div\b[^>]*data-matrix-panel=\"[^\"]+\"",
-        raw_text[panel_match.end():],
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    end_candidates = [
-        panel_match.end() + next_panel.start() if next_panel else -1,
-        raw_text.find("<!-- Volume-based pricing CTA", start),
-        raw_text.find("</section>", start),
-    ]
+    if panel_match:
+        start = panel_match.start()
+        next_panel = re.search(
+            r"<div\b[^>]*data-matrix-panel=\"[^\"]+\"",
+            raw_text[panel_match.end():],
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        end_candidates = [
+            panel_match.end() + next_panel.start() if next_panel else -1,
+            raw_text.find("<!-- Volume-based pricing CTA", start),
+            raw_text.find("</section>", start),
+        ]
+    else:
+        heading_match = re.search(
+            r"<h[1-6]\b[^>]*>\s*LLM Gateway\s*</h[1-6]>",
+            raw_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if not heading_match:
+            return result
+        start = heading_match.start()
+        next_heading = re.search(
+            r"<h[1-6]\b[^>]*>",
+            raw_text[heading_match.end():],
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        end_candidates = [
+            heading_match.end() + next_heading.start() if next_heading else -1,
+            raw_text.find("<!-- Volume-based pricing CTA", start),
+            raw_text.find("</section>", start),
+        ]
     end = min([pos for pos in end_candidates if pos > start], default=len(raw_text))
     llm_section = raw_text[start:end]
 
@@ -4135,13 +4155,11 @@ def _parse_official_pricing_page_rates(raw_text: str) -> Dict[str, Any]:
             continue
 
         amounts = []
-        for price_match in re.finditer(
-            r"<strong\b[^>]*>\s*\$([0-9][\d,]*(?:\.\d+)?)\s*</strong>\s*"
-            r"<span\b[^>]*>\s*/\s*1M\s*</span>",
-            row,
-            flags=re.IGNORECASE | re.DOTALL,
-        ):
-            amount = _coerce_amount(price_match.group(1))
+        for cell in cell_matches[1:]:
+            cell_text = _html_text(cell)
+            if not re.search(r"/\s*1M\b", cell_text, flags=re.IGNORECASE):
+                continue
+            amount = _coerce_amount(cell_text)
             if amount is not None:
                 amounts.append(amount)
 

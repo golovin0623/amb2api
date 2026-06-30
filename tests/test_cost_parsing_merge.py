@@ -181,8 +181,8 @@ def test_official_pricing_parser_extracts_llm_gateway_tables():
           </tr>
           <tr>
             <td><span>Gemini 2.5 Flash Lite</span></td>
-            <td><strong>$0.10</strong><span> / 1M</span></td>
-            <td><strong>$0.40</strong><span> / 1M</span></td>
+            <td><em>$0.10</em><small> / 1M</small></td>
+            <td>$0.40 /1M</td>
           </tr>
         </tbody>
       </table>
@@ -205,6 +205,52 @@ def test_official_pricing_parser_extracts_llm_gateway_tables():
     ]
 
 
+def test_official_pricing_parser_falls_back_to_llm_gateway_heading_without_panel_attrs():
+    from src.api.account_api import _parse_official_pricing_page_rates
+
+    raw = """
+    <section>
+      <h3>Speech to Text</h3>
+      <table>
+        <tr>
+          <td><span>Nano</span></td>
+          <td>$0.12 / 1M</td>
+          <td>$0.24 / 1M</td>
+        </tr>
+      </table>
+    </section>
+    <section>
+      <h3>LLM Gateway</h3>
+      <table>
+        <tr>
+          <td><span>Claude 4.5 Haiku</span></td>
+          <td>$1.00 / 1M</td>
+          <td>$5.00 / 1M</td>
+        </tr>
+      </table>
+    </section>
+    <section>
+      <h3>Guardrails</h3>
+      <table>
+        <tr>
+          <td><span>Guardrail Model</span></td>
+          <td>$9.99 / 1M</td>
+          <td>$9.99 / 1M</td>
+        </tr>
+      </table>
+    </section>
+    """
+
+    result = _parse_official_pricing_page_rates(raw)
+
+    assert result["llm_gateway_input"] == [
+        {"model": "Claude 4.5 Haiku", "rate": 1.0, "unit": "1M tokens", "price_source": "official_pricing"},
+    ]
+    assert result["llm_gateway_output"] == [
+        {"model": "Claude 4.5 Haiku", "rate": 5.0, "unit": "1M tokens", "price_source": "official_pricing"},
+    ]
+
+
 def test_usage_token_normalization_preserves_raw_integers_and_scales_decimal_units():
     from src.api.account_api import _normalize_usage_token_value
 
@@ -214,6 +260,8 @@ def test_usage_token_normalization_preserves_raw_integers_and_scales_decimal_uni
     assert _normalize_usage_token_value(0.004) == 4000
     assert _normalize_usage_token_value("1.0") == 1_000_000
     assert _normalize_usage_token_value(1.0) == 1_000_000
+    assert _normalize_usage_token_value(float("nan")) == 0
+    assert _normalize_usage_token_value(float("inf")) == 0
 
 
 def test_usage_parser_scales_fractional_million_tokens_to_tokens():
@@ -272,6 +320,42 @@ async def test_rates_response_uses_official_pricing_when_dashboard_parse_empty(m
     assert result["llm_gateway_input"][0]["model"] == "GPT 5.5"
     assert result["llm_gateway_input"][0]["price_source"] == "official_pricing"
     assert any(item["price_source"] == "fallback" for item in result["speech_to_text"])
+
+
+@pytest.mark.asyncio
+async def test_rates_response_warns_when_official_pricing_fails_after_dashboard_parse(monkeypatch):
+    from src.api import account_api
+
+    async def fake_get_session(account_email=None):
+        return {"email": "user@example.com"}
+
+    async def fake_dashboard_request(*args, **kwargs):
+        return {"raw": "<html>billing page</html>"}
+
+    def fake_parse_rates(_data):
+        return {
+            "llm_gateway_input": [
+                {"model": "GPT 5", "rate": 1.25, "unit": "1M tokens"},
+            ],
+            "llm_gateway_output": [
+                {"model": "GPT 5", "rate": 10.0, "unit": "1M tokens"},
+            ],
+        }
+
+    async def fake_official_pricing():
+        raise RuntimeError("official unavailable")
+
+    monkeypatch.setattr(account_api, "_get_session", fake_get_session)
+    monkeypatch.setattr(account_api, "_make_dashboard_request", fake_dashboard_request)
+    monkeypatch.setattr(account_api, "_parse_rates_rsc_data", fake_parse_rates)
+    monkeypatch.setattr(account_api, "_fetch_official_pricing_page_rates", fake_official_pricing)
+    account_api._cache_store.clear()
+
+    result = await account_api.get_rates(region="US", force=True, account_email="user@example.com")
+
+    assert result["metadata"]["dashboard_count"] == 2
+    assert any("AssemblyAI 官方定价页请求失败" in warning for warning in result["warnings"])
+    assert any("Dashboard" in warning for warning in result["warnings"])
 
 
 @pytest.mark.asyncio
