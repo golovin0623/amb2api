@@ -324,6 +324,51 @@ async def test_rates_response_uses_official_pricing_when_dashboard_parse_empty(m
 
 
 @pytest.mark.asyncio
+async def test_rates_response_preserves_dashboard_llm_rates_for_non_us_region(monkeypatch):
+    from src.api import account_api
+
+    async def fake_get_session(account_email=None):
+        return {"email": "user@example.com"}
+
+    async def fake_dashboard_request(*args, **kwargs):
+        return {"raw": "<html>billing page</html>"}
+
+    def fake_parse_rates(_data):
+        return {
+            "llm_gateway_input": [
+                {"model": "GPT 5", "rate": 1.5, "unit": "1M tokens"},
+            ],
+            "llm_gateway_output": [
+                {"model": "GPT 5", "rate": 11.0, "unit": "1M tokens"},
+            ],
+        }
+
+    async def fake_official_pricing():
+        return {
+            "llm_gateway_input": [
+                {"model": "GPT 5", "rate": 1.25, "unit": "1M tokens", "price_source": "official_pricing"},
+            ],
+            "llm_gateway_output": [
+                {"model": "GPT 5", "rate": 10.0, "unit": "1M tokens", "price_source": "official_pricing"},
+            ],
+        }
+
+    monkeypatch.setattr(account_api, "_get_session", fake_get_session)
+    monkeypatch.setattr(account_api, "_make_dashboard_request", fake_dashboard_request)
+    monkeypatch.setattr(account_api, "_parse_rates_rsc_data", fake_parse_rates)
+    monkeypatch.setattr(account_api, "_fetch_official_pricing_page_rates", fake_official_pricing)
+    account_api._cache_store.clear()
+
+    result = await account_api.get_rates(region="EU", force=True, account_email="user@example.com")
+
+    assert result["llm_gateway_input"][0]["rate"] == 1.5
+    assert result["llm_gateway_input"][0]["price_source"] == "dashboard"
+    assert result["llm_gateway_output"][0]["rate"] == 11.0
+    assert result["llm_gateway_output"][0]["price_source"] == "dashboard"
+    assert result["metadata"]["official_count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_rates_response_warns_when_official_pricing_fails_after_dashboard_parse(monkeypatch):
     from src.api import account_api
 

@@ -2309,10 +2309,14 @@ async def get_rates(region: str = "US", force: bool = False, account_email: Opti
     try:
         official_rates = await _fetch_official_pricing_page_rates()
         if official_rates:
+            official_can_override_llm = (region or "").strip().upper() in {"US", "USA"}
             # 官方公开定价页是当前 LLM Gateway 费率的稳定来源；Dashboard
-            # 登录页 RSC 结构经常变化，保留其语音类数据，但用官网 LLM 表覆盖。
+            # 登录页 RSC 结构经常变化。官方页没有区域上下文，因此只有 US
+            # 视图可覆盖；其他 region 已解析到 Dashboard LLM 费率时保留 Dashboard。
             for key, values in official_rates.items():
                 if values:
+                    if key in {"llm_gateway_input", "llm_gateway_output"} and parsed.get(key) and not official_can_override_llm:
+                        continue
                     parsed[key] = values
             log.info(
                 "Parsed rates from official pricing page: "
