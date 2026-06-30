@@ -1550,6 +1550,13 @@ async def get_account_overview(force: bool = False, account_email: Optional[str]
             errors.append(str(e))
             log.warning(f"Failed to get settings billing page in overview: {e}")
 
+        await _apply_cost_spend_fallback(
+            result,
+            account_email or session_email,
+            force=force,
+            errors=errors,
+        )
+
         if not result["balance_found"]:
             result["error"] = errors[0] if errors else "Billing balance was not found in the dashboard response."
         return result
@@ -1607,6 +1614,44 @@ async def get_account_overview(force: bool = False, account_email: Optional[str]
         _cache_set(cache_key, result)
     log.info(f"Overview data fetched for {session_email}: balance=${billing.get('balance', 0)}, {len(api_keys)} keys")
     return result
+
+
+async def _apply_cost_spend_fallback(
+    result: Dict[str, Any],
+    account_email: Optional[str],
+    *,
+    force: bool = False,
+    errors: Optional[List[str]] = None,
+) -> None:
+    """Align billing spend with the Dashboard cost total when billing data is stale."""
+    if not account_email:
+        return
+
+    try:
+        cost_result = await _fetch_cost_data_internal(
+            account_email,
+            window_size="month",
+            force=force,
+        )
+        cost_total = float(cost_result.get("total_cost") or 0.0)
+        billing_total = float(result.get("total_spend_30_days") or 0.0)
+        if cost_total <= 0 or abs(cost_total - billing_total) <= 0.0000001:
+            return
+
+        result["total_spend_30_days"] = cost_total
+        if cost_result.get("spend_trend"):
+            result["spend_trend"] = cost_result.get("spend_trend", [])
+        if cost_result.get("by_service"):
+            result["cost_breakdown"] = {
+                s.get("service"): s.get("cost", 0.0)
+                for s in cost_result.get("by_service", [])
+            }
+        result.setdefault("debug_info", {})
+        result["debug_info"]["spend_source"] = "dashboard cost"
+    except Exception as e:
+        if errors is not None:
+            errors.append(str(e))
+        log.warning(f"Failed to fetch dashboard cost fallback for billing spend: {e}")
 
 
 @router.get("/api-keys/debug")
@@ -1815,30 +1860,12 @@ async def get_billing_info(force: bool = False, account_email: Optional[str] = N
         errors.append(str(e))
         log.warning(f"Failed to fetch settings billing page: {e}")
 
-    try:
-        billing_account = account_email or session.get("email")
-        if billing_account:
-            cost_result = await _fetch_cost_data_internal(
-                billing_account,
-                window_size="month",
-                force=force,
-            )
-            cost_total = float(cost_result.get("total_cost") or 0.0)
-            billing_total = float(result.get("total_spend_30_days") or 0.0)
-            if cost_total > 0 and abs(cost_total - billing_total) > 0.0000001:
-                result["total_spend_30_days"] = cost_total
-                if cost_result.get("spend_trend"):
-                    result["spend_trend"] = cost_result.get("spend_trend", [])
-                if cost_result.get("by_service"):
-                    result["cost_breakdown"] = {
-                        s.get("service"): s.get("cost", 0.0)
-                        for s in cost_result.get("by_service", [])
-                    }
-                result.setdefault("debug_info", {})
-                result["debug_info"]["spend_source"] = "dashboard cost"
-    except Exception as e:
-        errors.append(str(e))
-        log.warning(f"Failed to fetch dashboard cost fallback for billing spend: {e}")
+    await _apply_cost_spend_fallback(
+        result,
+        account_email or session.get("email"),
+        force=force,
+        errors=errors,
+    )
 
     if not result.get("balance_found"):
         result["error"] = errors[0] if errors else "Billing balance was not found in the dashboard response."
@@ -3209,8 +3236,6 @@ def _normalize_usage_result_tokens(result: Dict[str, Any]) -> None:
         result["total_tokens"] = sum(item.get("tokens", 0) for item in result.get("by_model") or [])
     elif result.get("segments"):
         result["total_tokens"] = sum(item.get("value", 0) for item in result.get("segments") or [])
-    elif daily_model_totals:
-        result["total_tokens"] = sum(item.get("tokens", 0) for item in daily_model_totals.values())
     else:
         result["total_tokens"] = _normalize_usage_token_value(result.get("total_tokens", 0))
 

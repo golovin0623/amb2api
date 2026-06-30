@@ -23,3 +23,6 @@ def test_account_cost_ui_uses_precise_currency_formatter_for_small_amounts():
     assert "formatAccountCurrency(item.cost" in html
     assert "totalEl.textContent = formatAccountCurrency(detailTotal" in html
     assert "formatAccountCurrency(item.amount" in html
+    assert "const sign = amount < 0 ? '-' : '';" in html
+    assert "sign + '$' + abs.toLocaleString" in html
+    assert "sign + '$' + absText" in html

@@ -19171,22 +19171,13 @@
             const amount = Number(value || 0);
             if (!Number.isFinite(amount)) return '$0.00';
 
-            if (Number.isInteger(options.fixedDigits)) {
-                return '$' + amount.toLocaleString('en-US', {
-                    minimumFractionDigits: options.fixedDigits,
-                    maximumFractionDigits: options.fixedDigits
-                });
-            }
-
             const abs = Math.abs(amount);
-            let digits = 2;
-            if (abs > 0 && abs < 0.01) {
-                digits = 5;
-            } else if (abs > 0 && abs < 1) {
-                digits = 4;
-            }
+            const sign = amount < 0 ? '-' : '';
+            const digits = Number.isInteger(options.fixedDigits)
+                ? options.fixedDigits
+                : (abs > 0 && abs < 0.01 ? 5 : (abs > 0 && abs < 1 ? 4 : 2));
 
-            return '$' + amount.toLocaleString('en-US', {
+            return sign + '$' + abs.toLocaleString('en-US', {
                 minimumFractionDigits: digits,
                 maximumFractionDigits: digits
             });
@@ -19196,8 +19187,9 @@
             const amount = Number(value || 0);
             const maxAmount = Math.max(Math.abs(amount), Math.abs(Number(maxValue || 0)));
             const digits = maxAmount > 0 && maxAmount < 0.01 ? 4 : 2;
-            const text = amount.toFixed(digits);
-            return compact ? text : '$' + text;
+            const absText = Math.abs(amount).toFixed(digits);
+            const sign = amount < 0 ? '-' : '';
+            return compact ? sign + absText : sign + '$' + absText;
         }
 
         // 成本筛选器状态
