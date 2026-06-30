@@ -43,7 +43,7 @@ class _UsageTraceAdapter:
         return True
 
 
-def _trace(trace_id, model, key_masked, start_time):
+def _trace(trace_id, model, key_masked, start_time, *, success=True):
     return {
         "trace_id": trace_id,
         "model": model,
@@ -54,7 +54,7 @@ def _trace(trace_id, model, key_masked, start_time):
             "first_chunk_sent": 120.0,
             "response_complete": 300.0,
         },
-        "metadata": {},
+        "metadata": {"usage_success": success},
         "prompt_tokens": 10,
         "completion_tokens": 20,
         "total_tokens": 30,
@@ -146,6 +146,92 @@ async def test_usage_aggregated_does_not_double_count_when_unified_stats_already
     assert summary["total"] == {"ok": 5, "fail": 0}
     assert summary["models"]["gemini-3.1-flash-lite"]["ok"] == 5
     assert summary["keys"][masked]["ok"] == 5
+
+
+@pytest.mark.asyncio
+async def test_usage_aggregated_preserves_failed_trace_status():
+    key = "45d00000000000000c0c"
+    masked = mask_key(key)
+    adapter = _UsageTraceAdapter(
+        keys=[key],
+        unified_stats={
+            masked: {
+                "full_key_hash": "",
+                "success_count": 0,
+                "failure_count": 1,
+                "model_counts": {"gemini-3.1-flash-lite": {"ok": 0, "fail": 1}},
+                "daily_limit_total": 1000,
+                "daily_limit_models": {},
+                "next_reset_time": "2099-01-01T07:00:00+00:00",
+            }
+        },
+        traces=[
+            _trace("failed", "gemini-3.1-flash-lite", masked, 1000.0, success=False),
+        ],
+    )
+
+    _reset_stats_singletons()
+    try:
+        with patch("src.api.admin_routes.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+            with patch("src.stats.unified_stats.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+                with patch("src.storage.storage_adapter.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+                    response = await admin_routes.usage_aggregated(token="x")
+    finally:
+        _reset_stats_singletons()
+
+    payload = json.loads(response.body.decode("utf-8"))
+    summary = payload["log_summary"]
+
+    assert payload["total_all_model_calls"] == 1
+    assert summary["total"] == {"ok": 0, "fail": 1}
+    assert summary["models"]["gemini-3.1-flash-lite"] == {"ok": 0, "fail": 1}
+    assert summary["keys"][masked]["ok"] == 0
+    assert summary["keys"][masked]["fail"] == 1
+
+
+@pytest.mark.asyncio
+async def test_usage_aggregated_rebuilds_global_totals_from_merged_keys():
+    key_a = "45d00000000000000c0c"
+    key_b = "01460000000000004af9"
+    masked_a = mask_key(key_a)
+    masked_b = mask_key(key_b)
+    adapter = _UsageTraceAdapter(
+        keys=[key_a, key_b],
+        unified_stats={
+            masked_a: {
+                "full_key_hash": "",
+                "success_count": 5,
+                "failure_count": 0,
+                "model_counts": {"gemini-3.1-flash-lite": {"ok": 5, "fail": 0}},
+                "daily_limit_total": 1000,
+                "daily_limit_models": {},
+                "next_reset_time": "2099-01-01T07:00:00+00:00",
+            }
+        },
+        traces=[
+            _trace("t1", "gemini-3.1-flash-lite", masked_b, 1000.0),
+            _trace("t2", "gemini-3.1-flash-lite", masked_b, 1001.0),
+            _trace("t3", "gemini-3.1-flash-lite", masked_b, 1002.0),
+        ],
+    )
+
+    _reset_stats_singletons()
+    try:
+        with patch("src.api.admin_routes.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+            with patch("src.stats.unified_stats.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+                with patch("src.storage.storage_adapter.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+                    response = await admin_routes.usage_aggregated(token="x")
+    finally:
+        _reset_stats_singletons()
+
+    payload = json.loads(response.body.decode("utf-8"))
+    summary = payload["log_summary"]
+
+    assert payload["total_all_model_calls"] == 8
+    assert summary["total"] == {"ok": 8, "fail": 0}
+    assert summary["models"]["gemini-3.1-flash-lite"]["ok"] == 8
+    assert summary["keys"][masked_a]["ok"] == 5
+    assert summary["keys"][masked_b]["ok"] == 3
 
 
 @pytest.mark.asyncio

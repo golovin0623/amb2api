@@ -391,6 +391,7 @@ async def convert_streaming_response(
                     cache_creation_5m_tokens=cache_creation_5m_tokens,
                     cache_creation_1h_tokens=cache_creation_1h_tokens,
                     total_tokens=total_tokens,
+                    success=True,
                 )
 
     return StreamingResponse(openai_stream_generator(), media_type="text/event-stream")
@@ -1002,6 +1003,7 @@ async def fake_stream_response_for_assembly(openai_request: ChatCompletionReques
                     cache_creation_5m_tokens=cache_creation_5m_tokens,
                     cache_creation_1h_tokens=cache_creation_1h_tokens,
                     total_tokens=total_tokens,
+                    success=True,
                 )
 
     return StreamingResponse(

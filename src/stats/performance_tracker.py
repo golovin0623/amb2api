@@ -303,10 +303,17 @@ class PerformanceTracker:
                 if key_index >= 0:
                     key_masked = f"Key #{key_index}"
 
-            summary["total"]["ok"] += 1
+            metadata = trace.get("metadata") if isinstance(trace.get("metadata"), dict) else {}
+            trace_success = metadata.get("usage_success")
+            ok_count = 1 if trace_success is not False else 0
+            fail_count = 0 if ok_count else 1
+
+            summary["total"]["ok"] += ok_count
+            summary["total"]["fail"] += fail_count
 
             model_entry = summary["models"].setdefault(model, {"ok": 0, "fail": 0})
-            model_entry["ok"] += 1
+            model_entry["ok"] += ok_count
+            model_entry["fail"] += fail_count
 
             if key_masked and key_masked != "-":
                 key_entry = summary["keys"].setdefault(
@@ -318,10 +325,13 @@ class PerformanceTracker:
                         "model_counts": {},
                     },
                 )
-                key_entry["ok"] += 1
+                key_entry["ok"] += ok_count
+                key_entry["fail"] += fail_count
                 key_model = key_entry["models"].setdefault(model, {"ok": 0, "fail": 0})
-                key_model["ok"] += 1
-                key_entry["model_counts"][model] = key_entry["model_counts"].get(model, 0) + 1
+                key_model["ok"] += ok_count
+                key_model["fail"] += fail_count
+                if ok_count:
+                    key_entry["model_counts"][model] = key_entry["model_counts"].get(model, 0) + ok_count
 
         return summary
     
@@ -350,6 +360,7 @@ class PerformanceTracker:
         total_tokens: Optional[int] = None,
         cache_creation_5m_tokens: int = 0,
         cache_creation_1h_tokens: int = 0,
+        success: Optional[bool] = None,
     ):
         """结束追踪并持久化"""
         if trace_id not in self.active_traces:
@@ -368,6 +379,8 @@ class PerformanceTracker:
         else:
             parsed_total = _to_non_negative_int(total_tokens, fallback_total)
             trace.total_tokens = max(parsed_total, fallback_total)
+        if success is not None:
+            trace.metadata["usage_success"] = bool(success)
         
         # 确保有结束时间
         if "response_complete" not in trace.timestamps:

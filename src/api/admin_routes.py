@@ -118,22 +118,8 @@ def _merge_trace_usage_summary(stats_data: Dict[str, Any], trace_summary: Dict[s
         return
 
     keys = stats_data.setdefault("keys", {})
-    models = stats_data.setdefault("models", {})
-    total = stats_data.setdefault("total", {})
-
-    for model_name, trace_model in (trace_summary.get("models") or {}).items():
-        model = str(model_name or "").strip()
-        if not model:
-            continue
-        model_entry = models.setdefault(model, {"ok": 0, "fail": 0})
-        model_entry["ok"] = max(
-            _as_usage_count(model_entry.get("ok")),
-            _as_usage_count((trace_model or {}).get("ok")),
-        )
-        model_entry["fail"] = max(
-            _as_usage_count(model_entry.get("fail")),
-            _as_usage_count((trace_model or {}).get("fail")),
-        )
+    stats_data.setdefault("models", {})
+    stats_data.setdefault("total", {})
 
     for key_name, trace_key in (trace_summary.get("keys") or {}).items():
         masked_key = str(key_name or "").strip()
@@ -168,22 +154,28 @@ def _merge_trace_usage_summary(stats_data: Dict[str, Any], trace_summary: Dict[s
         )
         key_entry["total"] = key_entry["ok"] + key_entry["fail"]
 
-    model_ok_total = sum(_as_usage_count(v.get("ok")) for v in models.values() if isinstance(v, dict))
-    model_fail_total = sum(_as_usage_count(v.get("fail")) for v in models.values() if isinstance(v, dict))
-    trace_total = trace_summary.get("total") or {}
-    success = max(
-        _as_usage_count(total.get("success")),
-        _as_usage_count(trace_total.get("ok")),
-        model_ok_total,
-    )
-    failure = max(
-        _as_usage_count(total.get("failure")),
-        _as_usage_count(trace_total.get("fail")),
-        model_fail_total,
-    )
-    total["success"] = success
-    total["failure"] = failure
-    total["total_calls"] = success + failure
+    rebuilt_models: Dict[str, Dict[str, int]] = {}
+    success = 0
+    failure = 0
+    for key_entry in keys.values():
+        if not isinstance(key_entry, dict):
+            continue
+        success += _as_usage_count(key_entry.get("ok"))
+        failure += _as_usage_count(key_entry.get("fail"))
+        for model_name, detail in (key_entry.get("models") or {}).items():
+            model = str(model_name or "").strip()
+            if not model or not isinstance(detail, dict):
+                continue
+            model_entry = rebuilt_models.setdefault(model, {"ok": 0, "fail": 0})
+            model_entry["ok"] += _as_usage_count(detail.get("ok"))
+            model_entry["fail"] += _as_usage_count(detail.get("fail"))
+
+    stats_data["models"] = rebuilt_models
+    stats_data["total"] = {
+        "success": success,
+        "failure": failure,
+        "total_calls": success + failure,
+    }
 
 
 def _filter_trace_usage_summary(trace_summary: Dict[str, Any], valid_keys: Optional[List[str]]) -> Dict[str, Any]:
