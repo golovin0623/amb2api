@@ -260,7 +260,7 @@ async def _forward_openai_error_response(
 
     if trace and tracker:
         try:
-            await tracker.end_trace(trace.trace_id)
+            await tracker.end_trace(trace.trace_id, success=False)
         except Exception:
             pass
 
@@ -664,7 +664,7 @@ async def anthropic_messages(
 
         if trace:
             try:
-                await tracker.end_trace(trace.trace_id)
+                await tracker.end_trace(trace.trace_id, success=False)
             except Exception:
                 pass
 
@@ -716,6 +716,7 @@ async def anthropic_messages(
             total_tokens=usage_metrics["total_tokens"],
             cache_creation_5m_tokens=usage_metrics.get("cache_creation_5m_tokens", 0),
             cache_creation_1h_tokens=usage_metrics.get("cache_creation_1h_tokens", 0),
+            success=True,
         )
 
     return JSONResponse(content=anthropic_response)
@@ -1109,6 +1110,7 @@ async def chat_completions(
                 total_tokens=usage_metrics["total_tokens"],
                 cache_creation_5m_tokens=usage_metrics.get("cache_creation_5m_tokens", 0),
                 cache_creation_1h_tokens=usage_metrics.get("cache_creation_1h_tokens", 0),
+                success=True,
             )
 
         return JSONResponse(content=openai_response)

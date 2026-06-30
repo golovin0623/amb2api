@@ -269,6 +269,71 @@ class PerformanceTracker:
             except Exception as e:
                 log.warning(f"Failed to load performance tracker meta: {e}")
             self._initialized = True
+
+    async def _load_all_traces(self) -> List[Dict[str, Any]]:
+        """Load trace records from every fixed shard."""
+        from ..storage.storage_adapter import get_storage_adapter
+        adapter = await get_storage_adapter()
+
+        all_traces: List[Dict[str, Any]] = []
+        for i in range(ShardManager.MAX_SHARDS):
+            shard_key = f"perf_traces_{i}"
+            try:
+                shard_data = await adapter.get_perf(shard_key, None)
+                if shard_data and isinstance(shard_data, list):
+                    all_traces.extend(t for t in shard_data if isinstance(t, dict))
+            except Exception as e:
+                log.warning(f"Failed to load shard {i}: {e}")
+        return all_traces
+
+    async def get_usage_summary(self) -> Dict[str, Any]:
+        """Aggregate request traces into the usage log-summary shape."""
+        all_traces = await self._load_all_traces()
+        summary: Dict[str, Any] = {
+            "models": {},
+            "keys": {},
+            "total": {"ok": 0, "fail": 0},
+        }
+
+        for trace in all_traces:
+            model = str(trace.get("model") or "unknown").strip() or "unknown"
+            key_masked = str(trace.get("key_masked") or "").strip()
+            if not key_masked:
+                key_index = _to_non_negative_int(trace.get("key_index", -1), -1)
+                if key_index >= 0:
+                    key_masked = f"Key #{key_index}"
+
+            metadata = trace.get("metadata") if isinstance(trace.get("metadata"), dict) else {}
+            trace_success = metadata.get("usage_success")
+            ok_count = 1 if trace_success is not False else 0
+            fail_count = 0 if ok_count else 1
+
+            summary["total"]["ok"] += ok_count
+            summary["total"]["fail"] += fail_count
+
+            model_entry = summary["models"].setdefault(model, {"ok": 0, "fail": 0})
+            model_entry["ok"] += ok_count
+            model_entry["fail"] += fail_count
+
+            if key_masked and key_masked != "-":
+                key_entry = summary["keys"].setdefault(
+                    key_masked,
+                    {
+                        "ok": 0,
+                        "fail": 0,
+                        "models": {},
+                        "model_counts": {},
+                    },
+                )
+                key_entry["ok"] += ok_count
+                key_entry["fail"] += fail_count
+                key_model = key_entry["models"].setdefault(model, {"ok": 0, "fail": 0})
+                key_model["ok"] += ok_count
+                key_model["fail"] += fail_count
+                if ok_count:
+                    key_entry["model_counts"][model] = key_entry["model_counts"].get(model, 0) + ok_count
+
+        return summary
     
     def start_trace(self, trace_id: str, model: str) -> RequestTrace:
         """开始追踪"""
@@ -295,6 +360,7 @@ class PerformanceTracker:
         total_tokens: Optional[int] = None,
         cache_creation_5m_tokens: int = 0,
         cache_creation_1h_tokens: int = 0,
+        success: Optional[bool] = None,
     ):
         """结束追踪并持久化"""
         if trace_id not in self.active_traces:
@@ -313,6 +379,8 @@ class PerformanceTracker:
         else:
             parsed_total = _to_non_negative_int(total_tokens, fallback_total)
             trace.total_tokens = max(parsed_total, fallback_total)
+        if success is not None:
+            trace.metadata["usage_success"] = bool(success)
         
         # 确保有结束时间
         if "response_complete" not in trace.timestamps:
@@ -389,20 +457,7 @@ class PerformanceTracker:
         Returns:
             分页结果字典
         """
-        from ..storage.storage_adapter import get_storage_adapter
-        adapter = await get_storage_adapter()
-        
-        all_traces = []
-        
-        # 从所有分片加载数据
-        for i in range(ShardManager.MAX_SHARDS):
-            shard_key = f"perf_traces_{i}"
-            try:
-                shard_data = await adapter.get_perf(shard_key, None)
-                if shard_data and isinstance(shard_data, list):
-                    all_traces.extend(shard_data)
-            except Exception as e:
-                log.warning(f"Failed to load shard {i}: {e}")
+        all_traces = await self._load_all_traces()
         
         # 过滤
         if model:
@@ -525,20 +580,7 @@ class PerformanceTracker:
             if cache_key in self._stats_cache:
                 return self._stats_cache[cache_key]
         
-        from ..storage.storage_adapter import get_storage_adapter
-        adapter = await get_storage_adapter()
-        
-        all_traces = []
-        
-        # 从所有分片加载数据
-        for i in range(ShardManager.MAX_SHARDS):
-            shard_key = f"perf_traces_{i}"
-            try:
-                shard_data = await adapter.get_perf(shard_key, None)
-                if shard_data and isinstance(shard_data, list):
-                    all_traces.extend(shard_data)
-            except Exception:
-                pass
+        all_traces = await self._load_all_traces()
         
         # 模型筛选
         if model:
@@ -771,22 +813,63 @@ class PerformanceTracker:
         stats = await self.get_stats()
         return stats.get("models", [])
     
-    async def clear_all(self):
-        """清除所有追踪数据（只删除已存在的分片）"""
+    async def clear_for_key(self, masked_key: str) -> int:
+        """Remove persisted request traces for a masked key."""
+        if not masked_key:
+            return 0
+
         from ..storage.storage_adapter import get_storage_adapter
         adapter = await get_storage_adapter()
-        
-        # 只删除有数据的分片，不创建空的分片
-        for shard_idx in list(self.shard_manager.shard_counts.keys()):
-            shard_key = f"perf_traces_{shard_idx}"
-            try:
-                await adapter.delete_perf(shard_key)
-            except Exception:
-                pass
-        
-        self.shard_manager = ShardManager()
-        await adapter.set_perf("perf_meta", self.shard_manager.to_dict())
-        self._stats_cache = None
+
+        removed = 0
+        async with self._save_lock:
+            for shard_idx in range(ShardManager.MAX_SHARDS):
+                shard_key = f"perf_traces_{shard_idx}"
+                try:
+                    shard_data = await adapter.get_perf(shard_key, None)
+                    if not isinstance(shard_data, list) or not shard_data:
+                        continue
+
+                    filtered = [
+                        trace for trace in shard_data
+                        if not isinstance(trace, dict)
+                        or str(trace.get("key_masked", "")).strip() != masked_key
+                    ]
+                    if len(filtered) == len(shard_data):
+                        continue
+
+                    removed += len(shard_data) - len(filtered)
+                    if filtered:
+                        await adapter.set_perf(shard_key, filtered)
+                        self.shard_manager.shard_counts[shard_idx] = len(filtered)
+                    else:
+                        await adapter.delete_perf(shard_key)
+                        self.shard_manager.shard_counts.pop(shard_idx, None)
+                except Exception as e:
+                    log.warning(f"Failed to clear traces for key from shard {shard_idx}: {e}")
+
+            if removed:
+                await adapter.set_perf("perf_meta", self.shard_manager.to_dict())
+                self._stats_cache = None
+        return removed
+
+    async def clear_all(self):
+        """清除所有追踪数据"""
+        from ..storage.storage_adapter import get_storage_adapter
+        adapter = await get_storage_adapter()
+
+        async with self._save_lock:
+            # 扫描固定分片，避免 perf_meta 缺失或过期时遗留旧请求明细。
+            for shard_idx in range(ShardManager.MAX_SHARDS):
+                shard_key = f"perf_traces_{shard_idx}"
+                try:
+                    await adapter.delete_perf(shard_key)
+                except Exception:
+                    pass
+
+            self.shard_manager = ShardManager()
+            await adapter.set_perf("perf_meta", self.shard_manager.to_dict())
+            self._stats_cache = None
         
         log.info("All performance traces cleared")
 
