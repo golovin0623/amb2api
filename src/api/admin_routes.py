@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -82,6 +82,153 @@ def _is_sensitive_config_key(key: Any) -> bool:
         or normalized.endswith("_uri")
         or normalized == "proxy"
     )
+
+
+def _as_usage_count(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except Exception:
+        return 0
+    return parsed if parsed > 0 else 0
+
+
+def _ensure_summary_key_entry(keys: Dict[str, Any], masked_key: str) -> Dict[str, Any]:
+    entry = keys.setdefault(masked_key, {})
+    entry.setdefault("ok", 0)
+    entry.setdefault("fail", 0)
+    entry.setdefault("total", 0)
+    entry.setdefault("model_counts", {})
+    entry.setdefault("models", {})
+    entry.setdefault("daily_limit_total", 1000)
+    entry.setdefault("daily_limit_models", {})
+    entry.setdefault("next_reset_time", None)
+    entry.setdefault("last_call_time", 0)
+    return entry
+
+
+def _merge_trace_usage_summary(stats_data: Dict[str, Any], trace_summary: Dict[str, Any]) -> None:
+    """
+    Backfill display usage stats from request traces without double-counting.
+
+    UnifiedStats is still the quota source of truth, but request traces are the
+    source backing the usage detail table. If trace counts are higher than the
+    unified counters, expose the higher trace count for UI summaries.
+    """
+    if not isinstance(trace_summary, dict):
+        return
+
+    keys = stats_data.setdefault("keys", {})
+    models = stats_data.setdefault("models", {})
+    total = stats_data.setdefault("total", {})
+
+    for model_name, trace_model in (trace_summary.get("models") or {}).items():
+        model = str(model_name or "").strip()
+        if not model:
+            continue
+        model_entry = models.setdefault(model, {"ok": 0, "fail": 0})
+        model_entry["ok"] = max(
+            _as_usage_count(model_entry.get("ok")),
+            _as_usage_count((trace_model or {}).get("ok")),
+        )
+        model_entry["fail"] = max(
+            _as_usage_count(model_entry.get("fail")),
+            _as_usage_count((trace_model or {}).get("fail")),
+        )
+
+    for key_name, trace_key in (trace_summary.get("keys") or {}).items():
+        masked_key = str(key_name or "").strip()
+        if not masked_key:
+            continue
+        key_entry = _ensure_summary_key_entry(keys, masked_key)
+        key_models = key_entry.setdefault("models", {})
+        key_model_counts = key_entry.setdefault("model_counts", {})
+
+        for model_name, trace_model_detail in ((trace_key or {}).get("models") or {}).items():
+            model = str(model_name or "").strip()
+            if not model:
+                continue
+            model_detail = key_models.setdefault(model, {"ok": 0, "fail": 0})
+            trace_ok = _as_usage_count((trace_model_detail or {}).get("ok"))
+            trace_fail = _as_usage_count((trace_model_detail or {}).get("fail"))
+            model_detail["ok"] = max(_as_usage_count(model_detail.get("ok")), trace_ok)
+            model_detail["fail"] = max(_as_usage_count(model_detail.get("fail")), trace_fail)
+            key_model_counts[model] = max(_as_usage_count(key_model_counts.get(model)), model_detail["ok"])
+
+        ok_from_models = sum(_as_usage_count(v.get("ok")) for v in key_models.values() if isinstance(v, dict))
+        fail_from_models = sum(_as_usage_count(v.get("fail")) for v in key_models.values() if isinstance(v, dict))
+        key_entry["ok"] = max(
+            _as_usage_count(key_entry.get("ok")),
+            _as_usage_count((trace_key or {}).get("ok")),
+            ok_from_models,
+        )
+        key_entry["fail"] = max(
+            _as_usage_count(key_entry.get("fail")),
+            _as_usage_count((trace_key or {}).get("fail")),
+            fail_from_models,
+        )
+        key_entry["total"] = key_entry["ok"] + key_entry["fail"]
+
+    model_ok_total = sum(_as_usage_count(v.get("ok")) for v in models.values() if isinstance(v, dict))
+    model_fail_total = sum(_as_usage_count(v.get("fail")) for v in models.values() if isinstance(v, dict))
+    trace_total = trace_summary.get("total") or {}
+    success = max(
+        _as_usage_count(total.get("success")),
+        _as_usage_count(trace_total.get("ok")),
+        model_ok_total,
+    )
+    failure = max(
+        _as_usage_count(total.get("failure")),
+        _as_usage_count(trace_total.get("fail")),
+        model_fail_total,
+    )
+    total["success"] = success
+    total["failure"] = failure
+    total["total_calls"] = success + failure
+
+
+def _filter_trace_usage_summary(trace_summary: Dict[str, Any], valid_keys: Optional[List[str]]) -> Dict[str, Any]:
+    if valid_keys is None:
+        return trace_summary
+
+    try:
+        from ..stats.unified_stats import mask_key
+
+        valid_masked_keys = {mask_key(k) for k in valid_keys if k}
+    except Exception:
+        valid_masked_keys = set()
+
+    filtered_keys = {
+        key: value
+        for key, value in (trace_summary.get("keys") or {}).items()
+        if key in valid_masked_keys
+    }
+    filtered: Dict[str, Any] = {
+        "models": {},
+        "keys": filtered_keys,
+        "total": {"ok": 0, "fail": 0},
+    }
+
+    for key_data in filtered_keys.values():
+        filtered["total"]["ok"] += _as_usage_count((key_data or {}).get("ok"))
+        filtered["total"]["fail"] += _as_usage_count((key_data or {}).get("fail"))
+        for model, detail in ((key_data or {}).get("models") or {}).items():
+            model_entry = filtered["models"].setdefault(model, {"ok": 0, "fail": 0})
+            model_entry["ok"] += _as_usage_count((detail or {}).get("ok"))
+            model_entry["fail"] += _as_usage_count((detail or {}).get("fail"))
+
+    return filtered
+
+
+async def _backfill_usage_stats_from_traces(stats_data: Dict[str, Any], valid_keys: Optional[List[str]] = None) -> None:
+    try:
+        from ..stats.performance_tracker import get_performance_tracker
+
+        tracker = await get_performance_tracker()
+        trace_summary = await tracker.get_usage_summary()
+        trace_summary = _filter_trace_usage_summary(trace_summary, valid_keys)
+        _merge_trace_usage_summary(stats_data, trace_summary)
+    except Exception as e:
+        log.warning(f"Failed to backfill usage stats from request traces: {e}")
 
 
 def _redact_config_value(value: Any) -> Any:
@@ -452,6 +599,7 @@ async def usage_aggregated(model: str = None, key: str = None, only: str = None,
     
     # 获取统计数据（只包含有效密钥）
     stats_data = await unified_stats.get_all_stats(valid_keys=cfg_keys)
+    await _backfill_usage_stats_from_traces(stats_data, cfg_keys)
     
     # 构建响应
     models = stats_data.get("models", {})
@@ -735,6 +883,17 @@ async def usage_reset(payload: Dict[str, Any], token: str = Depends(authenticate
         await unified_stats.reset_stats(masked_key=filename)
     else:
         await unified_stats.reset_stats()
+
+    try:
+        from ..stats.performance_tracker import get_performance_tracker
+
+        tracker = await get_performance_tracker()
+        if filename:
+            await tracker.clear_for_key(str(filename))
+        else:
+            await tracker.clear_all()
+    except Exception as e:
+        log.warning(f"Failed to clear request trace stats during usage reset: {e}")
     
     return JSONResponse(content={"message": "使用统计已重置"})
 
@@ -760,6 +919,7 @@ async def usage_summary(model: str = None, key: str = None, only: str = None, li
     unified_stats = await get_unified_stats()
     await unified_stats.ensure_keys_exist(cfg_keys)
     stats_data = await unified_stats.get_all_stats(valid_keys=cfg_keys)
+    await _backfill_usage_stats_from_traces(stats_data, cfg_keys)
     
     models = stats_data.get("models", {})
     keys = stats_data.get("keys", {})

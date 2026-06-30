@@ -18581,6 +18581,65 @@
             }
         }
 
+        const ACCOUNT_CHART_X_PADDING = 0.05;
+        const accountChartTouchState = {};
+
+        function getAccountChartPointRatio(index, count) {
+            const total = Math.max(1, Number(count) || 1);
+            if (total <= 1) return 0.5;
+            const safeIndex = Math.max(0, Math.min(Number(index) || 0, total - 1));
+            return ACCOUNT_CHART_X_PADDING + (safeIndex / (total - 1)) * (1 - ACCOUNT_CHART_X_PADDING * 2);
+        }
+
+        function getAccountChartPointLeft(rect, index, count) {
+            return Math.max(0, Number(rect?.width) || 0) * getAccountChartPointRatio(index, count);
+        }
+
+        function getNearestAccountChartIndex(clientX, rect, count) {
+            const total = Math.max(1, Number(count) || 1);
+            if (!rect || total <= 1) return 0;
+            const rawRatio = ((Number(clientX) || 0) - rect.left) / Math.max(rect.width, 1);
+            const normalized = (rawRatio - ACCOUNT_CHART_X_PADDING) / (1 - ACCOUNT_CHART_X_PADDING * 2);
+            return Math.max(0, Math.min(total - 1, Math.round(normalized * (total - 1))));
+        }
+
+        function getAccountChartLabelStyle(index, count) {
+            const left = (getAccountChartPointRatio(index, count) * 100).toFixed(4) + '%';
+            return 'left: ' + left + '; transform: translateX(-50%);';
+        }
+
+        function rememberAccountChartTouch(event, chartKey) {
+            const touch = event.touches && event.touches[0];
+            if (!touch) return;
+            accountChartTouchState[chartKey] = { x: touch.clientX, y: touch.clientY };
+        }
+
+        function shouldDismissAccountChartTouch(event, chartKey) {
+            const touch = event.touches && event.touches[0];
+            const start = accountChartTouchState[chartKey];
+            if (!touch || !start) return false;
+            const dx = Math.abs(touch.clientX - start.x);
+            const dy = Math.abs(touch.clientY - start.y);
+            return dy > 12 && dy > dx * 1.2;
+        }
+
+        function finishAccountChartTouch(chartKey, hideFn) {
+            delete accountChartTouchState[chartKey];
+            hideFn();
+        }
+
+        function hideAccountChartTooltips() {
+            try { hideUsageTooltip(); } catch (e) {}
+            try { hideCostTooltip(); } catch (e) {}
+        }
+
+        if (!window.__accountChartTooltipDismissHandlersInstalled) {
+            window.__accountChartTooltipDismissHandlersInstalled = true;
+            window.addEventListener('scroll', hideAccountChartTooltips, { capture: true, passive: true });
+            window.addEventListener('resize', hideAccountChartTooltips, { passive: true });
+            window.addEventListener('orientationchange', hideAccountChartTooltips, { passive: true });
+        }
+
         // 渲染使用量图表
         function renderUsageChart(el, data) {
             try {
@@ -18717,10 +18776,6 @@
 
                     const allModelPoints = {};
 
-                    // 给两侧留出边距（10%）
-                    const padding = width * 0.05;
-                    const innerWidth = width - padding * 2;
-
                     sortedModels.forEach(({ model, arr }, modelIdx) => {
                         const color = modelColors[model] || colorPalette[modelIdx % colorPalette.length];
                         const gradId = Object.keys(modelColors).indexOf(model);
@@ -18728,7 +18783,7 @@
                         const points = arr.map((val, i) => {
                             const yVal = Math.max(0, Math.min(height, height - (val / yMax) * height));
                             return {
-                                x: dataPointCount > 1 ? padding + (i / (dataPointCount - 1)) * innerWidth : width / 2,
+                                x: getAccountChartPointRatio(i, dataPointCount) * width,
                                 y: yVal,
                                 value: val
                             };
@@ -18758,7 +18813,7 @@
                     html += '<div id="usageChartDots" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none;"></div>';
 
                     // 交互层（支持触摸事件）
-                    html += '<div id="usageChartOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; cursor: crosshair; z-index: 10;" onmousemove="showUsageTooltip(event)" onmouseleave="hideUsageTooltip()" ontouchstart="handleUsageTouch(event)" ontouchmove="handleUsageTouch(event)"></div>';
+                    html += '<div id="usageChartOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; cursor: crosshair; z-index: 10;" onmousemove="showUsageTooltip(event)" onmouseleave="hideUsageTooltip()" ontouchstart="handleUsageTouch(event)" ontouchmove="handleUsageTouch(event)" ontouchend="finishUsageTouch()" ontouchcancel="finishUsageTouch()"></div>';
 
                     // 存储点数据
                     window.usageChartPoints = allModelPoints;
@@ -18803,19 +18858,7 @@
                         const d = new Date(dates[idx]);
                         const dateStr = (d.getMonth() + 1) + '/' + d.getDate();
 
-                        // 第一个标签左对齐，最后一个右对齐，中间的按位置居中
-                        let posStyle = '';
-                        if (idx === 0) {
-                            posStyle = 'left: 5%;';
-                        } else if (idx === dates.length - 1) {
-                            posStyle = 'right: 5%;';  // 最后一个使用right定位避免溢出
-                        } else {
-                            // 中间标签使用left定位并居中
-                            const position = dates.length > 1
-                                ? 5 + (idx / (dates.length - 1)) * 90  // 5% 到 95%
-                                : 50;
-                            posStyle = 'left: ' + position + '%; transform: translateX(-50%);';
-                        }
+                        const posStyle = getAccountChartLabelStyle(idx, dates.length);
 
                         html += '<div style="position: absolute; white-space: nowrap; ' + posStyle + '">' + dateStr + '</div>';
                     });
@@ -18845,17 +18888,13 @@
             if (dailyByModel.length === 0) return;
 
             const rect = overlay.getBoundingClientRect();
-            const x = event.clientX - rect.left;
-            const pct = x / rect.width;
-            const idx = Math.min(Math.floor(pct * dailyByModel.length), dailyByModel.length - 1);
+            const idx = getNearestAccountChartIndex(event.clientX, rect, dailyByModel.length);
 
             if (idx < 0 || !dailyByModel[idx]) return;
 
             // 显示垂直指示线（考虑 5% padding 与曲线绘制一致）
             if (indicator) {
-                const padding = rect.width * 0.05;
-                const innerWidth = rect.width - padding * 2;
-                const indicatorX = padding + (idx / Math.max(dailyByModel.length - 1, 1)) * innerWidth;
+                const indicatorX = getAccountChartPointLeft(rect, idx, dailyByModel.length);
                 indicator.style.display = 'block';
                 indicator.style.left = indicatorX + 'px';
             }
@@ -18868,10 +18907,7 @@
                 const containerHeight = rect.height;
                 let dotsHtml = '';
 
-                // X 坐标使用与指示线完全相同的计算方式，确保对齐
-                const padding = rect.width * 0.05;
-                const innerWidth = rect.width - padding * 2;
-                const dotX = padding + (idx / Math.max(dailyByModel.length - 1, 1)) * innerWidth;
+                const dotX = getAccountChartPointLeft(rect, idx, dailyByModel.length);
 
                 // Y 坐标需要考虑 SVG viewBox 到容器的缩放
                 const scaleY = containerHeight / svgHeight;
@@ -19021,6 +19057,12 @@
         function handleUsageTouch(event) {
             // 不再阻止默认滚动行为，允许页面正常滚动
             if (event.touches && event.touches.length > 0) {
+                if (event.type === 'touchstart') {
+                    rememberAccountChartTouch(event, 'usage');
+                } else if (shouldDismissAccountChartTouch(event, 'usage')) {
+                    finishUsageTouch();
+                    return;
+                }
                 const touch = event.touches[0];
                 window.lastTouchY = touch.clientY;
                 // 创建一个模拟的事件对象
@@ -19030,6 +19072,10 @@
                 };
                 showUsageTooltip(fakeEvent);
             }
+        }
+
+        function finishUsageTouch() {
+            finishAccountChartTouch('usage', hideUsageTooltip);
         }
 
         // 渲染使用量表格（带分布图和分类）
@@ -20057,15 +20103,11 @@
                         const color = modelColors[model] || colorPalette[sortIdx % colorPalette.length];
                         const gradIdx = Object.keys(modelColors).indexOf(model);
 
-                        // 给两侧留出边距（5%）
-                        const padding = width * 0.05;
-                        const innerWidth = width - padding * 2;
-
                         // 计算点坐标（确保Y不低于0，不高于height）
                         const points = arr.map((val, i) => {
                             const yVal = Math.max(0, Math.min(height, height - (val / yMax) * height));
                             return {
-                                x: padding + (i / Math.max(arr.length - 1, 1)) * innerWidth,
+                                x: getAccountChartPointRatio(i, arr.length) * width,
                                 y: yVal,
                                 value: val
                             };
@@ -20088,13 +20130,10 @@
 
                     // 如果没有按模型的数据，使用总趋势
                     if (sortedModels.length === 0 && trendData.length > 0) {
-                        const padding = width * 0.05;
-                        const innerWidth = width - padding * 2;
-
                         const points = trendData.map((t, i) => {
                             const yVal = Math.max(0, Math.min(height, height - ((t.amount || 0) / yMax) * height));
                             return {
-                                x: padding + (i / Math.max(trendData.length - 1, 1)) * innerWidth,
+                                x: getAccountChartPointRatio(i, trendData.length) * width,
                                 y: yVal,
                                 value: t.amount || 0
                             };
@@ -20120,7 +20159,7 @@
                     html += '<div id="costChartDots" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none;"></div>';
 
                     // 交互层（支持触摸事件）
-                    html += '<div id="costChartOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; cursor: crosshair; z-index: 10;" onmousemove="showCostTooltip(event)" onmouseleave="hideCostTooltip()" ontouchstart="handleCostTouch(event)" ontouchmove="handleCostTouch(event)"></div>';
+                    html += '<div id="costChartOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; cursor: crosshair; z-index: 10;" onmousemove="showCostTooltip(event)" onmouseleave="hideCostTooltip()" ontouchstart="handleCostTouch(event)" ontouchmove="handleCostTouch(event)" ontouchend="finishCostTouch()" ontouchcancel="finishCostTouch()"></div>';
 
                     // 存储点数据
                     window.costChartPoints = allModelPoints;
@@ -20156,19 +20195,7 @@
                         const d = new Date(dates[idx]);
                         const dateStr = (d.getMonth() + 1) + '/' + d.getDate();
 
-                        // 第一个标签左对齐，最后一个右对齐，中间的按位置居中
-                        let posStyle = '';
-                        if (idx === 0) {
-                            posStyle = 'left: 5%;';
-                        } else if (idx === dates.length - 1) {
-                            posStyle = 'right: 5%;';  // 最后一个使用right定位避免溢出
-                        } else {
-                            // 中间标签使用left定位并居中
-                            const position = dates.length > 1
-                                ? 5 + (idx / (dates.length - 1)) * 90  // 5% 到 95%
-                                : 50;
-                            posStyle = 'left: ' + position + '%; transform: translateX(-50%);';
-                        }
+                        const posStyle = getAccountChartLabelStyle(idx, dates.length);
 
                         html += '<div style="position: absolute; white-space: nowrap; ' + posStyle + '">' + dateStr + '</div>';
                     });
@@ -20210,18 +20237,14 @@
             if (!window.costChartData.trend || window.costChartData.trend.length === 0) return;
 
             const rect = overlay.getBoundingClientRect();
-            const x = event.clientX - rect.left;
-            const pct = x / rect.width;
             const trend = window.costChartData.trend || [];
-            const idx = Math.min(Math.floor(pct * trend.length), trend.length - 1);
+            const idx = getNearestAccountChartIndex(event.clientX, rect, trend.length);
 
             if (idx < 0 || !trend[idx]) return;
 
             // 显示垂直指示线（考虑 5% padding 与曲线绘制一致）
             if (indicator) {
-                const padding = rect.width * 0.05;
-                const innerWidth = rect.width - padding * 2;
-                const indicatorX = padding + (idx / Math.max(trend.length - 1, 1)) * innerWidth;
+                const indicatorX = getAccountChartPointLeft(rect, idx, trend.length);
                 indicator.style.display = 'block';
                 indicator.style.left = indicatorX + 'px';
             }
@@ -20234,10 +20257,7 @@
                 const containerHeight = rect.height;
                 let dotsHtml = '';
 
-                // X 坐标使用与指示线完全相同的计算方式，确保对齐
-                const padding = rect.width * 0.05;
-                const innerWidth = rect.width - padding * 2;
-                const dotX = padding + (idx / Math.max(trend.length - 1, 1)) * innerWidth;
+                const dotX = getAccountChartPointLeft(rect, idx, trend.length);
 
                 // Y 坐标需要考虑 SVG viewBox 到容器的缩放
                 const scaleY = containerHeight / svgHeight;
@@ -20390,6 +20410,12 @@
         function handleCostTouch(event) {
             // 不再阻止默认滚动行为，允许页面正常滚动
             if (event.touches && event.touches.length > 0) {
+                if (event.type === 'touchstart') {
+                    rememberAccountChartTouch(event, 'cost');
+                } else if (shouldDismissAccountChartTouch(event, 'cost')) {
+                    finishCostTouch();
+                    return;
+                }
                 const touch = event.touches[0];
                 window.lastTouchY = touch.clientY;
                 // 创建一个模拟的事件对象
@@ -20399,6 +20425,10 @@
                 };
                 showCostTooltip(fakeEvent);
             }
+        }
+
+        function finishCostTouch() {
+            finishAccountChartTouch('cost', hideCostTooltip);
         }
 
         // 渲染表格视图
