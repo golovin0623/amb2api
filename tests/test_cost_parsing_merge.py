@@ -182,7 +182,7 @@ def test_official_pricing_parser_extracts_llm_gateway_tables():
           <tr>
             <td><span>Gemini 2.5 Flash Lite</span></td>
             <td><em>$0.10</em><small> / 1M</small></td>
-            <td>$0.40 /1M</td>
+            <td>$0.40/1M</td>
           </tr>
         </tbody>
       </table>
@@ -259,7 +259,8 @@ def test_usage_token_normalization_preserves_raw_integers_and_scales_decimal_uni
     assert _normalize_usage_token_value("0.004") == 4000
     assert _normalize_usage_token_value(0.004) == 4000
     assert _normalize_usage_token_value("1.0") == 1_000_000
-    assert _normalize_usage_token_value(1.0) == 1_000_000
+    assert _normalize_usage_token_value(1.0) == 1
+    assert _normalize_usage_token_value(4423.0) == 4423
     assert _normalize_usage_token_value(float("nan")) == 0
     assert _normalize_usage_token_value(float("inf")) == 0
 

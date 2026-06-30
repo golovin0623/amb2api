@@ -3076,7 +3076,7 @@ def _normalize_usage_token_value(value: Any) -> int:
         amount = float(value)
     elif isinstance(value, float):
         amount = value
-        decimal_literal = True
+        decimal_literal = not value.is_integer()
     else:
         return 0
 
@@ -4140,7 +4140,7 @@ def _parse_official_pricing_page_rates(raw_text: str) -> Dict[str, Any]:
     seen_models = set()
     for row_match in re.finditer(r"<tr\b[^>]*>(.*?)</tr>", llm_section, flags=re.IGNORECASE | re.DOTALL):
         row = row_match.group(1)
-        if "/ 1M" not in _html_text(row):
+        if not re.search(r"/\s*1M\b", _html_text(row), flags=re.IGNORECASE):
             continue
 
         cell_matches = re.findall(r"<td\b[^>]*>(.*?)</td>", row, flags=re.IGNORECASE | re.DOTALL)
