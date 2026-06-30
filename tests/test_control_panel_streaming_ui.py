@@ -13,3 +13,13 @@ def test_control_panel_only_exposes_global_fake_streaming_toggle():
     assert 'id="streamBootstrapRetries"' not in html
 
     assert "enable_real_streaming: true" in html
+
+
+def test_account_cost_ui_uses_precise_currency_formatter_for_small_amounts():
+    html = Path("front/control_panel.html").read_text(encoding="utf-8")
+
+    assert "function formatAccountCurrency" in html
+    assert "formatAccountCurrency(totalCost" in html
+    assert "formatAccountCurrency(item.cost" in html
+    assert "totalEl.textContent = formatAccountCurrency(detailTotal" in html
+    assert "formatAccountCurrency(item.amount" in html

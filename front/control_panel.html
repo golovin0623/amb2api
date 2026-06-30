@@ -17353,7 +17353,7 @@
             html += '</div>';
             html += '<div style="text-align: center; padding: 24px; background: linear-gradient(135deg, var(--card-bg) 0%, rgba(40,167,69,0.05) 100%); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 4px 15px rgba(40,167,69,0.1);">';
             html += '<div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">30天消费</div>';
-            html += '<div class="spend-amount" style="font-size: 36px; font-weight: bold;">$' + totalSpend.toFixed(5) + '</div>';
+            html += '<div class="spend-amount" style="font-size: 36px; font-weight: bold;">' + formatAccountCurrency(totalSpend, { fixedDigits: 5 }) + '</div>';
             html += '</div></div>';
             html += '<div style="margin-top: 16px; text-align: center;">';
             html += '<a href="https://www.assemblyai.com/dashboard/account/billing" target="_blank" class="btn btn-sm" style="background: linear-gradient(135deg, #17a2b8, #138496); border: none; padding: 8px 20px;">充值</a>';
@@ -19167,6 +19167,39 @@
             return div.innerHTML;
         }
 
+        function formatAccountCurrency(value, options = {}) {
+            const amount = Number(value || 0);
+            if (!Number.isFinite(amount)) return '$0.00';
+
+            if (Number.isInteger(options.fixedDigits)) {
+                return '$' + amount.toLocaleString('en-US', {
+                    minimumFractionDigits: options.fixedDigits,
+                    maximumFractionDigits: options.fixedDigits
+                });
+            }
+
+            const abs = Math.abs(amount);
+            let digits = 2;
+            if (abs > 0 && abs < 0.01) {
+                digits = 5;
+            } else if (abs > 0 && abs < 1) {
+                digits = 4;
+            }
+
+            return '$' + amount.toLocaleString('en-US', {
+                minimumFractionDigits: digits,
+                maximumFractionDigits: digits
+            });
+        }
+
+        function formatAccountCostAxis(value, compact = false, maxValue = 0) {
+            const amount = Number(value || 0);
+            const maxAmount = Math.max(Math.abs(amount), Math.abs(Number(maxValue || 0)));
+            const digits = maxAmount > 0 && maxAmount < 0.01 ? 4 : 2;
+            const text = amount.toFixed(digits);
+            return compact ? text : '$' + text;
+        }
+
         // 成本筛选器状态
         const costFilterState = {
             windowSize: 'day',
@@ -19725,7 +19758,7 @@
                 html += '<div class="summary-card">';
                 html += '<div class="summary-title" style="margin-bottom: 8px;">Summary (Last 30 days)</div>';
                 html += '<div class="summary-sub">Total spend across account</div>';
-                html += '<div class="summary-value">$' + totalCost.toFixed(5) + '</div>';
+                html += '<div class="summary-value">' + formatAccountCurrency(totalCost, { fixedDigits: 5 }) + '</div>';
                 html += '</div>';
 
                 // Cost Breakdown
@@ -19743,7 +19776,7 @@
                     data.by_service.forEach((item, index) => {
                         html += '<div class="responsive-item" style="padding: 12px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-bg);">';
                         html += '<div style="font-size: 12px; color: var(--text-secondary);">' + item.service + '</div>';
-                        html += '<div style="font-size: 20px; font-weight: bold; color: ' + colors[index % colors.length] + ';">$' + item.cost.toFixed(2) + '</div>';
+                        html += '<div style="font-size: 20px; font-weight: bold; color: ' + colors[index % colors.length] + ';">' + formatAccountCurrency(item.cost) + '</div>';
                         html += '</div>';
                     });
                     html += '</div></div>';
@@ -19798,7 +19831,7 @@
                 } else {
                     detailTotal = data.total_cost || 0;
                 }
-                if (totalEl) totalEl.textContent = '$' + detailTotal.toFixed(2);
+                if (totalEl) totalEl.textContent = formatAccountCurrency(detailTotal);
 
                 // 更新日期范围显示
                 if (dateRangeEl) {
@@ -19987,7 +20020,7 @@
                 html += '<div style="position: absolute; left: 0; top: 0; bottom: 30px; width: ' + yAxisWidth + 'px; display: flex; flex-direction: column; justify-content: space-between; font-size: ' + yAxisFontSize + 'px; color: var(--text-secondary); text-align: right; padding-right: 3px;">';
                 for (let i = yTicks.length - 1; i >= 0; i--) {
                     // 移动端用更紧凑的格式
-                    const formatted = isMobileChart ? yTicks[i].toFixed(2) : '$' + yTicks[i].toFixed(2);
+                    const formatted = formatAccountCostAxis(yTicks[i], isMobileChart, yMax);
                     html += '<div>' + formatted + '</div>';
                 }
                 html += '</div>';
@@ -20260,10 +20293,10 @@
                     sortedModels.forEach((m, i) => {
                         const color = modelColors[m.model] || defaultColors[i % defaultColors.length];
                         if (m.input > 0) {
-                            html += '<div style="color: ' + color + '; font-size: 11px; padding: 1px 0;">' + m.model + ' (输入): <strong>$' + m.input.toFixed(4) + '</strong></div>';
+                            html += '<div style="color: ' + color + '; font-size: 11px; padding: 1px 0;">' + m.model + ' (输入): <strong>' + formatAccountCurrency(m.input) + '</strong></div>';
                         }
                         if (m.output > 0) {
-                            html += '<div style="color: ' + color + '; font-size: 11px; padding: 1px 0; margin-bottom: ' + (m.input > 0 ? '4px' : '0') + ';">' + m.model + ' (输出): <strong>$' + m.output.toFixed(4) + '</strong></div>';
+                            html += '<div style="color: ' + color + '; font-size: 11px; padding: 1px 0; margin-bottom: ' + (m.input > 0 ? '4px' : '0') + ';">' + m.model + ' (输出): <strong>' + formatAccountCurrency(m.output) + '</strong></div>';
                         }
                     });
                 } else {
@@ -20275,7 +20308,7 @@
                     sortedModels.forEach((m, i) => {
                         if (m.input > 0) {
                             const color = modelColors[m.model] || defaultColors[i % defaultColors.length];
-                            html += '<div style="color: ' + color + '; white-space: nowrap; font-size: 11px; padding: 2px 0;">' + m.model + ': <strong>$' + m.input.toFixed(4) + '</strong></div>';
+                            html += '<div style="color: ' + color + '; white-space: nowrap; font-size: 11px; padding: 2px 0;">' + m.model + ': <strong>' + formatAccountCurrency(m.input) + '</strong></div>';
                         }
                     });
                     html += '</div>';
@@ -20287,7 +20320,7 @@
                     sortedModels.forEach((m, i) => {
                         if (m.output > 0) {
                             const color = modelColors[m.model] || defaultColors[i % defaultColors.length];
-                            html += '<div style="color: ' + color + '; white-space: nowrap; font-size: 11px; padding: 2px 0;">' + m.model + ': <strong>$' + m.output.toFixed(4) + '</strong></div>';
+                            html += '<div style="color: ' + color + '; white-space: nowrap; font-size: 11px; padding: 2px 0;">' + m.model + ': <strong>' + formatAccountCurrency(m.output) + '</strong></div>';
                         }
                     });
                     html += '</div>';
@@ -20295,7 +20328,7 @@
                 }
             } else {
                 // 如果没有 daily_by_model 数据，显示当天总额
-                html += '<div style="color: var(--text-secondary);">Total: $' + (item.amount || 0).toFixed(4) + '</div>';
+                html += '<div style="color: var(--text-secondary);">Total: ' + formatAccountCurrency(item.amount || 0) + '</div>';
             }
 
             tooltip.innerHTML = html;
@@ -20464,7 +20497,7 @@
                     html += '<div style="width: 10px; height: 10px; border-radius: 50%; background: ' + color + '; flex-shrink: 0;"></div>';
                     html += '<div style="flex: 1; font-size: 14px; color: var(--text-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + m.model + '</div>';
                     html += '<div style="font-size: 14px; color: var(--text-color); text-align: right; white-space: nowrap;">';
-                    html += '<span style="font-weight: 600;">$' + (m.cost || 0).toFixed(4) + '</span>';
+                    html += '<span style="font-weight: 600;">' + formatAccountCurrency(m.cost || 0) + '</span>';
                     html += ' <span style="color: var(--text-secondary);">(' + pct.toFixed(1) + '%)</span>';
                     html += '</div>';
                     html += '</div>';

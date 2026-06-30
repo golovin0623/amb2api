@@ -303,6 +303,34 @@ def test_usage_parser_does_not_scale_non_llm_fractional_segments():
     ]
 
 
+def test_usage_parser_aggregates_daily_llm_chart_when_model_rows_are_absent():
+    from src.api.account_api import _parse_usage_rsc_data
+
+    raw = (
+        '"children":"LLM Gateway + LeMUR"'
+        '{"data":['
+        '{"Claude 4.5 Haiku (Input)":0.003264,'
+        '"Claude 4.5 Haiku (Output)":0.000466,'
+        '"name":"2026-06-28T00:00:00.000Z"},'
+        '{"Gemini 3.5 Flash (Input)":0.002379,'
+        '"Gemini 3.5 Flash (Output)":0.001486,'
+        '"name":"2026-06-29T00:00:00.000Z"}'
+        '],"names":["Claude 4.5 Haiku (Input)","Claude 4.5 Haiku (Output)",'
+        '"Gemini 3.5 Flash (Input)","Gemini 3.5 Flash (Output)"]}'
+    )
+
+    result = _parse_usage_rsc_data({"raw": raw})
+
+    assert result["total_tokens"] == 7595
+    by_model = {item["model"]: item for item in result["by_model"]}
+    assert by_model["Claude 4.5 Haiku"]["input_tokens"] == 3264
+    assert by_model["Claude 4.5 Haiku"]["output_tokens"] == 466
+    assert by_model["Claude 4.5 Haiku"]["tokens"] == 3730
+    assert by_model["Gemini 3.5 Flash"]["input_tokens"] == 2379
+    assert by_model["Gemini 3.5 Flash"]["output_tokens"] == 1486
+    assert by_model["Gemini 3.5 Flash"]["tokens"] == 3865
+
+
 def test_usage_context_requires_explicit_llm_signal_when_product_is_absent():
     from src.api.account_api import _is_llm_usage_context
 

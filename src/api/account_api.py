@@ -1815,6 +1815,31 @@ async def get_billing_info(force: bool = False, account_email: Optional[str] = N
         errors.append(str(e))
         log.warning(f"Failed to fetch settings billing page: {e}")
 
+    try:
+        billing_account = account_email or session.get("email")
+        if billing_account:
+            cost_result = await _fetch_cost_data_internal(
+                billing_account,
+                window_size="month",
+                force=force,
+            )
+            cost_total = float(cost_result.get("total_cost") or 0.0)
+            billing_total = float(result.get("total_spend_30_days") or 0.0)
+            if cost_total > 0 and abs(cost_total - billing_total) > 0.0000001:
+                result["total_spend_30_days"] = cost_total
+                if cost_result.get("spend_trend"):
+                    result["spend_trend"] = cost_result.get("spend_trend", [])
+                if cost_result.get("by_service"):
+                    result["cost_breakdown"] = {
+                        s.get("service"): s.get("cost", 0.0)
+                        for s in cost_result.get("by_service", [])
+                    }
+                result.setdefault("debug_info", {})
+                result["debug_info"]["spend_source"] = "dashboard cost"
+    except Exception as e:
+        errors.append(str(e))
+        log.warning(f"Failed to fetch dashboard cost fallback for billing spend: {e}")
+
     if not result.get("balance_found"):
         result["error"] = errors[0] if errors else "Billing balance was not found in the dashboard response."
     
@@ -3144,10 +3169,48 @@ def _normalize_usage_result_tokens(result: Dict[str, Any]) -> None:
                 model_values["output"] = output_tokens
                 model_values["total"] = total_tokens
 
+    daily_model_totals: Dict[str, Dict[str, int]] = {}
+    for day in result.get("daily_by_model") or []:
+        models = day.get("models")
+        if not isinstance(models, dict):
+            continue
+        for model_name, model_values in models.items():
+            if not isinstance(model_values, dict):
+                tokens = _normalize_usage_token_value(model_values)
+                input_tokens = 0
+                output_tokens = tokens
+            else:
+                input_tokens = int(model_values.get("input", 0) or 0)
+                output_tokens = int(model_values.get("output", 0) or 0)
+                tokens = int(model_values.get("total", input_tokens + output_tokens) or 0)
+            if tokens <= 0 and input_tokens <= 0 and output_tokens <= 0:
+                continue
+            bucket = daily_model_totals.setdefault(
+                str(model_name),
+                {"input_tokens": 0, "output_tokens": 0, "tokens": 0},
+            )
+            bucket["input_tokens"] += max(input_tokens, 0)
+            bucket["output_tokens"] += max(output_tokens, 0)
+            bucket["tokens"] += max(tokens, input_tokens + output_tokens, 0)
+
+    if not result.get("by_model") and daily_model_totals:
+        result["by_model"] = [
+            {
+                "model": model,
+                "tokens": values["tokens"],
+                "input_tokens": values["input_tokens"],
+                "output_tokens": values["output_tokens"],
+            }
+            for model, values in daily_model_totals.items()
+        ]
+        result["by_model"].sort(key=lambda item: item.get("tokens", 0), reverse=True)
+
     if result.get("by_model"):
         result["total_tokens"] = sum(item.get("tokens", 0) for item in result.get("by_model") or [])
     elif result.get("segments"):
         result["total_tokens"] = sum(item.get("value", 0) for item in result.get("segments") or [])
+    elif daily_model_totals:
+        result["total_tokens"] = sum(item.get("tokens", 0) for item in daily_model_totals.values())
     else:
         result["total_tokens"] = _normalize_usage_token_value(result.get("total_tokens", 0))
 
@@ -3505,7 +3568,7 @@ def _parse_usage_rsc_data(data: Dict[str, Any], product: Optional[str] = None) -
             log.info(f"Extracted {len(daily_by_model)} daily usage data points")
         
         # 7. 记录调试信息
-        if result["total_tokens"] == 0 and not result["by_model"]:
+        if result["total_tokens"] == 0 and not result["by_model"] and not result["daily_by_model"]:
             log.warning("No usage data extracted from RSC response")
             result["debug_info"]["raw_sample"] = raw_text[:500] if len(raw_text) > 500 else raw_text
 
