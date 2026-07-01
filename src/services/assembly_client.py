@@ -1962,8 +1962,13 @@ async def send_assembly_request(
                 # 记录成功调用（流式连接已建立）
                 try:
                     from ..stats.unified_stats import get_unified_stats
+                    import time
+
                     unified_stats = await get_unified_stats()
+                    usage_recorded_at = time.time()
                     await unified_stats.record_call(api_key, openai_request.model, success=True)
+                    if trace:
+                        trace.metadata["usage_recorded_at"] = usage_recorded_at
                     log.debug(f"Recorded streaming usage stats for key {_mask_key(api_key)}, model {openai_request.model}")
                 except Exception as e:
                     log.error(f"Failed to record streaming usage statistics: {e}")

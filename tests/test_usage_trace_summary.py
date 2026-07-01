@@ -51,9 +51,21 @@ class _UsageTraceAdapter:
         return True
 
 
-def _trace(trace_id, model, key_masked, start_time=None, *, success=True, response_complete_ms=300.0):
+def _trace(
+    trace_id,
+    model,
+    key_masked,
+    start_time=None,
+    *,
+    success=True,
+    response_complete_ms=300.0,
+    metadata=None,
+):
     if start_time is None:
         start_time = time.time()
+    trace_metadata = {"usage_success": success}
+    if metadata:
+        trace_metadata.update(metadata)
     return {
         "trace_id": trace_id,
         "model": model,
@@ -64,7 +76,7 @@ def _trace(trace_id, model, key_masked, start_time=None, *, success=True, respon
             "first_chunk_sent": 120.0,
             "response_complete": response_complete_ms,
         },
-        "metadata": {"usage_success": success},
+        "metadata": trace_metadata,
         "prompt_tokens": 10,
         "completion_tokens": 20,
         "total_tokens": 30,
@@ -350,6 +362,101 @@ async def test_usage_aggregated_uses_completion_time_for_reset_window():
                 masked,
                 TRACE_WINDOW_START - 1,
                 response_complete_ms=2000.0,
+            ),
+        ],
+    )
+
+    _reset_stats_singletons()
+    try:
+        with patch("src.api.admin_routes.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+            with patch("src.stats.unified_stats.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+                with patch("src.storage.storage_adapter.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+                    response = await admin_routes.usage_aggregated(token="x")
+    finally:
+        _reset_stats_singletons()
+
+    payload = json.loads(response.body.decode("utf-8"))
+    summary = payload["log_summary"]
+
+    assert payload["total_all_model_calls"] == 1
+    assert summary["keys"][masked]["model_counts"] == {"gemini-3.1-flash-lite": 1}
+
+
+@pytest.mark.asyncio
+async def test_usage_aggregated_uses_start_time_for_real_stream_reset_window():
+    key = "45d00000000000000c0c"
+    masked = mask_key(key)
+    adapter = _UsageTraceAdapter(
+        keys=[key],
+        unified_stats={
+            masked: {
+                "full_key_hash": "",
+                "success_count": 0,
+                "failure_count": 0,
+                "model_counts": {},
+                "daily_limit_total": 1000,
+                "daily_limit_models": {},
+                "next_reset_time": TRACE_RESET_TIME,
+            }
+        },
+        traces=[
+            _trace(
+                "cross-reset-real-stream",
+                "gemini-3.1-flash-lite",
+                masked,
+                TRACE_WINDOW_START - 1,
+                response_complete_ms=2000.0,
+                metadata={"stream_mode": "real"},
+            ),
+        ],
+    )
+
+    _reset_stats_singletons()
+    try:
+        with patch("src.api.admin_routes.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+            with patch("src.stats.unified_stats.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+                with patch("src.storage.storage_adapter.get_storage_adapter", new=AsyncMock(return_value=adapter)):
+                    response = await admin_routes.usage_aggregated(token="x")
+    finally:
+        _reset_stats_singletons()
+
+    payload = json.loads(response.body.decode("utf-8"))
+    summary = payload["log_summary"]
+
+    assert payload["total_all_model_calls"] == 0
+    assert summary["total"] == {"ok": 0, "fail": 0}
+    assert summary["models"] == {}
+    assert summary["keys"][masked]["model_counts"] == {}
+
+
+@pytest.mark.asyncio
+async def test_usage_aggregated_uses_recorded_time_for_real_stream_reset_window():
+    key = "45d00000000000000c0c"
+    masked = mask_key(key)
+    adapter = _UsageTraceAdapter(
+        keys=[key],
+        unified_stats={
+            masked: {
+                "full_key_hash": "",
+                "success_count": 0,
+                "failure_count": 0,
+                "model_counts": {},
+                "daily_limit_total": 1000,
+                "daily_limit_models": {},
+                "next_reset_time": TRACE_RESET_TIME,
+            }
+        },
+        traces=[
+            _trace(
+                "cross-reset-real-stream-accepted",
+                "gemini-3.1-flash-lite",
+                masked,
+                TRACE_WINDOW_START - 1,
+                response_complete_ms=2000.0,
+                metadata={
+                    "stream_mode": "real",
+                    "usage_recorded_at": TRACE_WINDOW_START + 1,
+                },
             ),
         ],
     )
